@@ -4,6 +4,8 @@
 
 [Octopus Energy](https://octopusenergy.de/)
 
+[Auf der Suche nach deutschen Energie-Vorreitern](https://octopusenergy.de/blog/ratgeber/auf-der-suche-nach-deutschen-energie-vorreitern)
+
 
 
 ## Was macht die Octopus Germany Komponente?
