@@ -1,93 +1,83 @@
 # Integration Octopus Energy Germany für Home Assistant
 
-## ¿Qué es Octopus Energy?
+## Was ist Octopus Energy?
 
 [Octopus Energy](https://octopusenergy.de/)
 
-Entre otras ventajas, dispone de la **Solar Wallet**, un servicio que permite acumular crédito obtenido
-por los excedentes solares para reducir a 0€ la factura así como acumular para posteriores facturas.
+Unter anderem bietet es die **Solar Wallet**, einen Service, der es ermöglicht, durch Solarüberschüsse erhaltenes Guthaben zu sammeln, um die Rechnung auf 0 € zu reduzieren und für zukünftige Rechnungen zu sparen.
 
+## Was macht die Octopus Germany Komponente?
 
-## ¿Qué hace el componente Octopus Spain?
+Diese Komponente verbindet sich mit deinem _Octopus Energy_ Konto, um den aktuellen Stand deiner **Solar Wallet** sowie die Basisdaten der letzten Rechnung abzurufen.
 
-Este componente conecta con tu cuenta de _Octopus Energy_ para obtener el estado actual de tu **Solar Wallet** 
-así como los datos básicos de última factura.
+Diese Komponente wurde von den Ingenieuren von _Octopus Energy_ überprüft und genehmigt.
 
-Este componente ha sido revisado por los ingenerios de _Octopus Energy_ y ha recibido su visto bueno.
+## Installation
 
-## Instalación
+Du kannst die Komponente über HACS installieren:
 
-Puedes instalar el componente usando HACS:
+### Direkt über _My Home Assistant_
+[![Öffne deine Home Assistant Instanz und öffne ein Repository im Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=miguelangellv&repository=octopus_spain&category=integration)
 
-### Directa usando _My Home Assistant_
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=miguelangellv&repository=octopus_spain&category=integration)
-
-
-### Manual
+### Manuell
 ```
-HACS -> Integraciones -> Tres puntitos -> Repositorios Personalizados
+HACS -> Integrationen -> Drei Punkte -> Benutzerdefinierte Repositories
 ```
-Copias la URL del reposotiro ( https://github.com/MiguelAngelLV/octopus_spain ), como categoría seleccionas _Integración_ y pulsas en _Añadir_.
+Kopiere die URL des Repositories (https://github.com/MiguelAngelLV/octopus_spain), wähle als Kategorie _Integration_ und klicke auf _Hinzufügen_.
 
+## Konfiguration
 
-## Configuración
+Nach der Installation gehe zu _Geräte und Dienste -> Integration hinzufügen_ und suche nach _Octopus_.
 
-Una vez instalado, ve a _Dispositivos y Servicios -> Añadir Integración_ y busca _Octopus_.
+Der Assistent wird dich nach deiner E-Mail und deinem Passwort von [Octopus Energy](https://octopusenergy.de/) fragen.
 
-El asistente te solicitará tu email y contraseña de [Octopus Energy](https://octopusenergy.es/)
-
-
-
-## Entidades
-Una vez configurado el componente, tendrás dos entidades por cada cuenta que tengas asociada a tu email (normalmente una).
+## Entitäten
+Nach der Konfiguration der Komponente hast du zwei Entitäten für jedes Konto, das mit deiner E-Mail verknüpft ist (normalerweise eines).
 
 ### Solar Wallet
-La entidad Solar Wallet devuelve el valor actual de tu Solar Wallet. Este valor (en euros) estará actualizado al de tu última factura. Actualmente no se puede consultar en tiempo real.
+Die Solar Wallet Entität gibt den aktuellen Wert deiner Solar Wallet zurück. Dieser Wert (in Euro) wird auf den Stand deiner letzten Rechnung aktualisiert. Derzeit kann er nicht in Echtzeit abgefragt werden.
 
 ## Octopus Credit
-La entidad Octopus Credit devuelve el valor actual de tu crédito en Octopus obtenido por cuentas referedidas u otras posibles bonificaciones.
+Die Octopus Credit Entität gibt den aktuellen Wert deines Guthabens bei Octopus zurück, das durch geworbene Konten oder andere mögliche Boni erhalten wurde.
 
-### Última Factura
-Esta entidad devuelve el coste de tu última factura.
+### Letzte Rechnung
+Diese Entität gibt die Kosten deiner letzten Rechnung zurück.
 
-Adicionalmente, en los atributos, están disponibles las fechas de emisión de esa factura así el periodo (inicio y final) de la misma.
+Zusätzlich sind in den Attributen die Ausstellungsdaten dieser Rechnung sowie der Zeitraum (Anfang und Ende) verfügbar.
 
+## Nutzung
 
-## Uso
+Du kannst diese Entitäten verwenden, um den Status anzuzeigen und Automatisierungen zu erstellen, um dich beispielsweise zu informieren, wenn sich das Attribut "Ausgestellt" der letzten Rechnung ändert.
 
-Podrás usar estas etidades para visualizar el estado así como crear automatizaciones para informate, por ejemplo, 
-cuando se produzca un cambio en el atributo "Emitida" de última fáctura.
-
-
-Una forma de representar los datos sería esta:
+Eine Möglichkeit, die Daten darzustellen, wäre diese:
 
 ```yaml
-title: Octopus Spain
+title: Octopus Germany
 type: entities
 entities:
-  - entity: sensor.ultima_factura_octopus
+  - entity: sensor.letzte_rechnung_octopus
   - entity: sensor.solar_wallet
   - entity: sensor.octopus_credit
   - type: attribute
-    entity: sensor.ultima_factura_octopus
-    name: Inicio
+    entity: sensor.letzte_rechnung_octopus
+    name: Anfang
     icon: mdi:calendar-start
-    attribute: Inicio
+    attribute: Anfang
   - type: attribute
-    entity: sensor.ultima_factura_octopus
-    name: Fin
+    entity: sensor.letzte_rechnung_octopus
+    name: Ende
     icon: mdi:calendar-end
-    attribute: Fin
+    attribute: Ende
   - type: attribute
-    entity: sensor.ultima_factura_octopus
-    name: Emitida
+    entity: sensor.letzte_rechnung_octopus
+    name: Ausgestellt
     icon: mdi:email-fast-outline
-    attribute: Emitida
+    attribute: Ausgestellt
 ```
 
 ![card.png](img/card.png)
 
 ## Videotutorial
 
-[![Octopus Spain](http://img.youtube.com/vi/fJ1W_wACbfw/0.jpg)](http://www.youtube.com/watch?v=fJ1W_wACbfw)
+[![Octopus Germany](http://img.youtube.com/vi/fJ1W_wACbfw/0.jpg)](http://www.youtube.com/watch?v=fJ1W_wACbfw)
 
