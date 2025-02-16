@@ -1,8 +1,8 @@
-# Componente Octopus Spain para Home Assistant
+# Integration Octopus Energy Germany für Home Assistant
 
 ## ¿Qué es Octopus Energy?
 
-[Octopus Energy](https://octopusenergy.es/) es una comercializadora eléctrica española.
+[Octopus Energy](https://octopusenergy.de/)
 
 Entre otras ventajas, dispone de la **Solar Wallet**, un servicio que permite acumular crédito obtenido
 por los excedentes solares para reducir a 0€ la factura así como acumular para posteriores facturas.
