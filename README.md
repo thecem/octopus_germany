@@ -10,7 +10,7 @@
 
 ## Was macht die Octopus Germany Komponente?
 
-Diese Komponente verbindet sich mit deinem _Octopus Energy_ Konto, um die aktuellen "Devices" und die planned Dispatches in Home Assitant dar zu stellen.
+Diese Komponente verbindet sich mit deinem _Octopus Energy_ Konto, um die aktuellen "Devices" und die planned Dispatches in Home Assistant dar zu stellen.
 
 
 Diese Komponente wurde von den Ingenieuren von _Octopus Energy_ NICHT überprüft und noch nicht genehmigt.
