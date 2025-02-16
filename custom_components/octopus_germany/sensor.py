@@ -337,6 +337,12 @@ class OctopusDeviceSensor(CoordinatorEntity, SensorEntity):
             "current": self._device["status"]["current"],
             "is_suspended": self._device["status"]["isSuspended"],
             "device_type": self._device["deviceType"],
+            "integration_device_id": self._device["integrationDeviceId"],
+            "mode": self._device["preferences"]["mode"],
+            "target_type": self._device["preferences"]["targetType"],
+            "unit": self._device["preferences"]["unit"],
+            "provider": self._device["provider"],
+            "schedules": self._device["preferences"]["schedules"],
         }
         self.async_write_ha_state()
 

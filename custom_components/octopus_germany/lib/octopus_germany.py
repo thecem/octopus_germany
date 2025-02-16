@@ -176,14 +176,27 @@ class OctopusGermany:
         query = """
             query ($accountNumber: String!) {
               devices(accountNumber: $accountNumber) {
+                deviceType
                 id
+                integrationDeviceId
                 name
+                preferences {
+                  mode
+                  targetType
+                  schedules {
+                    max
+                    min
+                    time
+                    dayOfWeek
+                  }
+                  unit
+                }
+                provider
                 status {
                   current
-                  currentState
                   isSuspended
+                  currentState
                 }
-                deviceType
               }
             }
         """
