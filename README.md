@@ -77,4 +77,4 @@ Mit dem Dispatch Time Sensor kannst du nun auch andere Geräte zum günstigen Pr
 
 ## Entwicklung Mithilfe
 
-Wenn Du weitere Entities benötigst, kann ich diese gerne auch erstellen. Hierzu bitte den Query und die Antwort aus dem API Explorer kopieren und als Issue einstellen. Nur wenn beide inforatonen vorhanden sind, kann eine Integration als Entity erfolgen.
+Wenn Du weitere Entities benötigst, kann ich diese gerne erstellen. Hierzu bitte den Query und die Antwort aus dem API Explorer kopieren und als Issue einstellen. Nur wenn beide Informationen vorhanden sind, kann eine Integration als Entity erfolgen.
