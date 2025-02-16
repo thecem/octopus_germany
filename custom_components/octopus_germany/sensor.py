@@ -18,7 +18,7 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from .lib.octopus_germany import OctopusGermany
+from .octopus_germany import OctopusGermany
 from homeassistant.exceptions import ConfigEntryNotReady
 
 _LOGGER = logging.getLogger(__name__)

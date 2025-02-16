@@ -2,7 +2,7 @@
 
 DOMAIN = "octopus_germany"
 
-CONF_EMAIL = 'email'
-CONF_PASSWORD = 'password'
+CONF_EMAIL = "email"
+CONF_PASSWORD = "password"
 
 UPDATE_INTERVAL = 2  # Hours
