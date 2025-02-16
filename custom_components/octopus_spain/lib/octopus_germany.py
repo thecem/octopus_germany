@@ -2,12 +2,12 @@ from datetime import datetime, timedelta
 
 from python_graphql_client import GraphqlClient
 
-GRAPH_QL_ENDPOINT = "https://api.oees-kraken.energy/v1/graphql/"
+GRAPH_QL_ENDPOINT = "https://api.oeg-kraken.energy/v1/graphql/"
 SOLAR_WALLET_LEDGER = "SOLAR_WALLET_LEDGER"
-ELECTRICITY_LEDGER = "SPAIN_ELECTRICITY_LEDGER"
+ELECTRICITY_LEDGER = "GERMANY_ELECTRICITY_LEDGER"
 
 
-class OctopusSpain:
+class OctopusGermany:
     def __init__(self, email, password):
         self._email = email
         self._password = password
