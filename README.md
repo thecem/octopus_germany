@@ -4,13 +4,14 @@
 
 [Octopus Energy](https://octopusenergy.de/)
 
-Unter anderem bietet es die **Solar Wallet**, einen Service, der es ermöglicht, durch Solarüberschüsse erhaltenes Guthaben zu sammeln, um die Rechnung auf 0 € zu reduzieren und für zukünftige Rechnungen zu sparen.
+
 
 ## Was macht die Octopus Germany Komponente?
 
-Diese Komponente verbindet sich mit deinem _Octopus Energy_ Konto, um den aktuellen Stand deiner **Solar Wallet** sowie die Basisdaten der letzten Rechnung abzurufen.
+Diese Komponente verbindet sich mit deinem _Octopus Energy_ Konto, um die aktuellen "Devices" und die planned Dispatches in Home Assitant dar zu stellen.
 
-Diese Komponente wurde von den Ingenieuren von _Octopus Energy_ überprüft und genehmigt.
+
+Diese Komponente wurde von den Ingenieuren von _Octopus Energy_ NICHT überprüft und noch nicht genehmigt.
 
 ## Installation
 
@@ -32,22 +33,14 @@ Nach der Installation gehe zu _Geräte und Dienste -> Integration hinzufügen_ u
 Der Assistent wird dich nach deiner E-Mail und deinem Passwort von [Octopus Energy](https://octopusenergy.de/) fragen.
 
 ## Entitäten
-Nach der Konfiguration der Komponente hast du zwei Entitäten für jedes Konto, das mit deiner E-Mail verknüpft ist (normalerweise eines).
+Nach der Konfiguration der Komponente hast du Entitäten für jedes Konto, das mit deiner E-Mail verknüpft ist (normalerweise eines).
 
-### Solar Wallet
-Die Solar Wallet Entität gibt den aktuellen Wert deiner Solar Wallet zurück. Dieser Wert (in Euro) wird auf den Stand deiner letzten Rechnung aktualisiert. Derzeit kann er nicht in Echtzeit abgefragt werden.
-
-## Octopus Credit
-Die Octopus Credit Entität gibt den aktuellen Wert deines Guthabens bei Octopus zurück, das durch geworbene Konten oder andere mögliche Boni erhalten wurde.
-
-### Letzte Rechnung
-Diese Entität gibt die Kosten deiner letzten Rechnung zurück.
-
-Zusätzlich sind in den Attributen die Ausstellungsdaten dieser Rechnung sowie der Zeitraum (Anfang und Ende) verfügbar.
+## Octopus Konto
+Die Octopus Konto Entität gibt den aktuellen Wert deines Guthabens bei Octopus zurück, das durch geworbene Konten oder andere mögliche Boni erhalten wurde.
 
 ## Nutzung
 
-Du kannst diese Entitäten verwenden, um den Status anzuzeigen und Automatisierungen zu erstellen, um dich beispielsweise zu informieren, wenn sich das Attribut "Ausgestellt" der letzten Rechnung ändert.
+Du kannst diese Entitäten verwenden, um den Status anzuzeigen und Automatisierungen zu erstellen.
 
 Eine Möglichkeit, die Daten darzustellen, wäre diese:
 
@@ -75,9 +68,13 @@ entities:
     attribute: Ausgestellt
 ```
 
-![card.png](img/card.png)
+## Entwicklung
 
-## Videotutorial
+Diese Integration ist gerade in Entwicklung und stellt für die [Germany API](https://api.oeg-kraken.energy/v1/graphql) die erste Integration dar.
+Speiziell für den Tarif intelligent Octopus Go entwickelt um die Dispatch Zeiten sichtbar und nutzbar zu machen.
 
-[![Octopus Germany](http://img.youtube.com/vi/fJ1W_wACbfw/0.jpg)](http://www.youtube.com/watch?v=fJ1W_wACbfw)
+Mit dem Dispatch Time Sensor kannst du nun auch andere Geräte zum günstigen Preis ausserhalb der 0-5 Uhr Go Zeit nutzen. (Wenn das Auto Lädt, kannst Du sicher sein das auch andere Verbraucher den Strom zum günstigsten Tarif nutzen können)
 
+## Entwicklung Mithilfe
+
+Wenn Du weitere Entities benötigst, kann ich diese gerne auch erstellen. Hierzu bitte den Query und die Antwort aus dem API Explorer kopieren und als Issue einstellen. Nur wenn beide inforatonen vorhanden sind, kann eine Integration als Entity erfolgen.
