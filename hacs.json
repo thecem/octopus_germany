@@ -1,6 +1,6 @@
 {
-    "name": "Octopus Spain",
+    "name": "Octopus Germany",
     "render_readme": true,
-    "homeassistant": "2023.1.0",
-    "country":"ES"
+    "homeassistant": "2025.2.0",
+    "country":"DE"
 }

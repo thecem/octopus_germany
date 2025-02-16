@@ -16,7 +16,7 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import *
-from .lib.octopus_spain import OctopusSpain
+from .lib.octopus_germany import OctopusGermany
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,9 +53,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is None:
             return self.async_show_form(step_id="user", data_schema=SCHEMA)
 
-        api = OctopusSpain(user_input[CONF_EMAIL], user_input[CONF_PASSWORD])
+        api = OctopusGermany(user_input[CONF_EMAIL], user_input[CONF_PASSWORD])
         if await api.login():
-            return self.async_create_entry(data=user_input, title="Octopus Spain")
+            return self.async_create_entry(data=user_input, title="Octopus Germany")
         else:
             return self.async_show_form(step_id="user", data_schema=SCHEMA, errors={'base': 'invalid_auth'})
 
@@ -85,9 +85,9 @@ class OptionFlowHandler(config_entries.OptionsFlow):
         if user_input is None:
             return self.async_show_form(step_id="init", data_schema=schema)
 
-        api = OctopusSpain(user_input[CONF_EMAIL], user_input[CONF_PASSWORD])
+        api = OctopusGermany(user_input[CONF_EMAIL], user_input[CONF_PASSWORD])
         if await api.login():
-            return self.async_create_entry(data=user_input, title="Octopus Spain")
+            return self.async_create_entry(data=user_input, title="Octopus Germany")
         else:
             return self.async_show_form(step_id="init", data_schema=SCHEMA, errors={'base': 'invalid_auth'})
 

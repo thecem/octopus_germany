@@ -19,7 +19,7 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from .lib.octopus_spain import OctopusSpain
+from .lib.octopus_germany import OctopusGermany
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,8 +44,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 class OctopusCoordinator(DataUpdateCoordinator):
 
     def __init__(self, hass: HomeAssistant, email: str, password: str):
-        super().__init__(hass=hass, logger=_LOGGER, name="Octopus Spain", update_interval=timedelta(hours=UPDATE_INTERVAL))
-        self._api = OctopusSpain(email, password)
+        super().__init__(hass=hass, logger=_LOGGER, name="Octopus Germany", update_interval=timedelta(hours=UPDATE_INTERVAL))
+        self._api = OctopusGermany(email, password)
         self._data = {}
 
     async def _async_update_data(self):

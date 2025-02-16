@@ -8,7 +8,7 @@
     },
     "step": {
       "user": {
-        "title": "Octopus Energy Spain",
+        "title": "Octopus Energy Germany",
         "data": {
           "email": "Email",
           "password": "Password"
@@ -22,7 +22,7 @@
     },
     "step": {
       "init": {
-        "title": "Octopus Energy Spain.",
+        "title": "Octopus Energy Germany.",
         "data": {
           "email": "Email",
           "password": "Password"
