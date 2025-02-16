@@ -1,10 +1,28 @@
-2025-02-16 19:46:46.314 ERROR (MainThread) [homeassistant.components.sensor] Error adding entity sensor.octopus_a_66df80ae_account_number for domain sensor with platform octopus_germany
-Traceback (most recent call last):
-  File "/workspaces/core/homeassistant/helpers/entity_platform.py", line 633, in _async_add_entities
-    await coro
-  File "/workspaces/core/homeassistant/helpers/entity_platform.py", line 972, in _async_add_entity
-    await entity.add_to_platform_finish()
-  File "/workspaces/core/homeassistant/helpers/entity.py", line 1383, in add_to_platform_finish
-    await self.async_added_to_hass()
-          ~~~~~~~~~~~~~~~~~~~~~~~~^^
-TypeError: OctopusAccountNumberSensor.async_added_to_hass() takes 0 positional arguments but 1 was given
+from homeassistant import config_entries
+import voluptuous as vol
+from .const import DOMAIN, CONF_EMAIL, CONF_PASSWORD
+
+
+class OctopusGermanyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Octopus Germany."""
+
+    VERSION = 1
+    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
+
+    async def async_step_user(self, user_input=None):
+        """Handle the initial step."""
+        errors = {}
+        if user_input is not None:
+            # Validate the user input here
+            return self.async_create_entry(title="Octopus Germany", data=user_input)
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_EMAIL): str,
+                    vol.Required(CONF_PASSWORD): str,
+                }
+            ),
+            errors=errors,
+        )
