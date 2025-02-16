@@ -26,7 +26,7 @@ Du kannst die Komponente über HACS installieren:
 ```
 HACS -> Integrationen -> Drei Punkte -> Benutzerdefinierte Repositories
 ```
-Kopiere die URL des Repositories (https://github.com/MiguelAngelLV/octopus_spain), wähle als Kategorie _Integration_ und klicke auf _Hinzufügen_.
+Kopiere die URL des Repositories (https://github.com/thecem/octopus_germany), wähle als Kategorie _Integration_ und klicke auf _Hinzufügen_.
 
 ## Konfiguration
 
