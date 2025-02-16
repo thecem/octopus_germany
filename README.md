@@ -18,7 +18,7 @@ Diese Komponente wurde von den Ingenieuren von _Octopus Energy_ NICHT überprüf
 Du kannst die Komponente über HACS installieren:
 
 ### Direkt über _My Home Assistant_
-[![Öffne deine Home Assistant Instanz und öffne ein Repository im Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=miguelangellv&repository=octopus_spain&category=integration)
+[![Öffne deine Home Assistant Instanz und öffne ein Repository im Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=thecem&repository=octopus_germany&category=integration)
 
 ### Manuell
 ```
