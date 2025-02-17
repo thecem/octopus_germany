@@ -13,6 +13,8 @@ Mit dem Dispatch Time Sensor kannst du nun auch andere Geräte zum günstigen Pr
 
 Wenn du weitere Entities benötigst, kann ich diese gerne erstellen. Hierzu bitte den Query und die Antwort aus dem API Explorer kopieren und als Issue einstellen. Nur wenn beide Informationen vorhanden sind, kann eine Integration als Entity erfolgen.
 
+Hier findest du eine Beschreibung wie Du in die API einsteigst: [Auf der Suche nach deutschen Energie-Vorreitern](https://octopusenergy.de/blog/ratgeber/auf-der-suche-nach-deutschen-energie-vorreitern)
+
 ## Funktionen
 
 - **Kontoinformationen**: Zeigt deine Vertragskontonummer und den aktuellen Kontostand an.
