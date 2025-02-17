@@ -1,4 +1,5 @@
-# Octopus Germany Integration
+# Octopus Germany Integration 
+
 
 > [!NOTE]
 > Diese Integration ermöglicht es Ihnen, Daten von Ihrem Octopus Energy Germany Konto in Home Assistant zu integrieren.
@@ -73,3 +74,7 @@ Die Integration erstellt die folgenden Sensoren:
 ## Intelligent Octopus Go Tarif
 
 Der Intelligent Octopus Go Tarif ermöglicht es dir, von günstigeren Strompreisen während der Nachtstunden zu profitieren. Mit dem Dispatch Time Sensor kannst du sicherstellen, dass deine Geräte den Strom zum günstigsten Tarif nutzen, insbesondere außerhalb der 0-5 Uhr Go Zeit.
+
+
+## Sponsorship
+Wenn du die Integration genießt, warum nicht meinen [Empfehlungslink](https://share.octopusenergy.de/free-cat-744) verwenden, falls du noch kein Teil von Octopus Energy bist, oder, falls möglich, eine einmalige oder monatliche GitHub-Sponsoring machen?
