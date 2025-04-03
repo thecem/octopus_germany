@@ -40,7 +40,10 @@ This integration can be installed directly via HACS. To install:
 
 ### Manual (WIP !!)
 
-You should take the latest [published release](https://github.com/thecem/octopus_germany/releases). The current state of `develop` will be in flux and therefore possibly subject to change.
+You should take the latest [published release](https://github.com/thecem/octopus_germany/releases). 
+
+> [!IMPORTANT]
+> The current state of `develop` will be in flux and therefore possibly subject to change.
 
 To install, place the contents of `custom_components` into the `<config directory>/custom_components` folder of your Home Assistant installation. Once installed, don't forget to restart your home assistant instance for the integration to be picked up.
 
