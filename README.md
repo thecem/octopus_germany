@@ -31,7 +31,9 @@ There are multiple ways of installing the integration. Once you've installed the
 
 ### HACS (WIP !!)
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration) 
+
+[https://github.com/hacs/default/pull/3280](https://github.com/hacs/default/pull/3280)
 
 This integration can be installed directly via HACS. To install:
 
