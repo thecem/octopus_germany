@@ -2,5 +2,5 @@
   "name": "Octopus Germany",
   "render_readme": true,
   "homeassistant": "2024.5.0",
-  "hide_default_branch": true
+  "hide_default_branch": false
 }
