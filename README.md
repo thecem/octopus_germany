@@ -27,7 +27,7 @@ Below are the main features of the integration
 
 ## How to install
 
-There are multiple ways of installing the integration. Once you've installed the integration, you'll need to [setup your account](#how-to-setup) before you can use the integration.
+There are multiple ways of installing the integration. Once you've installed the integration, you'll need to Login with your Username and Password before you can use the integration.
 
 ### HACS (WIP !!)
 
@@ -38,23 +38,23 @@ This integration can be installed directly via HACS. To install:
 * [Add the repository](https://my.home-assistant.io/redirect/hacs_repository/?owner=thecem&repository=octopus_germany&category=integration) to your HACS installation
 * Click `Download`
 
-### Manual
+### Manual (WIP !!)
 
 You should take the latest [published release](https://github.com/thecem/octopus_germany/releases). The current state of `develop` will be in flux and therefore possibly subject to change.
 
 To install, place the contents of `custom_components` into the `<config directory>/custom_components` folder of your Home Assistant installation. Once installed, don't forget to restart your home assistant instance for the integration to be picked up.
 
-## How to setup
+## How to setup (WIP !!)
 
 You will need your Username and Password from https://octopusenergy.de/. This guide details the configuration, along with the sensors that will be available to you.
 
-## Docs
+## Docs  (WIP !!)
 
-WIP !! To get full use of the integration, please visit the [docs](https://thecem.github.io/octopus_germany/).
+To get full use of the integration, please visit the [docs](https://thecem.github.io/octopus_germany/).
 
-## FAQ
+## FAQ  (WIP !!)
 
-WIP !! Before raising anything, please read through the [faq](https://thecem.github.io/octopus_germany/faq). If you have questions, then you can raise a [discussion](https://thecem.github.io/octopus_germany/discussions). If you have found a bug or have a feature request please [raise it](https://thecem.github.io/octopus_germany/issues) using the appropriate report template.
+Before raising anything, please read through the [faq](https://thecem.github.io/octopus_germany/faq). If you have questions, then you can raise a [discussion](https://thecem.github.io/octopus_germany/discussions). If you have found a bug or have a feature request please [raise it](https://thecem.github.io/octopus_germany/issues) using the appropriate report template.
 
 ## Sponsorship
 
