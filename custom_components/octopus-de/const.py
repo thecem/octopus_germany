@@ -1,6 +1,6 @@
 """Constants for Octopus Energy Germany."""
 
-DOMAIN = "octopus_germany"
+DOMAIN = "octopus-de"
 
 CONF_EMAIL = "email"
 CONF_PASSWORD = "password"
