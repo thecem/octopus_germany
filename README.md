@@ -46,7 +46,7 @@ To install, place the contents of `custom_components` into the `<config director
 
 ## How to setup
 
-WIP !! Please follow the [setup guide](https://thecem.github.io/octopus_germany/setup/account) to setup your initial account. This guide details the configuration, along with the sensors that will be available to you.
+You will need your Username and Password from https://octopusenergy.de/. This guide details the configuration, along with the sensors that will be available to you.
 
 ## Docs
 
