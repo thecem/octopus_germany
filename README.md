@@ -29,7 +29,7 @@ Below are the main features of the integration
 
 There are multiple ways of installing the integration. Once you've installed the integration, you'll need to [setup your account](#how-to-setup) before you can use the integration.
 
-### HACS
+### HACS (WIP !!)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
 
@@ -46,15 +46,15 @@ To install, place the contents of `custom_components` into the `<config director
 
 ## How to setup
 
-WIP !!cPlease follow the [setup guide](https://thecem.github.io/octopus_germany/setup/account) to setup your initial account. This guide details the configuration, along with the sensors that will be available to you.
+WIP !! Please follow the [setup guide](https://thecem.github.io/octopus_germany/setup/account) to setup your initial account. This guide details the configuration, along with the sensors that will be available to you.
 
 ## Docs
 
-WIP !! o get full use of the integration, please visit the [docs](https://thecem.github.io/octopus_germany/).
+WIP !! To get full use of the integration, please visit the [docs](https://thecem.github.io/octopus_germany/).
 
 ## FAQ
 
-Before raising anything, please read through the [faq](https://thecem.github.io/octopus_germany/faq). If you have questions, then you can raise a [discussion](https://thecem.github.io/octopus_germany/discussions). If you have found a bug or have a feature request please [raise it](https://thecem.github.io/octopus_germany/issues) using the appropriate report template.
+WIP !! Before raising anything, please read through the [faq](https://thecem.github.io/octopus_germany/faq). If you have questions, then you can raise a [discussion](https://thecem.github.io/octopus_germany/discussions). If you have found a bug or have a feature request please [raise it](https://thecem.github.io/octopus_germany/issues) using the appropriate report template.
 
 ## Sponsorship
 
