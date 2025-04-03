@@ -1,4 +1,4 @@
-# octopus-germany
+# Octopus Energy Germany
 Octopus Energy Germany Home Assistant Integration
 # Home Assistant Octopus Energy Germany
 
