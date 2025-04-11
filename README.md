@@ -56,6 +56,12 @@ You will need your Username and Password from https://octopusenergy.de/. This gu
 
 To get full use of the integration, please visit the [docs](https://thecem.github.io/octopus_germany/).
 
+### Sensor (Intelligent Dispatching):
+  Will state if the actual time is within the dispatch time.  
+  
+### Switch (Smart Charging):
+  This allows you to control the "Samrt Charging" switch in the devices setting within the app.
+
 ## FAQ  (WIP !!)
 
 Before raising anything, please read through the [faq](https://thecem.github.io/octopus_germany/faq). If you have questions, then you can raise a [discussion](https://thecem.github.io/octopus_germany/discussions). If you have found a bug or have a feature request please [raise it](https://thecem.github.io/octopus_germany/issues) using the appropriate report template.
