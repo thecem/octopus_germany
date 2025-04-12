@@ -548,7 +548,32 @@ class OctopusGermany:
             _LOGGER.error("Error fetching all data: %s", e)
             return None
 
+    async def _ensure_valid_token(self):
+        """Ensure the JWT token is valid and renew it if necessary."""
+        if not self._token:
+            _LOGGER.debug("No token found, logging in to obtain a new token.")
+            await self.login()
+            return
+
+        # Decode the token to check its expiration
+        try:
+            import jwt
+
+            decoded_token = jwt.decode(self._token, options={"verify_signature": False})
+            exp_timestamp = decoded_token.get("exp")
+            if exp_timestamp:
+                from datetime import datetime
+
+                now = datetime.utcnow().timestamp()
+                if now >= exp_timestamp:
+                    _LOGGER.debug("Token has expired, logging in to renew the token.")
+                    await self.login()
+        except Exception as e:
+            _LOGGER.error("Error while checking token validity: %s", e)
+            await self.login()
+
     async def change_device_suspension(self, device_id: str, action: str):
+        await self._ensure_valid_token()
         query = """
             mutation ChangeDeviceSuspension($deviceId: ID = "", $action: SmartControlAction!) {
               updateDeviceSmartControl(input: {deviceId: $deviceId, action: $action}) {
@@ -562,13 +587,6 @@ class OctopusGermany:
             device_id,
             action,
         )
-        _LOGGER.debug(
-            "Sending API request to change device suspension: device_id=%s, action=%s",
-            device_id,
-            action,
-        )
-        _LOGGER.debug("GraphQL Mutation: %s", query)
-        _LOGGER.debug("Variables: %s", variables)
         headers = {"authorization": self._token}
         client = GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers=headers)
         try:
