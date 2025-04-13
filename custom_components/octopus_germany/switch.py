@@ -134,6 +134,12 @@ class OctopusSwitch(SwitchEntity):
         api_data = self.hass.data[DOMAIN][self._config_entry.entry_id]
         account_number = api_data["account_number"]
         devices = await self._api.devices(account_number)
+        if devices is None:
+            _LOGGER.error(
+                "Devices list is None. Unable to update switch state for device_id=%s",
+                self._device_id,
+            )
+            return
         device = next((d for d in devices if d["id"] == self._device_id), None)
         if device:
             self._is_on = not device.get("status", {}).get("isSuspended", True)
