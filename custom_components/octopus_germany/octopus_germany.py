@@ -1,7 +1,14 @@
+"""Provide the OctopusGermany class for interacting with the Octopus Energy API.
+
+Includes methods for authentication, fetching account details, managing devices, and retrieving
+various data related to electricity usage and tariffs.
+"""
+
 import logging
 from datetime import datetime, timedelta
-from python_graphql_client import GraphqlClient
+import asyncio
 from homeassistant.exceptions import ConfigEntryNotReady
+from python_graphql_client import GraphqlClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,16 +33,43 @@ class OctopusGermany:
         """
         variables = {"email": self._email, "password": self._password}
         client = GraphqlClient(endpoint=GRAPH_QL_ENDPOINT)
-        response = await client.execute_async(query=query, variables=variables)
 
-        _LOGGER.debug("Login response: %s", response)
+        retries = 5
+        delay = 1  # Start with 1 second delay
 
-        if "errors" in response:
-            _LOGGER.error("Login failed: %s", response["errors"])
-            return False
+        for attempt in range(retries):
+            try:
+                response = await client.execute_async(query=query, variables=variables)
+                _LOGGER.debug("Login response: %s", response)
 
-        self._token = response["data"]["obtainKrakenToken"]["token"]
-        return True
+                if "errors" in response:
+                    error_code = (
+                        response["errors"][0].get("extensions", {}).get("errorCode")
+                    )
+                    if error_code == "KT-CT-1199":  # Too many requests
+                        _LOGGER.warning(
+                            "Rate limit hit. Retrying in %s seconds...", delay
+                        )
+                        _LOGGER.debug(
+                            "Retrying login due to rate limit: attempt %s", attempt + 1
+                        )
+                        await asyncio.sleep(delay)
+                        delay *= 2  # Exponential backoff
+                        continue
+                    else:
+                        _LOGGER.error("Login failed: %s", response["errors"])
+                        return False
+
+                self._token = response["data"]["obtainKrakenToken"]["token"]
+                return True
+
+            except Exception as e:
+                _LOGGER.error("Error during login attempt %s: %s", attempt + 1, e)
+                await asyncio.sleep(delay)
+                delay *= 2
+
+        _LOGGER.error("All login attempts failed.")
+        return False
 
     async def accounts(self):
         response = await self._fetch_accounts()
@@ -103,7 +137,14 @@ class OctopusGermany:
         try:
             response = await client.execute_async(query=query)
             _LOGGER.debug("Fetch accounts response: %s", response)
-            return response.get("data", {}).get("viewer", {}).get("accounts", [])
+            accounts = response.get("data", {}).get("viewer", {}).get("accounts", [])
+            if not accounts:
+                _LOGGER.error(
+                    "No accounts found for the provided credentials. Response: %s",
+                    response,
+                )
+                return None
+            return accounts
         except Exception as e:
             _LOGGER.error("Error fetching accounts: %s", e)
             return None
@@ -146,6 +187,18 @@ class OctopusGermany:
         }
 
     async def planned_dispatches(self, account_number: str):
+        """Fetch planned dispatches for a given account.
+
+        Parameters
+        ----------
+        account_number : str
+            The account number for which to fetch planned dispatches.
+
+        Returns
+        -------
+        list
+            A list of planned dispatches with their details, or an empty list if none are found.
+        """
         query = """
             query ($accountNumber: String!) {
               plannedDispatches(accountNumber: $accountNumber) {
@@ -173,6 +226,18 @@ class OctopusGermany:
         return response["data"]["plannedDispatches"]
 
     async def property_ids(self, account_number: str):
+        """Fetch the property IDs associated with the given account number.
+
+        Parameters
+        ----------
+        account_number : str
+            The account number for which to fetch property IDs.
+
+        Returns
+        -------
+        list
+            A list of property IDs, or an empty list if no properties are found.
+        """
         query = """
             query getPropertyIds($accountNumber: String!) {
               account(accountNumber: $accountNumber) {
@@ -193,6 +258,19 @@ class OctopusGermany:
         return [prop["id"] for prop in response["data"]["account"]["properties"]]
 
     async def devices(self, account_number: str):
+        """Fetch the list of devices associated with the given account number.
+
+        Parameters
+        ----------
+        account_number : str
+            The account number for which to fetch devices.
+
+        Returns
+        -------
+        list
+            A list of devices with their details, or an empty list if no devices are found.
+
+        """
         query = """
             query ($accountNumber: String!) {
               devices(accountNumber: $accountNumber) {
@@ -286,8 +364,8 @@ class OctopusGermany:
             return []
 
         timeslot_data = []
-        for property in response["data"]["account"]["allProperties"]:
-            for malo in property["electricityMalos"]:
+        for prop in response["data"]["account"]["allProperties"]:
+            for malo in prop["electricityMalos"]:
                 for agreement in malo["agreements"]:
                     if "unitRateInformation" in agreement:
                         unit_rate_info = agreement["unitRateInformation"]
@@ -300,6 +378,16 @@ class OctopusGermany:
         return timeslot_data
 
     async def fetch_and_use_account(self):
+        """Fetch the first account and retrieve its details.
+
+        This method fetches all account numbers associated with the user,
+        selects the first account, and retrieves its details.
+
+        Returns
+        -------
+        dict or None
+            A dictionary containing account details if successful, or None if no accounts are found.
+        """
         account_numbers = await self.accounts()
         if not account_numbers:
             _LOGGER.error("No account numbers found")
@@ -458,4 +546,58 @@ class OctopusGermany:
             }
         except Exception as e:
             _LOGGER.error("Error fetching all data: %s", e)
+            return None
+
+    async def _ensure_valid_token(self):
+        """Ensure the JWT token is valid and renew it if necessary."""
+        if not self._token:
+            _LOGGER.debug("No token found, logging in to obtain a new token.")
+            await self.login()
+            return
+
+        # Decode the token to check its expiration
+        try:
+            import jwt
+
+            decoded_token = jwt.decode(self._token, options={"verify_signature": False})
+            exp_timestamp = decoded_token.get("exp")
+            if exp_timestamp:
+                from datetime import datetime
+
+                now = datetime.utcnow().timestamp()
+                if now >= exp_timestamp:
+                    _LOGGER.debug("Token has expired, logging in to renew the token.")
+                    await self.login()
+        except Exception as e:
+            _LOGGER.error("Error while checking token validity: %s", e)
+            await self.login()
+
+    async def change_device_suspension(self, device_id: str, action: str):
+        await self._ensure_valid_token()
+        query = """
+            mutation ChangeDeviceSuspension($deviceId: ID = "", $action: SmartControlAction!) {
+              updateDeviceSmartControl(input: {deviceId: $deviceId, action: $action}) {
+                id
+              }
+            }
+        """
+        variables = {"deviceId": device_id, "action": action}
+        _LOGGER.debug(
+            "Executing change_device_suspension: device_id=%s, action=%s",
+            device_id,
+            action,
+        )
+        headers = {"authorization": self._token}
+        client = GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers=headers)
+        try:
+            response = await client.execute_async(query=query, variables=variables)
+            _LOGGER.debug("Change device suspension response: %s", response)
+            if "errors" in response:
+                _LOGGER.error("API returned errors: %s", response["errors"])
+                return None
+            return (
+                response.get("data", {}).get("updateDeviceSmartControl", {}).get("id")
+            )
+        except Exception as e:
+            _LOGGER.error("Error changing device suspension: %s", e)
             return None

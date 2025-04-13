@@ -1,17 +1,25 @@
-import logging
-from datetime import timedelta, datetime
-from typing import Mapping, Any
+"""
+This module provides integration with Octopus Germany for Home Assistant.
 
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from homeassistant.util.dt import as_local
-from .const import CONF_PASSWORD, CONF_EMAIL, UPDATE_INTERVAL
+It defines the coordinator and binary sensor entities to fetch and display
+data related to electricity accounts, dispatches, and devices.
+"""
+
+import logging
+from datetime import datetime, timedelta
+from typing import Any
+from collections.abc import Mapping
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from .octopus_germany import OctopusGermany
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util.dt import as_local
+
+from .const import CONF_EMAIL, CONF_PASSWORD, UPDATE_INTERVAL
+from .octopus_germany import OctopusGermany
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -101,16 +109,16 @@ class OctopusCoordinator(DataUpdateCoordinator):
                         "validFrom": agreement.get("validFrom"),
                         "validTo": agreement.get("validTo"),
                     }
-                    for property in account_data.get("allProperties", [])
-                    for malo in property.get("electricityMalos", [])
+                    for prop in account_data.get("allProperties", [])
+                    for malo in prop.get("electricityMalos", [])
                     for agreement in malo.get("agreements", [])
                 ]
 
                 malo_number = next(
                     (
                         malo.get("maloNumber")
-                        for property in account_data.get("allProperties", [])
-                        for malo in property.get("electricityMalos", [])
+                        for prop in account_data.get("allProperties", [])
+                        for malo in prop.get("electricityMalos", [])
                     ),
                     "Unbekannt",
                 )
@@ -118,8 +126,8 @@ class OctopusCoordinator(DataUpdateCoordinator):
                 melo_number = next(
                     (
                         malo.get("meloNumber")
-                        for property in account_data.get("allProperties", [])
-                        for malo in property.get("electricityMalos", [])
+                        for prop in account_data.get("allProperties", [])
+                        for malo in prop.get("electricityMalos", [])
                     ),
                     "Unbekannt",
                 )
@@ -127,8 +135,8 @@ class OctopusCoordinator(DataUpdateCoordinator):
                 meter = next(
                     (
                         malo.get("meter")
-                        for property in account_data.get("allProperties", [])
-                        for malo in property.get("electricityMalos", [])
+                        for prop in account_data.get("allProperties", [])
+                        for malo in prop.get("electricityMalos", [])
                     ),
                     {},
                 )
@@ -182,14 +190,32 @@ class OctopusCoordinator(DataUpdateCoordinator):
 
 
 class OctopusIntelligentDispatchingBinarySensor(BinarySensorEntity):
-    def __init__(self, account, coordinator):
+    def __init__(self, account, coordinator) -> None:
+        """
+        Initialize the binary sensor for intelligent dispatching.
+
+        Parameters
+        ----------
+        account : str
+            The account identifier.
+        coordinator : OctopusCoordinator
+            The data update coordinator instance.
+        """
         self._account = account
         self._coordinator = coordinator
-        self._attr_name = f"Octopus Intelligent Dispatching {account}"
-        self._attr_unique_id = f"octopus_intelligent_dispatching_{account}"
+        self._attr_name = f"Octopus {account} Intelligent Dispatching"
+        self._attr_unique_id = f"octopus_{account}_intelligent_dispatching"
 
     @property
     def is_on(self) -> bool:
+        """
+        Determine if the binary sensor is currently active.
+
+        Returns
+        -------
+        bool
+            True if the current time falls within any planned dispatch period, False otherwise.
+        """
         data = self._coordinator.data.get(self._account, {})
         planned_dispatches = data.get("planned_dispatches", [])
         now = as_local(datetime.now())
