@@ -141,5 +141,10 @@ class OctopusSwitch(SwitchEntity):
             )
             return
         device = next((d for d in devices if d["id"] == self._device_id), None)
+        if device is None:
+            _LOGGER.warning(
+                "Device with ID %s not found in the devices list.", self._device_id
+            )
+            return
         if device:
             self._is_on = not device.get("status", {}).get("isSuspended", True)
