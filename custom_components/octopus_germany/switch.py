@@ -107,7 +107,7 @@ class OctopusSwitch(SwitchEntity):
             self._is_on = True
             self.async_write_ha_state()
             await asyncio.sleep(
-                3
+                30
             )  # Wait for 3 seconds to ensure the API updates the state
         else:
             _LOGGER.error("Failed to turn on device: device_id=%s", self._device_id)
@@ -124,7 +124,7 @@ class OctopusSwitch(SwitchEntity):
             self._is_on = False
             self.async_write_ha_state()
             await asyncio.sleep(
-                3
+                30
             )  # Wait for 3 seconds to ensure the API updates the state
         else:
             _LOGGER.error("Failed to turn off device: device_id=%s", self._device_id)
