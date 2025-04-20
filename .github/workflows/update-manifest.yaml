@@ -16,19 +16,19 @@ jobs:
           fetch-depth: 0
 
       # Version aus Tag extrahieren (ohne führendes 'v')
-      #- name: Get release version
-      #  id: release_version
-      #  run: |
-      #    VERSION=${GITHUB_REF#refs/tags/}
-      #    CLEAN_VERSION=${VERSION#v}
-      #    echo "VERSION=$CLEAN_VERSION" >> $GITHUB_ENV
-
-       # Extract release version from tag
       - name: Get release version
         id: release_version
         run: |
-          echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-          echo "Clean version: ${{ env.VERSION }}"
+          VERSION=${GITHUB_REF#refs/tags/}
+          CLEAN_VERSION=${VERSION#v}
+          echo "VERSION=$CLEAN_VERSION" >> $GITHUB_ENV
+
+       # Extract release version from tag
+      #- name: Get release version
+      #  id: release_version
+      #  run: |
+      #    echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+      #    echo "Clean version: ${{ env.VERSION }}"
 
       # Manifest.json aktualisieren
       - name: Update version in manifest
