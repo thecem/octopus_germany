@@ -1,3 +1,5 @@
+"""Config flow for Octopus Germany integration."""
+
 from homeassistant import config_entries
 import voluptuous as vol
 from .const import DOMAIN, CONF_EMAIL, CONF_PASSWORD

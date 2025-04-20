@@ -6,12 +6,14 @@ This module provides integration with the Octopus Germany API for Home Assistant
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import DOMAIN
+from .const import DOMAIN, CONF_EMAIL, CONF_PASSWORD, UPDATE_INTERVAL
 from .octopus_germany import OctopusGermany
 
 _LOGGER = logging.getLogger(__name__)
@@ -24,7 +26,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     email = entry.data["email"]
     password = entry.data["password"]
 
+    # Initialize API
     api = OctopusGermany(email, password)
+
     if not await api.login():
         return False
 
@@ -47,7 +51,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entry, data={**entry.data, "account_number": account_number}
         )
 
-    hass.data[DOMAIN][entry.entry_id] = {"api": api, "account_number": account_number}
+    # Create data update coordinator
+    coordinator = DataUpdateCoordinator(
+        hass,
+        _LOGGER,
+        name=f"{DOMAIN}_{account_number}",
+        update_method=lambda: api.fetch_all_data(account_number),
+        update_interval=timedelta(minutes=UPDATE_INTERVAL),
+    )
+
+    # Initial data refresh
+    await coordinator.async_config_entry_first_refresh()
+
+    hass.data[DOMAIN][entry.entry_id] = {
+        "api": api,
+        "account_number": account_number,
+        "coordinator": coordinator,
+    }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -57,7 +77,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, ["switch"]):
+    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN].pop(entry.entry_id)
 
     return unload_ok
