@@ -1,0 +1,32 @@
+name: Update Manifest on Release
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-manifest:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    # Extract release version from tag
+    - name: Get release version
+      id: release_version
+      run: |
+        echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+        echo "Clean version: ${{ env.VERSION }}"
+    
+    # Update manifest.json
+    - name: Update version in manifest
+      run: |
+        jq --arg ver "${{ env.VERSION }}" '.version = $ver' manifest.json > temp.json
+        mv temp.json manifest.json
+    
+    # Commit changes
+    - name: Commit updated manifest
+      run: |
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git add manifest.json
+        git commit -m "Bump version to ${{ env.VERSION }}"
+        git push
