@@ -41,11 +41,10 @@ jobs:
           git tag "v${VERSION}"
           git push origin "v${VERSION}"
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release with auto-generated notes
         if: env.EXISTS == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION }}
           name: v${{ env.VERSION }}
-          body: |
-            Automated release for version ${{ env.VERSION }}.
+          generate_release_notes: true
