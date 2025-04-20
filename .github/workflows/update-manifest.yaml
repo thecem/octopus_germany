@@ -6,27 +6,31 @@ on:
 jobs:
   update-manifest:
     runs-on: ubuntu-latest
+    permissions:  # Wichtig für Push-Berechtigung
+      contents: write
+    
     steps:
     - uses: actions/checkout@v4
     
-    # Extract release version from tag
+    # Version aus Tag extrahieren
     - name: Get release version
       id: release_version
       run: |
-        echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-        echo "Clean version: ${{ env.VERSION }}"
+        CLEAN_VERSION=${GITHUB_REF#refs/tags/}
+        echo "VERSION=${CLEAN_VERSION}" >> $GITHUB_ENV
     
-    # Update manifest.json
+    # Manifest.json aktualisieren
     - name: Update version in manifest
       run: |
+        cd custom_components/octopus_germany  # In Verzeichnis wechseln
         jq --arg ver "${{ env.VERSION }}" '.version = $ver' manifest.json > temp.json
         mv temp.json manifest.json
     
-    # Commit changes
+    # Änderungen committen
     - name: Commit updated manifest
       run: |
         git config user.name "GitHub Actions"
         git config user.email "actions@github.com"
-        git add manifest.json
+        git add custom_components/octopus_germany/manifest.json
         git commit -m "Bump version to ${{ env.VERSION }}"
         git push
