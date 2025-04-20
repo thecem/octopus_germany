@@ -1,0 +1,51 @@
+name: Tag and Release on manifest.json version change
+
+on:
+  push:
+    paths:
+      - 'custom_components/octopus_germany/manifest.json'
+
+jobs:
+  tag-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from manifest.json
+        id: get_version
+        run: |
+          VERSION=$(jq -r '.version' custom_components/octopus_germany/manifest.json)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "Tag exists"
+            echo "EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "Tag does not exist"
+            echo "EXISTS=false" >> $GITHUB_ENV
+          fi
+
+      - name: Create tag and push
+        if: env.EXISTS == 'false'
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag "v${VERSION}"
+          git push origin "v${VERSION}"
+
+      - name: Create GitHub Release
+        if: env.EXISTS == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: v${{ env.VERSION }}
+          body: |
+            Automated release for version ${{ env.VERSION }}.
