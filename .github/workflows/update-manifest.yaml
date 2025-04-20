@@ -1,37 +1,22 @@
-name: Update Manifest on Release
-on:
-  release:
-    types: [published]
+- uses: actions/checkout@v4
 
-jobs:
-  update-manifest:
-    runs-on: ubuntu-latest
-    permissions:  # Wichtig für Push-Berechtigung
-      contents: write
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    # Version aus Tag extrahieren
-    - name: Get release version
-      id: release_version
-      run: |
-        CLEAN_VERSION=${GITHUB_REF#refs/tags/}
-        echo "VERSION=${CLEAN_VERSION}" >> $GITHUB_ENV
-    
-    # Manifest.json aktualisieren
-    - name: Update version in manifest
-      run: |
-        cd custom_components/octopus_germany  # In Verzeichnis wechseln
-        jq --arg ver "${{ env.VERSION }}" '.version = $ver' manifest.json > temp.json
-        mv temp.json manifest.json
-    
-    # Änderungen committen
-    - name: Commit updated manifest
-      run: |
-        git config user.name "GitHub Actions"
-        git config user.email "actions@github.com"
-        git add custom_components/octopus_germany/manifest.json
-        git commit -m "Bump version to ${{ env.VERSION }}"
-        git push origin HEAD:main
+- name: Get release version without v
+  id: release_version
+  run: |
+    VERSION=${GITHUB_REF#refs/tags/}
+    CLEAN_VERSION=${VERSION#v}
+    echo "VERSION=$CLEAN_VERSION" >> $GITHUB_ENV
 
+- name: Update version in manifest
+  run: |
+    cd custom_components/octopus_germany
+    jq --arg ver "${{ env.VERSION }}" '.version = $ver' manifest.json > temp.json
+    mv temp.json manifest.json
+
+- name: Commit updated manifest
+  run: |
+    git config user.name "GitHub Actions"
+    git config user.email "actions@github.com"
+    git add custom_components/octopus_germany/manifest.json
+    git commit -m "Bump version to ${{ env.VERSION }}"
+    git push origin HEAD:main  # oder dein Ziel-Branch
