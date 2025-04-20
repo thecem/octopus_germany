@@ -43,4 +43,20 @@ jobs:
           git config --global user.email "actions@github.com"
           git add custom_components/octopus_germany/manifest.json
           git commit -m "Bump version to ${{ env.VERSION }}"
+      - name: Commit changes
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add custom_components/octopus_germany/manifest.json
+          git commit -m "Bump version to ${{ env.VERSION }}"
+
+      # Schritt 1: Commit auf den Release-Tag pushen (Tag verschieben)
+      - name: Force-push to release tag
+        run: |
+          git tag -f ${{ github.ref_name }}
+          git push origin ${{ github.ref_name }} --force
+
+      # Schritt 2: Commit auch auf main pushen
+      - name: Push to main branch
+        run: |
           git push origin HEAD:main
