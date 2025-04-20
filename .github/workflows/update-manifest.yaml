@@ -9,46 +9,46 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      tags: write  # Wichtig für Tag-Update
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # Version aus Tag extrahieren (ohne führendes 'v')
       - name: Get release version
         id: release_version
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
           CLEAN_VERSION=${VERSION#v}
           echo "VERSION=$CLEAN_VERSION" >> $GITHUB_ENV
+          echo "TAG_NAME=$VERSION" >> $GITHUB_ENV  # Originaler Tag-Name mit 'v'
 
-       # Extract release version from tag
-      #- name: Get release version
-      #  id: release_version
-      #  run: |
-      #    echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
-      #    echo "Clean version: ${{ env.VERSION }}"
-
-      # Manifest.json aktualisieren
       - name: Update version in manifest
         run: |
           cd custom_components/octopus_germany
           jq --arg ver "${{ env.VERSION }}" '.version = $ver' manifest.json > temp.json
           mv temp.json manifest.json
 
-      - name: Commit updated manifest
+      - name: Commit and tag update
         run: |
-          git checkout main  # Explizit zum main-Branch wechseln
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          
-          if git diff --exit-code --quiet custom_components/octopus_germany/manifest.json; then
-            echo "✅ manifest.json bereits auf Version ${{ env.VERSION}}"
-          else
+          # Zur Sicherheit in main wechseln
+          git checkout main
+
+          # Nur committen wenn Änderungen vorhanden
+          if ! git diff --quiet -- custom_components/octopus_germany/manifest.json; then
+            git config user.name "GitHub Actions"
+            git config user.email "actions@github.com"
             git add custom_components/octopus_germany/manifest.json
             git commit -m "Bump version to ${{ env.VERSION }}"
+            
+            # Neuen Commit erstellen und pushen
             git push origin main
-            echo "🚀 Neue Version ${{ env.VERSION}} gepusht"
+            
+            # Tag auf neuen Commit verschieben
+            git tag -f ${{ env.TAG_NAME }}
+            git push origin ${{ env.TAG_NAME }} --force
+            echo "✅ Version ${{ env.VERSION}} in main UND Release-Tag aktualisiert"
+          else
+            echo "⚠️ Keine Änderungen in manifest.json"
           fi
-
