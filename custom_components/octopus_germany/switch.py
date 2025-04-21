@@ -27,14 +27,24 @@ async def async_setup_entry(
     account_number = data["account_number"]
     coordinator = data["coordinator"]
 
-    # Warten auf die ersten Daten vom Coordinator
+    # Wait for initial data from coordinator
     await coordinator.async_config_entry_first_refresh()
 
-    # Geräte aus den Coordinator-Daten abrufen
+    # Retrieve devices from coordinator data
+    if not coordinator.data or "devices" not in coordinator.data:
+        _LOGGER.error("No devices found in coordinator data")
+        return
+
     devices = coordinator.data.get("devices", [])
+    if not devices:
+        _LOGGER.info("No devices found for account %s", account_number)
+        return
 
     switches = []
     for device in devices:
+        if "id" not in device:
+            _LOGGER.warning("Device missing ID field: %s", device)
+            continue
         switches.append(OctopusSwitch(api, device, coordinator, config_entry))
 
     async_add_entities(switches, update_before_add=False)
@@ -52,7 +62,7 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
         self._device_id = device["id"]
         self._last_update = None
 
-        # Füge ein Flag hinzu, um zu verfolgen, ob die Umschaltung noch läuft
+        # Add flag to track if switching is in progress
         self._is_switching = False
         self._pending_state = None
         self._pending_until = None
@@ -71,11 +81,11 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def is_on(self) -> bool:
         """Return the current state of the switch."""
-        # Wenn ein Umschaltvorgang aktiv ist, gib den ausstehenden Zustand zurück
+        # If a switching operation is active, return the pending state
         if self._is_switching and self._pending_state is not None:
-            # Überprüfe, ob das Timeout überschritten wurde
+            # Check if timeout has been exceeded
             if self._pending_until and datetime.now() > self._pending_until:
-                # Timeout wurde überschritten, zurück zum API-Status
+                # Timeout exceeded, revert to API status
                 self._is_switching = False
                 self._pending_state = None
                 self._pending_until = None
@@ -84,10 +94,10 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
                     self._device_id,
                 )
             else:
-                # Timeout noch nicht überschritten, gib den ausstehenden Zustand zurück
+                # Timeout not exceeded, return pending state
                 return self._pending_state
 
-        # Verwende den API-Zustand, wenn kein Umschaltvorgang aktiv ist
+        # Use API state if no switching operation is active
         device = self._get_device()
         if device:
             return not device.get("status", {}).get("isSuspended", True)
@@ -101,26 +111,37 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
             "UNSUSPEND",
         )
 
-        # Setze den ausstehenden Zustand sofort
+        # Set pending state immediately
         self._is_switching = True
         self._pending_state = True
-        self._pending_until = datetime.now() + timedelta(minutes=5)  # 5 Minuten Timeout
+        self._pending_until = datetime.now() + timedelta(minutes=5)  # 5 minute timeout
         self.async_write_ha_state()
 
-        # Sende die API-Anfrage
-        success = await self._api.change_device_suspension(self._device_id, "UNSUSPEND")
-        if success:
-            _LOGGER.debug(
-                "Successfully turned on device: device_id=%s", self._device_id
+        # Send API request with retry logic
+        try:
+            # Send the API request
+            success = await self._api.change_device_suspension(
+                self._device_id, "UNSUSPEND"
             )
-            # Wir behalten den ausstehenden Zustand bei, bis die API bestätigt
+            if success:
+                _LOGGER.debug(
+                    "Successfully turned on device: device_id=%s", self._device_id
+                )
+                # We maintain pending state until API confirms
 
-            # Trigger a coordinator refresh after a delay to get updated data
-            await asyncio.sleep(3)  # Warte 3 Sekunden, damit die API Zeit hat
-            await self.coordinator.async_request_refresh()
-        else:
-            _LOGGER.error("Failed to turn on device: device_id=%s", self._device_id)
-            # Bei Fehler: Zurücksetzen des ausstehenden Zustands
+                # Trigger a coordinator refresh after a delay to get updated data
+                await asyncio.sleep(3)  # Wait 3 seconds to give API time
+                await self.coordinator.async_request_refresh()
+            else:
+                _LOGGER.error("Failed to turn on device: device_id=%s", self._device_id)
+                # On failure: Reset pending state
+                self._is_switching = False
+                self._pending_state = None
+                self._pending_until = None
+                self.async_write_ha_state()
+        except Exception as ex:
+            _LOGGER.exception("Error turning on device %s: %s", self._device_id, ex)
+            # On exception: Reset pending state
             self._is_switching = False
             self._pending_state = None
             self._pending_until = None
@@ -134,26 +155,38 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
             "SUSPEND",
         )
 
-        # Setze den ausstehenden Zustand sofort
+        # Set pending state immediately
         self._is_switching = True
         self._pending_state = False
-        self._pending_until = datetime.now() + timedelta(minutes=5)  # 5 Minuten Timeout
+        self._pending_until = datetime.now() + timedelta(minutes=5)  # 5 minute timeout
         self.async_write_ha_state()
 
-        # Sende die API-Anfrage
-        success = await self._api.change_device_suspension(self._device_id, "SUSPEND")
-        if success:
-            _LOGGER.debug(
-                "Successfully turned off device: device_id=%s", self._device_id
+        try:
+            # Send the API request
+            success = await self._api.change_device_suspension(
+                self._device_id, "SUSPEND"
             )
-            # Wir behalten den ausstehenden Zustand bei, bis die API bestätigt
+            if success:
+                _LOGGER.debug(
+                    "Successfully turned off device: device_id=%s", self._device_id
+                )
+                # We maintain pending state until API confirms
 
-            # Trigger a coordinator refresh after a delay to get updated data
-            await asyncio.sleep(3)  # Warte 3 Sekunden, damit die API Zeit hat
-            await self.coordinator.async_request_refresh()
-        else:
-            _LOGGER.error("Failed to turn off device: device_id=%s", self._device_id)
-            # Bei Fehler: Zurücksetzen des ausstehenden Zustands
+                # Trigger a coordinator refresh after a delay to get updated data
+                await asyncio.sleep(3)  # Wait 3 seconds to give API time
+                await self.coordinator.async_request_refresh()
+            else:
+                _LOGGER.error(
+                    "Failed to turn off device: device_id=%s", self._device_id
+                )
+                # On failure: Reset pending state
+                self._is_switching = False
+                self._pending_state = None
+                self._pending_until = None
+                self.async_write_ha_state()
+        except Exception as ex:
+            _LOGGER.exception("Error turning off device %s: %s", self._device_id, ex)
+            # On exception: Reset pending state
             self._is_switching = False
             self._pending_state = None
             self._pending_until = None
@@ -161,21 +194,25 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
 
     def _get_device(self):
         """Get the device data from the coordinator data."""
-        if not self.coordinator.data:
+        if not self.coordinator or not self.coordinator.data:
             return None
 
         devices = self.coordinator.data.get("devices", [])
+        if devices is None:
+            _LOGGER.debug("Devices list is None for device_id=%s", self._device_id)
+            return None
+
         device = next((d for d in devices if d["id"] == self._device_id), None)
 
-        # Wenn wir ein Gerät haben und der Umschaltvorgang noch läuft
+        # If we have a device and switching operation is still in progress
         if device and self._is_switching:
             status = device.get("status", {})
             is_suspended = status.get("isSuspended", True)
             actual_state = not is_suspended
 
-            # Überprüfe, ob der API-Zustand mit dem ausstehenden Zustand übereinstimmt
+            # Check if API state matches pending state
             if actual_state == self._pending_state:
-                # API hat den Zustandswechsel bestätigt, setze Umschaltvorgang zurück
+                # API has confirmed state change, reset switching operation
                 self._is_switching = False
                 self._pending_state = None
                 self._pending_until = None
