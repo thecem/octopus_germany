@@ -7,283 +7,227 @@ data related to electricity accounts, dispatches, and devices.
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Dict
 from collections.abc import Mapping
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.binary_sensor import (
+    BinarySensorEntity,
+    BinarySensorDeviceClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.dt import as_local
 
-from .const import CONF_EMAIL, CONF_PASSWORD, UPDATE_INTERVAL
+from .const import DOMAIN, UPDATE_INTERVAL
 from .octopus_germany import OctopusGermany
 
 _LOGGER = logging.getLogger(__name__)
-
-DOMAIN_NAME = "Octopus"
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    email = entry.data[CONF_EMAIL]
-    password = entry.data[CONF_PASSWORD]
+    """Set up Octopus Germany from a config entry."""
+    # Using existing coordinator from hass.data[DOMAIN] to avoid duplicate API calls
+    data = hass.data[DOMAIN][entry.entry_id]
+    coordinator = data["coordinator"]
+    account_number = data["account_number"]
 
-    coordinator = OctopusCoordinator(hass, email, password)
-    await coordinator.async_config_entry_first_refresh()
+    # Wait for coordinator refresh if needed
+    if not coordinator.data:
+        _LOGGER.debug("No data in coordinator, triggering refresh")
+        await coordinator.async_refresh()
 
-    sensors = [
-        OctopusIntelligentDispatchingBinarySensor(account, coordinator)
-        for account in coordinator.data.keys()
-    ]
+    sensors = [OctopusIntelligentDispatchingBinarySensor(account_number, coordinator)]
+
+    # Add any additional sensors you might want here
 
     async_add_entities(sensors)
 
 
-class OctopusCoordinator(DataUpdateCoordinator):
-    def __init__(self, hass: HomeAssistant, email: str, password: str):
-        super().__init__(
-            hass=hass,
-            logger=_LOGGER,
-            name="Octopus Germany",
-            update_interval=timedelta(minutes=UPDATE_INTERVAL),
-        )
-        self._api = OctopusGermany(email, password)
-        self._data = {}
+class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Binary sensor for Octopus Intelligent Dispatching."""
 
-    async def _async_update_data(self):
-        if await self._api.login():
-            self._data = {}
-            accounts = await self._api.fetch_accounts()
-            if accounts is None:
-                _LOGGER.error("Failed to fetch accounts: response is None")
-                raise ConfigEntryNotReady("Failed to fetch accounts: response is None")
+    def __init__(self, account_number, coordinator) -> None:
+        """Initialize the binary sensor for intelligent dispatching."""
+        super().__init__(coordinator)
 
-            for account in accounts:
-                account_number = account.get("number")
-                if not account_number:
-                    _LOGGER.error("Account number is missing in the response")
-                    continue
-
-                fetched_data = await self._api.fetch_all_data(account_number)
-                account_data = fetched_data.get("account", {})
-                planned_dispatches = fetched_data.get("plannedDispatches", [])
-                completed_dispatches = fetched_data.get("completedDispatches", [])
-                devices = fetched_data.get("devices", [])
-
-                ledgers = account_data.get("ledgers", [])
-                electricity_balance_cents = next(
-                    (
-                        ledger.get("balance", 0)
-                        for ledger in ledgers
-                        if ledger.get("ledgerType") == "ELECTRICITY_LEDGER"
-                    ),
-                    0,
-                )
-                electricity_balance_eur = electricity_balance_cents / 100
-
-                current_dispatch = planned_dispatches[0] if planned_dispatches else {}
-                next_dispatch = (
-                    planned_dispatches[1] if len(planned_dispatches) > 1 else {}
-                )
-
-                products = [
-                    {
-                        "code": agreement["product"]["code"],
-                        "description": agreement["product"]["description"],
-                        "name": agreement["product"]["fullName"],
-                        "grossRate": agreement.get("unitRateInformation", {}).get(
-                            "latestGrossUnitRateCentsPerKwh", "0"
-                        ),
-                        "type": (
-                            "Simple"
-                            if agreement.get("unitRateInformation", {}).get(
-                                "__typename"
-                            )
-                            == "SimpleProductUnitRateInformation"
-                            else "TimeOfUse"
-                        ),
-                        "validFrom": agreement.get("validFrom"),
-                        "validTo": agreement.get("validTo"),
-                    }
-                    for prop in account_data.get("allProperties", [])
-                    for malo in prop.get("electricityMalos", [])
-                    for agreement in malo.get("agreements", [])
-                ]
-
-                malo_number = next(
-                    (
-                        malo.get("maloNumber")
-                        for prop in account_data.get("allProperties", [])
-                        for malo in prop.get("electricityMalos", [])
-                    ),
-                    "Unbekannt",
-                )
-
-                melo_number = next(
-                    (
-                        malo.get("meloNumber")
-                        for prop in account_data.get("allProperties", [])
-                        for malo in prop.get("electricityMalos", [])
-                    ),
-                    "Unbekannt",
-                )
-
-                meter = next(
-                    (
-                        malo.get("meter")
-                        for prop in account_data.get("allProperties", [])
-                        for malo in prop.get("electricityMalos", [])
-                    ),
-                    {},
-                )
-
-                self._data[account_number] = {
-                    "account_number": account_number,
-                    "electricity_balance": electricity_balance_eur,
-                    "planned_dispatches": planned_dispatches,
-                    "completed_dispatches": completed_dispatches,
-                    "property_ids": [
-                        prop.get("id") for prop in account_data.get("allProperties", [])
-                    ],
-                    "devices": devices,
-                    "products": products,
-                    "vehicle_battery_size_in_kwh": next(
-                        (
-                            float(device["vehicleVariant"]["batterySize"])
-                            for device in devices
-                            if device.get("vehicleVariant")
-                        ),
-                        None,
-                    ),
-                    "current_start": as_local(
-                        datetime.fromisoformat(current_dispatch.get("start"))
-                    )
-                    if current_dispatch
-                    else None,
-                    "current_end": as_local(
-                        datetime.fromisoformat(current_dispatch.get("end"))
-                    )
-                    if current_dispatch
-                    else None,
-                    "next_start": as_local(
-                        datetime.fromisoformat(next_dispatch.get("start"))
-                    )
-                    if next_dispatch
-                    else None,
-                    "next_end": as_local(
-                        datetime.fromisoformat(next_dispatch.get("end"))
-                    )
-                    if next_dispatch
-                    else None,
-                    "ledgers": ledgers,
-                    "malo_number": malo_number,
-                    "melo_number": melo_number,
-                    "meter": meter,
-                }
-                _LOGGER.debug(f"Coordinator data: {self._data}")
-
-        return self._data
-
-
-class OctopusIntelligentDispatchingBinarySensor(BinarySensorEntity):
-    def __init__(self, account, coordinator) -> None:
-        """
-        Initialize the binary sensor for intelligent dispatching.
-
-        Parameters
-        ----------
-        account : str
-            The account identifier.
-        coordinator : OctopusCoordinator
-            The data update coordinator instance.
-        """
-        self._account = account
-        self._coordinator = coordinator
-        self._attr_name = f"Octopus {account} Intelligent Dispatching"
-        self._attr_unique_id = f"octopus_{account}_intelligent_dispatching"
+        self._account_number = account_number
+        self._attr_name = f"Octopus {account_number} Intelligent Dispatching"
+        self._attr_unique_id = f"octopus_{account_number}_intelligent_dispatching"
+        self._attr_device_class = BinarySensorDeviceClass.PLUG
+        self._attr_has_entity_name = False
+        self._attributes = {}
 
     @property
     def is_on(self) -> bool:
-        """
-        Determine if the binary sensor is currently active.
+        """Determine if the binary sensor is currently active."""
+        if (
+            not self.coordinator.data
+            or self._account_number not in self.coordinator.data
+        ):
+            return False
 
-        Returns
-        -------
-        bool
-            True if the current time falls within any planned dispatch period, False otherwise.
-        """
-        data = self._coordinator.data.get(self._account, {})
-        planned_dispatches = data.get("planned_dispatches", [])
-        now = as_local(datetime.now())
+        account_data = self.coordinator.data[self._account_number]
+        planned_dispatches = account_data.get("planned_dispatches", [])
+        now = datetime.now()
 
         for dispatch in planned_dispatches:
-            start = as_local(datetime.fromisoformat(dispatch.get("start")))
-            end = as_local(datetime.fromisoformat(dispatch.get("end")))
-            if start <= now <= end:
-                return True
+            try:
+                start = datetime.fromisoformat(dispatch.get("start"))
+                end = datetime.fromisoformat(dispatch.get("end"))
+                if start <= now <= end:
+                    return True
+            except (ValueError, TypeError):
+                continue
         return False
 
-    @property
-    def extra_state_attributes(self) -> Mapping[str, Any]:
-        data = self._coordinator.data.get(self._account, {})
-        meter_data = data.get("meter", {}).copy()
-        meter_data.pop("submitMeterReadingUrl", None)
-        devices = data.get("devices", [])
-        planned_dispatches = data.get("planned_dispatches", [])
-        completed_dispatches = data.get("completed_dispatches", [])
-        first_dispatch = planned_dispatches[0] if planned_dispatches else {}
-        current_state = (
-            devices[0].get("status", {}).get("currentState", "Unbekannt")
-            if devices
-            else "Unbekannt"
-        )
-        return {
-            "account_number": data.get("account_number"),
-            "electricity_balance": f"{data.get('electricity_balance', 0):.2f} €",
-            "planned_dispatches": [
-                {
-                    "start": as_local(datetime.fromisoformat(dispatch.get("start"))),
-                    "end": as_local(datetime.fromisoformat(dispatch.get("end"))),
-                    "charge_in_kwh": float(dispatch.get("deltaKwh", 0)),
-                    "source": dispatch.get("meta", {}).get("source"),
-                    "location": dispatch.get("meta", {}).get("location"),
-                }
-                for dispatch in planned_dispatches
-            ],
-            "completed_dispatches": [
-                {
-                    "start": as_local(datetime.fromisoformat(dispatch.get("start"))),
-                    "end": as_local(datetime.fromisoformat(dispatch.get("end"))),
-                    "charge_in_kwh": float(dispatch.get("deltaKwh", 0)),
-                    "source": dispatch.get("meta", {}).get("source"),
-                    "location": dispatch.get("meta", {}).get("location"),
-                }
-                for dispatch in completed_dispatches
-            ],
-            "provider": devices[0].get("provider", "Unbekannt")
-            if devices
-            else "Unbekannt",
-            "vehicle_battery_size_in_kwh": data.get(
-                "vehicle_battery_size_in_kwh", "Unbekannt"
-            ),
-            "charge_point_power_in_kw": data.get(
-                "charge_point_power_in_kw", "Unbekannt"
-            ),
-            "current_start": data.get("current_start", "Unbekannt"),
-            "current_end": data.get("current_end", "Unbekannt"),
-            "next_start": data.get("next_start", "Unbekannt"),
-            "next_end": data.get("next_end", "Unbekannt"),
-            "devices": data.get("devices", []),
-            "products": data.get("products", []),
-            "malo_number": data.get("malo_number", "Unbekannt"),
-            "melo_number": data.get("melo_number", "Unbekannt"),
-            "meter": meter_data,
+    def _update_attributes(self) -> None:
+        """Update the internal attributes dictionary."""
+        if (
+            not self.coordinator.data
+            or self._account_number not in self.coordinator.data
+        ):
+            _LOGGER.debug("No data available for account %s", self._account_number)
+            self._attributes = {
+                "account_number": self._account_number,
+                "electricity_balance": "0.00 €",
+                "planned_dispatches": [],
+                "completed_dispatches": [],
+                "provider": "Unknown",
+                "vehicle_battery_size_in_kwh": "Unknown",
+                "current_start": "Unknown",
+                "current_end": "Unknown",
+                "devices": [],
+                "products": [],
+                "malo_number": "Unknown",
+                "melo_number": "Unknown",
+                "meter": {},
+                "current_state": "Unknown",
+            }
+            return
+
+        # Process data from the coordinator
+        account_data = self.coordinator.data[self._account_number]
+
+        # Extract all required data
+        electricity_balance = account_data.get("electricity_balance", 0)
+        planned_dispatches = account_data.get("planned_dispatches", [])
+        completed_dispatches = account_data.get("completed_dispatches", [])
+        devices = account_data.get("devices", [])
+        products = account_data.get("products", [])
+        vehicle_battery_size = account_data.get("vehicle_battery_size_in_kwh")
+        current_start = account_data.get("current_start")
+        current_end = account_data.get("current_end")
+        malo_number = account_data.get("malo_number", "Unknown")
+        melo_number = account_data.get("melo_number", "Unknown")
+        meter = account_data.get("meter", {})
+
+        # Get current state from devices if available
+        current_state = "Unknown"
+        provider = "Unknown"
+        if devices:
+            current_state = (
+                devices[0].get("status", {}).get("currentState", "Unknown")
+                if devices
+                else "Unknown"
+            )
+            provider = devices[0].get("provider", "Unknown") if devices else "Unknown"
+
+        # Format dispatches for display
+        formatted_planned_dispatches = []
+        for dispatch in planned_dispatches:
+            try:
+                start = datetime.fromisoformat(dispatch.get("start"))
+                end = datetime.fromisoformat(dispatch.get("end"))
+                formatted_planned_dispatches.append(
+                    {
+                        "start": as_local(start).strftime("%Y-%m-%d %H:%M:%S"),
+                        "end": as_local(end).strftime("%Y-%m-%d %H:%M:%S"),
+                        "charge_in_kwh": float(dispatch.get("deltaKwh", 0)),
+                        "source": dispatch.get("meta", {}).get("source", "Unknown"),
+                        "location": dispatch.get("meta", {}).get("location", "Unknown"),
+                    }
+                )
+            except (ValueError, TypeError) as e:
+                _LOGGER.error("Error formatting dispatch: %s - %s", dispatch, e)
+
+        formatted_completed_dispatches = []
+        for dispatch in completed_dispatches:
+            try:
+                start = datetime.fromisoformat(dispatch.get("start"))
+                end = datetime.fromisoformat(dispatch.get("end"))
+                formatted_completed_dispatches.append(
+                    {
+                        "start": as_local(start).strftime("%Y-%m-%d %H:%M:%S"),
+                        "end": as_local(end).strftime("%Y-%m-%d %H:%M:%S"),
+                        "charge_in_kwh": float(dispatch.get("deltaKwh", 0)),
+                        "source": dispatch.get("meta", {}).get("source", "Unknown"),
+                        "location": dispatch.get("meta", {}).get("location", "Unknown"),
+                    }
+                )
+            except (ValueError, TypeError) as e:
+                _LOGGER.error("Error formatting dispatch: %s - %s", dispatch, e)
+
+        # Format current_start and current_end if available
+        formatted_current_start = "Unknown"
+        if current_start:
+            try:
+                formatted_current_start = as_local(current_start).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+            except (ValueError, TypeError, AttributeError) as e:
+                _LOGGER.error(
+                    "Error formatting current_start: %s - %s", current_start, e
+                )
+
+        formatted_current_end = "Unknown"
+        if current_end:
+            try:
+                formatted_current_end = as_local(current_end).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+            except (ValueError, TypeError, AttributeError) as e:
+                _LOGGER.error("Error formatting current_end: %s - %s", current_end, e)
+
+        # Build and update attributes
+        self._attributes = {
+            "account_number": self._account_number,
+            "electricity_balance": f"{electricity_balance:.2f} €",
+            "planned_dispatches": formatted_planned_dispatches,
+            "completed_dispatches": formatted_completed_dispatches,
+            "provider": provider,
+            "vehicle_battery_size_in_kwh": vehicle_battery_size
+            if vehicle_battery_size is not None
+            else "Unknown",
+            "current_start": formatted_current_start,
+            "current_end": formatted_current_end,
+            "devices": devices,
+            "products": products,
+            "malo_number": malo_number,
+            "melo_number": melo_number,
+            "meter": meter or {},
             "current_state": current_state,
         }
 
-    async def async_update(self):
-        await self._coordinator.async_request_refresh()
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return additional state attributes for the binary sensor."""
+        self._update_attributes()
+        return self._attributes
+
+    async def async_update(self) -> None:
+        """Update the entity."""
+        await super().async_update()
+        self._update_attributes()
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return (
+            self.coordinator.last_update_success
+            and self._account_number in self.coordinator.data
+        )
