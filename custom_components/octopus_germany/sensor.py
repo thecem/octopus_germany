@@ -49,7 +49,7 @@ class OctopusCoordinator(DataUpdateCoordinator):
             hass=hass,
             logger=_LOGGER,
             name="Octopus Germany",
-            update_interval=timedelta(hours=UPDATE_INTERVAL),
+            update_interval=timedelta(minutes=UPDATE_INTERVAL),
         )
         self._api = OctopusGermany(email, password)
         self._data = {}
