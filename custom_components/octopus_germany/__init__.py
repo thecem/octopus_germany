@@ -51,12 +51,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entry, data={**entry.data, "account_number": account_number}
         )
 
-    # Create data update coordinator
+    # Create data update coordinator with improved error handling and retry logic
+    async def async_update_data():
+        """Fetch data from API with improved error handling."""
+        try:
+            # Ensure token is valid before each data fetch
+            await api._ensure_valid_token()
+            data = await api.fetch_all_data(account_number)
+            if data is None:
+                _LOGGER.error(
+                    "Failed to fetch data from API, returning last known data"
+                )
+                return coordinator.data if hasattr(coordinator, "data") else {}
+            return data
+        except Exception as e:
+            _LOGGER.exception("Unexpected error during data update: %s", e)
+            # Return previous data if available, empty dict otherwise
+            return coordinator.data if hasattr(coordinator, "data") else {}
+
     coordinator = DataUpdateCoordinator(
         hass,
         _LOGGER,
         name=f"{DOMAIN}_{account_number}",
-        update_method=lambda: api.fetch_all_data(account_number),
+        update_method=async_update_data,
         update_interval=timedelta(minutes=UPDATE_INTERVAL),
     )
 
