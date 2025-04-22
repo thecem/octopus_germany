@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
 
         # Set up callback for coordinator updates
         self.coordinator.async_add_listener(self._handle_coordinator_update)
-        self._force_update_time = datetime.now() + timedelta(minutes=3)
+        self._force_update_time = datetime.now() + timedelta(minutes=UPDATE_INTERVAL)
         _LOGGER.debug(
             "Switch created: %s with next update at %s",
             self._attr_name,
@@ -115,7 +115,7 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
                     device.get("status", {}).get("isSuspended", True),
                 )
 
-        self._next_update = datetime.now() + timedelta(minutes=3)
+        self._next_update = datetime.now() + timedelta(minutes=UPDATE_INTERVAL)
         _LOGGER.debug("Next update scheduled for %s", self._next_update)
         self.async_write_ha_state()
 
@@ -278,7 +278,7 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
         now = datetime.now()
         if self._force_update_time and now > self._force_update_time:
             _LOGGER.debug("Forcing update for switch %s", self._attr_name)
-            self._force_update_time = now + timedelta(minutes=3)
+            self._force_update_time = now + timedelta(minutes=UPDATE_INTERVAL)
             await self.coordinator.async_request_refresh()
 
         # Reset next update time to ensure we handle the next update
