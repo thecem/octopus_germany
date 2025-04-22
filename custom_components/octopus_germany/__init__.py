@@ -6,7 +6,7 @@ This module provides integration with the Octopus Germany API for Home Assistant
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -54,18 +54,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Create data update coordinator with improved error handling and retry logic
     async def async_update_data():
         """Fetch data from API with improved error handling."""
+        current_time = datetime.now()
+        # Add stack trace to debug log to see who's calling the update
+        import traceback
+        stack_trace = ''.join(traceback.format_stack())
+        _LOGGER.debug(
+            "Coordinator update called at %s (Update interval: %s minutes)\nCalled from:\n%s",
+            current_time.strftime("%H:%M:%S"),
+            UPDATE_INTERVAL,
+            stack_trace
+        )
+        
         try:
             # Ensure token is valid before each data fetch
             if not await api.ensure_token():
                 _LOGGER.error("Failed to ensure valid token, returning last known data")
                 return coordinator.data if hasattr(coordinator, "data") else {}
-
+                
+            _LOGGER.debug("Fetching data from API at %s", current_time.strftime("%H:%M:%S"))
             data = await api.fetch_all_data(account_number)
             if data is None:
-                _LOGGER.error(
-                    "Failed to fetch data from API, returning last known data"
-                )
+                _LOGGER.error("Failed to fetch data from API, returning last known data")
                 return coordinator.data if hasattr(coordinator, "data") else {}
+            _LOGGER.debug("Successfully fetched data from API at %s", datetime.now().strftime("%H:%M:%S"))
             return data
         except Exception as e:
             _LOGGER.exception("Unexpected error during data update: %s", e)
