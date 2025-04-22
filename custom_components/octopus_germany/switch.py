@@ -61,6 +61,7 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
         self._config_entry = config_entry
         self._device_id = device["id"]
         self._last_update = None
+        self._next_update = None
 
         # Add flag to track if switching is in progress
         self._is_switching = False
@@ -77,6 +78,46 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
             "name": self._attr_name,
             "device": self._device.get("name", "Unknown"),
         }
+
+        # Set up callback for coordinator updates
+        self.coordinator.async_add_listener(self._handle_coordinator_update)
+        self._force_update_time = datetime.now() + timedelta(minutes=3)
+        _LOGGER.debug(
+            "Switch created: %s with next update at %s",
+            self._attr_name,
+            self._force_update_time,
+        )
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        _LOGGER.debug("Coordinator updated for switch %s", self._attr_name)
+        now = datetime.now()
+
+        if self._next_update and now < self._next_update:
+            _LOGGER.debug("Skipping update, next update at %s", self._next_update)
+            return
+
+        # Update cached data
+        if "devices" in self.coordinator.data:
+            device = next(
+                (
+                    d
+                    for d in self.coordinator.data["devices"]
+                    if d["id"] == self._device_id
+                ),
+                None,
+            )
+            if device:
+                self._device = device
+                _LOGGER.debug(
+                    "Device status updated: %s, isSuspended=%s",
+                    self._device_id,
+                    device.get("status", {}).get("isSuspended", True),
+                )
+
+        self._next_update = datetime.now() + timedelta(minutes=3)
+        _LOGGER.debug("Next update scheduled for %s", self._next_update)
+        self.async_write_ha_state()
 
     @property
     def is_on(self) -> bool:
@@ -132,6 +173,10 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
                 # Trigger a coordinator refresh after a delay to get updated data
                 await asyncio.sleep(3)  # Wait 3 seconds to give API time
                 await self.coordinator.async_request_refresh()
+
+                # Force our state update
+                self._next_update = None
+                self._handle_coordinator_update()
             else:
                 _LOGGER.error("Failed to turn on device: device_id=%s", self._device_id)
                 # On failure: Reset pending state
@@ -175,6 +220,10 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
                 # Trigger a coordinator refresh after a delay to get updated data
                 await asyncio.sleep(3)  # Wait 3 seconds to give API time
                 await self.coordinator.async_request_refresh()
+
+                # Force our state update
+                self._next_update = None
+                self._handle_coordinator_update()
             else:
                 _LOGGER.error(
                     "Failed to turn off device: device_id=%s", self._device_id
@@ -223,3 +272,14 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
                 )
 
         return device
+
+    async def async_update(self) -> None:
+        """Request refresh if update interval has passed."""
+        now = datetime.now()
+        if self._force_update_time and now > self._force_update_time:
+            _LOGGER.debug("Forcing update for switch %s", self._attr_name)
+            self._force_update_time = now + timedelta(minutes=3)
+            await self.coordinator.async_request_refresh()
+
+        # Reset next update time to ensure we handle the next update
+        self._next_update = None
