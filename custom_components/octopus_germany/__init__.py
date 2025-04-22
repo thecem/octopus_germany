@@ -56,7 +56,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """Fetch data from API with improved error handling."""
         try:
             # Ensure token is valid before each data fetch
-            await api._ensure_valid_token()
+            if not await api.ensure_token():
+                _LOGGER.error("Failed to ensure valid token, returning last known data")
+                return coordinator.data if hasattr(coordinator, "data") else {}
+
             data = await api.fetch_all_data(account_number)
             if data is None:
                 _LOGGER.error(
