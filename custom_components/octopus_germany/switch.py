@@ -97,23 +97,48 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
             _LOGGER.debug("Skipping update, next update at %s", self._next_update)
             return
 
-        # Update cached data
-        if "devices" in self.coordinator.data:
-            device = next(
-                (
-                    d
-                    for d in self.coordinator.data["devices"]
-                    if d["id"] == self._device_id
-                ),
-                None,
+        # Check if coordinator data is valid
+        if not self.coordinator.data:
+            _LOGGER.error("Coordinator data is None for switch %s", self._attr_name)
+            return
+
+        # Check if devices exists in coordinator data
+        if "devices" not in self.coordinator.data:
+            _LOGGER.error(
+                "No devices in coordinator data for switch %s", self._attr_name
             )
-            if device:
-                self._device = device
-                _LOGGER.debug(
-                    "Device status updated: %s, isSuspended=%s",
-                    self._device_id,
-                    device.get("status", {}).get("isSuspended", True),
-                )
+            return
+
+        # Check if devices is not None
+        devices = self.coordinator.data.get("devices")
+        if devices is None:
+            _LOGGER.error(
+                "Devices list is None for switch %s - possible token timeout",
+                self._attr_name,
+            )
+            # Request API token refresh on next update
+            self._next_update = datetime.now() + timedelta(
+                minutes=1
+            )  # Try sooner than regular interval
+            self.async_write_ha_state()
+            return
+
+        # Update cached data
+        device = next(
+            (d for d in devices if d["id"] == self._device_id),
+            None,
+        )
+        if device:
+            self._device = device
+            _LOGGER.debug(
+                "Device status updated: %s, isSuspended=%s",
+                self._device_id,
+                device.get("status", {}).get("isSuspended", True),
+            )
+        else:
+            _LOGGER.warning(
+                "Device with ID %s not found in devices list", self._device_id
+            )
 
         self._next_update = datetime.now() + timedelta(minutes=UPDATE_INTERVAL)
         _LOGGER.debug("Next update scheduled for %s", self._next_update)
