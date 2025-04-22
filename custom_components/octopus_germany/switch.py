@@ -7,7 +7,7 @@ from typing import Any, Callable, Optional
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -22,20 +22,28 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Octopus switch from config entry."""
+    _LOGGER.debug(
+        "Setting up switch platform at %s", datetime.now().strftime("%H:%M:%S")
+    )
+
     data = hass.data[DOMAIN][config_entry.entry_id]
     api = data["api"]
     account_number = data["account_number"]
     coordinator = data["coordinator"]
 
-    # Wait for initial data from coordinator
-    await coordinator.async_config_entry_first_refresh()
-
-    # Retrieve devices from coordinator data
-    if not coordinator.data or "devices" not in coordinator.data:
-        _LOGGER.error("No devices found in coordinator data")
+    # Extract devices from the coordinator data structure
+    # Data is now stored under the account number in the coordinator data
+    if not coordinator.data or account_number not in coordinator.data:
+        _LOGGER.error(
+            "No data for account %s found in coordinator data: %s",
+            account_number,
+            coordinator.data,
+        )
         return
 
-    devices = coordinator.data.get("devices", [])
+    account_data = coordinator.data.get(account_number, {})
+    devices = account_data.get("devices", [])
+
     if not devices:
         _LOGGER.info("No devices found for account %s", account_number)
         return
@@ -45,37 +53,95 @@ async def async_setup_entry(
         if "id" not in device:
             _LOGGER.warning("Device missing ID field: %s", device)
             continue
-        switches.append(OctopusSwitch(api, device, coordinator, config_entry))
+        switches.append(
+            OctopusSwitch(api, device, coordinator, config_entry, account_number)
+        )
 
-    async_add_entities(switches, update_before_add=False)
+    async_add_entities(switches, update_before_add=True)
 
 
 class OctopusSwitch(CoordinatorEntity, SwitchEntity):
     """Representation of an Octopus Switch entity."""
 
-    def __init__(self, api, device, coordinator, config_entry):
+    def __init__(self, api, device, coordinator, config_entry, account_number):
         """Initialize the Octopus switch entity."""
         super().__init__(coordinator)
         self._api = api
         self._device = device
         self._config_entry = config_entry
         self._device_id = device["id"]
+        self._account_number = account_number
+        self._current_state = not device.get("status", {}).get("isSuspended", True)
 
         # Add flag to track if switching is in progress
         self._is_switching = False
         self._pending_state = None
         self._pending_until = None
 
-        account_number = self._config_entry.data.get("account_number")
-        self._attr_name = f"Octopus {account_number} Device Smart Control"
-        self._attr_unique_id = f"octopus_{account_number}_device_smart_control"
+        # Use simplified name format without device name
+        self._attr_name = f"Octopus {self._account_number} Smart Control"
+        self._attr_unique_id = f"octopus_{self._account_number}_smart_control"
+        self._update_attributes()
 
-        # Set extra state attributes
+    def _update_attributes(self):
+        """Update device attributes based on the latest data."""
+        device = self._get_device()
+        if not device:
+            return
+
+        # Update extra state attributes
         self._attr_extra_state_attributes = {
             "device_id": self._device_id,
-            "name": self._attr_name,
-            "device": self._device.get("name", "Unknown"),
+            "name": device.get("name", "Unknown"),
+            "model": device.get("vehicleVariant", {}).get("model", "Unknown"),
+            "battery_size": device.get("vehicleVariant", {}).get(
+                "batterySize", "Unknown"
+            ),
+            "provider": device.get("provider", "Unknown"),
+            "status": device.get("status", {}).get("currentState", "Unknown"),
+            "last_updated": datetime.now().isoformat(),
         }
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        # Get fresh device data
+        device = self._get_device()
+        if device:
+            # Check if state should change
+            new_state = not device.get("status", {}).get("isSuspended", True)
+            if new_state != self._current_state and not self._is_switching:
+                _LOGGER.debug(
+                    "Device state changed through API: %s -> %s (device_id=%s)",
+                    self._current_state,
+                    new_state,
+                    self._device_id,
+                )
+                self._current_state = new_state
+
+            # Update attributes with fresh data
+            self._update_attributes()
+
+            # Check if we're waiting for a state change and it's been confirmed
+            if self._is_switching:
+                status = device.get("status", {})
+                is_suspended = status.get("isSuspended", True)
+                actual_state = not is_suspended
+
+                if actual_state == self._pending_state:
+                    # API has confirmed state change, reset switching operation
+                    _LOGGER.debug(
+                        "API confirmed state change for device_id=%s to %s",
+                        self._device_id,
+                        "on" if actual_state else "off",
+                    )
+                    self._is_switching = False
+                    self._pending_state = None
+                    self._pending_until = None
+                    self._current_state = actual_state
+
+        # Mark entity for update
+        self.async_write_ha_state()
 
     @property
     def is_on(self) -> bool:
@@ -99,7 +165,8 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
         # Use API state if no switching operation is active
         device = self._get_device()
         if device:
-            return not device.get("status", {}).get("isSuspended", True)
+            self._current_state = not device.get("status", {}).get("isSuspended", True)
+            return self._current_state
         return False
 
     async def async_turn_on(self, **kwargs) -> None:
@@ -196,29 +263,23 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
         if not self.coordinator or not self.coordinator.data:
             return None
 
-        devices = self.coordinator.data.get("devices", [])
-        if devices is None:
-            _LOGGER.debug("Devices list is None for device_id=%s", self._device_id)
+        # Access account data first, then devices
+        account_data = self.coordinator.data.get(self._account_number, {})
+        devices = account_data.get("devices", [])
+
+        if not devices:
+            _LOGGER.debug("Devices list is empty for account %s", self._account_number)
             return None
 
-        device = next((d for d in devices if d["id"] == self._device_id), None)
+        return next((d for d in devices if d["id"] == self._device_id), None)
 
-        # If we have a device and switching operation is still in progress
-        if device and self._is_switching:
-            status = device.get("status", {})
-            is_suspended = status.get("isSuspended", True)
-            actual_state = not is_suspended
-
-            # Check if API state matches pending state
-            if actual_state == self._pending_state:
-                # API has confirmed state change, reset switching operation
-                self._is_switching = False
-                self._pending_state = None
-                self._pending_until = None
-                _LOGGER.debug(
-                    "API confirmed state change for device_id=%s to %s",
-                    self._device_id,
-                    "on" if actual_state else "off",
-                )
-
-        return device
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        # The entity is available if the coordinator has data and the specific device exists
+        coordinator_has_data = (
+            self.coordinator.last_update_success
+            and self._account_number in self.coordinator.data
+        )
+        device_exists = self._get_device() is not None
+        return coordinator_has_data and device_exists
