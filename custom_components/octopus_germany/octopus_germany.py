@@ -17,6 +17,9 @@ GRAPH_QL_ENDPOINT = "https://api.oeg-kraken.energy/v1/graphql/"
 ELECTRICITY_LEDGER = "ELECTRICITY_LEDGER"
 TOKEN_REFRESH_MARGIN = 300  # Refresh token 5 minutes before expiry
 
+# Global token manager to prevent multiple instances from making redundant token requests
+_GLOBAL_TOKEN_MANAGER = None
+
 
 class TokenManager:
     """Centralized token management for Octopus Germany API."""
@@ -93,7 +96,12 @@ class OctopusGermany:
         self._email = email
         self._password = password
         self._session = None
-        self._token_manager = TokenManager()
+
+        # Use global token manager to prevent redundant login attempts across instances
+        global _GLOBAL_TOKEN_MANAGER
+        if _GLOBAL_TOKEN_MANAGER is None:
+            _GLOBAL_TOKEN_MANAGER = TokenManager()
+        self._token_manager = _GLOBAL_TOKEN_MANAGER
 
     @property
     def _token(self):
@@ -124,6 +132,7 @@ class OctopusGermany:
 
             for attempt in range(retries):
                 try:
+                    _LOGGER.debug("Making login attempt %s of %s", attempt + 1, retries)
                     response = await client.execute_async(
                         query=query, variables=variables
                     )
@@ -167,35 +176,15 @@ class OctopusGermany:
             return await self.login()
         return True
 
-    async def accounts(self):
-        """Fetch account numbers."""
+    # Consolidated query to get both accounts list and initial data in one API call
+    async def fetch_accounts_with_initial_data(self):
+        """Fetch accounts and initial data in a single API call.
+
+        This consolidated query gets account numbers and basic info in one call,
+        reducing API requests during component setup.
+        """
         await self.ensure_token()
-        response = await self._fetch_accounts()
-        if response is None:
-            _LOGGER.error("Failed to fetch accounts: response is None")
-            raise ConfigEntryNotReady("Failed to fetch accounts: response is None")
 
-        _LOGGER.debug("Accounts response: %s", response)
-
-        if isinstance(response, list):
-            # Handle the case where the response is a list of account numbers
-            return [account["number"] for account in response]
-
-        if (
-            "data" in response
-            and "viewer" in response["data"]
-            and "accounts" in response["data"]["viewer"]
-        ):
-            return [
-                account["number"] for account in response["data"]["viewer"]["accounts"]
-            ]
-        else:
-            _LOGGER.error("Unexpected API response structure: %s", response)
-            return [
-                account["number"] for account in response
-            ]  # Handle the list of account numbers
-
-    async def _fetch_accounts(self):
         query = """
             query {
               viewer {
@@ -203,7 +192,6 @@ class OctopusGermany:
                   number
                   ledgers {
                     balance
-                    number
                     ledgerType
                   }
                 }
@@ -212,305 +200,56 @@ class OctopusGermany:
         """
         headers = {"authorization": self._token}
         client = GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers=headers)
+
         try:
             response = await client.execute_async(query=query)
-            _LOGGER.debug("Fetch accounts response: %s", response)
-            return response["data"]["viewer"]["accounts"]
+            _LOGGER.debug("Fetch accounts with initial data response: %s", response)
+
+            if "data" in response and "viewer" in response["data"]:
+                accounts = response["data"]["viewer"]["accounts"]
+                if not accounts:
+                    _LOGGER.error("No accounts found")
+                    return None
+
+                # Return both the accounts and first account data
+                return accounts
+            else:
+                _LOGGER.error("Unexpected API response structure: %s", response)
+                return None
         except Exception as e:
-            _LOGGER.error("Error fetching accounts: %s", e)
+            _LOGGER.error("Error fetching accounts with initial data: %s", e)
             return None
+
+    # Legacy methods maintained for backward compatibility
+    async def accounts(self):
+        """Fetch account numbers."""
+        accounts = await self.fetch_accounts_with_initial_data()
+        if not accounts:
+            _LOGGER.error("Failed to fetch accounts")
+            raise ConfigEntryNotReady("Failed to fetch accounts")
+
+        return [account["number"] for account in accounts]
 
     async def fetch_accounts(self):
-        await self.ensure_token()
-        query = """
-            query {
-              viewer {
-                accounts {
-                  number
-                }
-              }
-            }
-        """
-        headers = {"authorization": self._token}
-        client = GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers=headers)
-        try:
-            response = await client.execute_async(query=query)
-            _LOGGER.debug("Fetch accounts response: %s", response)
-            accounts = response.get("data", {}).get("viewer", {}).get("accounts", [])
-            if not accounts:
-                _LOGGER.error(
-                    "No accounts found for the provided credentials. Response: %s",
-                    response,
-                )
-                return None
-            return accounts
-        except Exception as e:
-            _LOGGER.error("Error fetching accounts: %s", e)
-            return None
+        """Fetch accounts data."""
+        return await self.fetch_accounts_with_initial_data()
 
-    async def account(self, account_number: str):
-        await self.ensure_token()
-        query = """
-            query ($accountNumber: String!) {
-              account(accountNumber: $accountNumber) {
-                ledgers {
-                  balance
-                  number
-                  ledgerType
-                }
-              }
-            }
-        """
-        headers = {"authorization": self._token}
-        client = GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers=headers)
-        response = await client.execute_async(query, {"accountNumber": account_number})
-
-        if "data" not in response or "account" not in response["data"]:
-            _LOGGER.error("Unexpected API response structure: %s", response)
-            raise ConfigEntryNotReady("Unexpected API response structure")
-
-        ledgers = response["data"]["account"]["ledgers"]
-        electricity = next(
-            filter(lambda x: x["ledgerType"] == ELECTRICITY_LEDGER, ledgers), None
-        )
-
-        if not electricity:
-            _LOGGER.warning(
-                "Electricity ledger not found in account: %s", account_number
-            )
-            return {"balance": 0, "ledgerType": None, "number": None}
-
-        return {
-            "balance": electricity["balance"],
-            "ledgerType": electricity["ledgerType"],
-            "number": electricity["number"],
-        }
-
-    async def planned_dispatches(self, account_number: str):
-        await self.ensure_token()
-        """Fetch planned dispatches for a given account.
-
-        Parameters
-        ----------
-        account_number : str
-            The account number for which to fetch planned dispatches.
-
-        Returns
-        -------
-        list
-            A list of planned dispatches with their details, or an empty list if none are found.
-        """
-        query = """
-            query ($accountNumber: String!) {
-              plannedDispatches(accountNumber: $accountNumber) {
-                delta
-                deltaKwh
-                end
-                endDt
-                meta {
-                  location
-                  source
-                }
-                start
-                startDt
-              }
-            }
-        """
-        headers = {"authorization": self._token}
-        client = GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers=headers)
-        response = await client.execute_async(query, {"accountNumber": account_number})
-
-        if "data" not in response or "plannedDispatches" not in response["data"]:
-            _LOGGER.error("Unexpected API response structure: %s", response)
-            return []
-
-        return response["data"]["plannedDispatches"]
-
-    async def property_ids(self, account_number: str):
-        await self.ensure_token()
-        """Fetch the property IDs associated with the given account number.
-
-        Parameters
-        ----------
-        account_number : str
-            The account number for which to fetch property IDs.
-
-        Returns
-        -------
-        list
-            A list of property IDs, or an empty list if no properties are found.
-        """
-        query = """
-            query getPropertyIds($accountNumber: String!) {
-              account(accountNumber: $accountNumber) {
-                properties {
-                  id
-                }
-              }
-            }
-        """
-        headers = {"authorization": self._token}
-        client = GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers=headers)
-        response = await client.execute_async(query, {"accountNumber": account_number})
-
-        if "data" not in response or "account" not in response["data"]:
-            _LOGGER.error("Unexpected API response structure: %s", response)
-            return []
-
-        return [prop["id"] for prop in response["data"]["account"]["properties"]]
-
-    async def devices(self, account_number: str):
-        await self.ensure_token()
-        """Fetch the list of devices associated with the given account number.
-
-        Parameters
-        ----------
-        account_number : str
-            The account number for which to fetch devices.
-
-        Returns
-        -------
-        list
-            A list of devices with their details, or an empty list if no devices are found.
-
-        """
-        query = """
-            query ($accountNumber: String!) {
-              devices(accountNumber: $accountNumber) {
-                deviceType
-                id
-                integrationDeviceId
-                name
-                preferences {
-                  mode
-                  targetType
-                  schedules {
-                    max
-                    min
-                    time
-                    dayOfWeek
-                  }
-                  unit
-                }
-                provider
-                status {
-                  current
-                  isSuspended
-                  currentState
-                }
-              }
-            }
-        """
-        headers = {"authorization": self._token}
-        client = GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers=headers)
-        response = await client.execute_async(query, {"accountNumber": account_number})
-
-        if "data" not in response or "devices" not in response["data"]:
-            _LOGGER.error("Unexpected API response structure: %s", response)
-            return []
-
-        return response["data"]["devices"]
-
-    async def timeslot_data(self, account_number: str):
-        await self.ensure_token()
-        query = """
-            query AccountNumber($accountNumber: String = "") {
-              account(accountNumber: $accountNumber) {
-                allProperties {
-                  electricityMalos {
-                    agreements {
-                      unitRateGrossRateInformation {
-                        grossRate
-                      }
-                      unitRateInformation {
-                        ... on SimpleProductUnitRateInformation {
-                          __typename
-                          grossRateInformation {
-                            date
-                            grossRate
-                            rateValidToDate
-                            vatRate
-                          }
-                          latestGrossUnitRateCentsPerKwh
-                          netUnitRateCentsPerKwh
-                        }
-                        ... on TimeOfUseProductUnitRateInformation {
-                          __typename
-                          rates {
-                            grossRateInformation {
-                              date
-                              grossRate
-                              rateValidToDate
-                              vatRate
-                            }
-                            latestGrossUnitRateCentsPerKwh
-                            netUnitRateCentsPerKwh
-                            timeslotActivationRules {
-                              activeFromTime
-                              activeToTime
-                            }
-                            timeslotName
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-        """
-        headers = {"authorization": self._token}
-        client = GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers=headers)
-        response = await client.execute_async(query, {"accountNumber": account_number})
-
-        if "data" not in response or "account" not in response["data"]:
-            _LOGGER.error("Unexpected API response structure: %s", response)
-            return []
-
-        timeslot_data = []
-        for prop in response["data"]["account"]["allProperties"]:
-            for malo in prop["electricityMalos"]:
-                for agreement in malo["agreements"]:
-                    if "unitRateInformation" in agreement:
-                        unit_rate_info = agreement["unitRateInformation"]
-                        if (
-                            unit_rate_info["__typename"]
-                            == "TimeOfUseProductUnitRateInformation"
-                        ):
-                            timeslot_data.extend(unit_rate_info["rates"])
-
-        return timeslot_data
-
-    async def fetch_and_use_account(self):
-        await self.ensure_token()
-        """Fetch the first account and retrieve its details.
-
-        This method fetches all account numbers associated with the user,
-        selects the first account, and retrieves its details.
-
-        Returns
-        -------
-        dict or None
-            A dictionary containing account details if successful, or None if no accounts are found.
-        """
-        account_numbers = await self.accounts()
-        if not account_numbers:
-            _LOGGER.error("No account numbers found")
-            return None
-
-        account_number = account_numbers[0]  # Use the first account number
-        return await self.account(account_number)
-
+    # Comprehensive data fetch in a single query
     async def fetch_all_data(self, account_number: str):
-        """Fetch all data for an account including devices, dispatches and account details."""
+        """Fetch all data for an account including devices, dispatches and account details.
+
+        This comprehensive query consolidates multiple separate queries into one
+        to minimize API calls and improve performance.
+        """
         if not await self.ensure_token():
             _LOGGER.error("Failed to ensure valid token for fetch_all_data")
             return None
 
         query = """
-            query MyQuery($accountNumber: String = "") {
+            query ComprehensiveDataQuery($accountNumber: String!) {
               account(accountNumber: $accountNumber) {
                 allProperties {
+                  id
                   electricityMalos {
                     agreements {
                       product {
@@ -642,9 +381,11 @@ class OctopusGermany:
         variables = {"accountNumber": account_number}
         headers = {"authorization": self._token}
         client = GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers=headers)
+
         try:
             _LOGGER.debug(
-                "Making API request to fetch_all_data for account %s", account_number
+                "Making consolidated API request to fetch_all_data for account %s",
+                account_number,
             )
             response = await client.execute_async(query=query, variables=variables)
 
