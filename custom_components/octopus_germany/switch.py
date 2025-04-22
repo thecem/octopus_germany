@@ -79,8 +79,8 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
         self._pending_until = None
 
         # Use simplified name format without device name
-        self._attr_name = f"Octopus {self._account_number} Smart Control"
-        self._attr_unique_id = f"octopus_{self._account_number}_smart_control"
+        self._attr_name = f"Octopus {self._account_number} Device Smart Control"
+        self._attr_unique_id = f"octopus_{self._account_number}_device_smart_control"
         self._update_attributes()
 
     def _update_attributes(self):
