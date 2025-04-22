@@ -40,7 +40,24 @@ class TokenManager:
 
         now = datetime.utcnow().timestamp()
         # Return True if token is valid for at least TOKEN_REFRESH_MARGIN more seconds
-        return now < (self._expiry - TOKEN_REFRESH_MARGIN)
+        valid = now < (self._expiry - TOKEN_REFRESH_MARGIN)
+
+        if not valid:
+            remaining_time = self._expiry - now if self._expiry else 0
+            _LOGGER.debug(
+                "Token validity check: invalid (expiry in %s seconds, refresh margin: %s)",
+                int(remaining_time),
+                TOKEN_REFRESH_MARGIN,
+            )
+        else:
+            remaining_time = self._expiry - now if self._expiry else 0
+            _LOGGER.debug(
+                "Token validity check: valid (expiry in %s seconds, refresh margin: %s)",
+                int(remaining_time),
+                TOKEN_REFRESH_MARGIN,
+            )
+
+        return valid
 
     def set_token(self, token):
         """Set a new token and extract its expiry time."""
@@ -50,12 +67,16 @@ class TokenManager:
         try:
             decoded = jwt.decode(token, options={"verify_signature": False})
             self._expiry = decoded.get("exp")
+            now = datetime.utcnow().timestamp()
+            token_lifetime = self._expiry - now if self._expiry else 0
+
             _LOGGER.debug(
-                "Token set with expiry %s (%s)",
+                "Token set with expiry timestamp %s (%s) - valid for %s seconds",
                 self._expiry,
                 datetime.fromtimestamp(self._expiry).strftime("%Y-%m-%d %H:%M:%S")
                 if self._expiry
                 else "unknown",
+                int(token_lifetime),
             )
         except Exception as e:
             _LOGGER.error("Failed to decode token: %s", e)
