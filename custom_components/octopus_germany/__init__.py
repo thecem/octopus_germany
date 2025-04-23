@@ -13,6 +13,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util.dt import utcnow, as_utc, parse_datetime
 
 from .const import DOMAIN, CONF_EMAIL, CONF_PASSWORD, UPDATE_INTERVAL, DEBUG_ENABLED
 from .octopus_germany import OctopusGermany
@@ -136,13 +137,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 return coordinator.data if hasattr(coordinator, "data") else {}
 
             # Process the raw API data into a more usable format
-            processed_data = await process_api_data(data, account_number)
+            try:
+                processed_data = await process_api_data(data, account_number)
 
-            _LOGGER.debug(
-                "Successfully fetched data from API at %s",
-                datetime.now().strftime("%H:%M:%S"),
-            )
-            return processed_data
+                _LOGGER.debug(
+                    "Successfully fetched data from API at %s",
+                    datetime.now().strftime("%H:%M:%S"),
+                )
+                return processed_data
+            except Exception as e:
+                _LOGGER.exception("Error processing API data: %s", str(e))
+                return coordinator.data if hasattr(coordinator, "data") else {}
+
         except Exception as e:
             _LOGGER.exception("Unexpected error during data update: %s", e)
             # Return previous data if available, empty dict otherwise
@@ -294,22 +300,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ]
 
         # Calculate current and next dispatches
-        now = datetime.now()
+        now = utcnow()  # Use timezone-aware UTC now
         current_start = None
         current_end = None
         next_start = None
         next_end = None
 
         for dispatch in sorted(planned_dispatches, key=lambda x: x.get("start", "")):
-            start = datetime.fromisoformat(dispatch.get("start"))
-            end = datetime.fromisoformat(dispatch.get("end"))
+            try:
+                # Convert string to timezone-aware datetime objects
+                start_str = dispatch.get("start")
+                end_str = dispatch.get("end")
 
-            if start <= now <= end:
-                current_start = start
-                current_end = end
-            elif now < start and not next_start:
-                next_start = start
-                next_end = end
+                if not start_str or not end_str:
+                    continue
+
+                # Parse string to datetime and ensure it's UTC timezone-aware
+                start = as_utc(parse_datetime(start_str))
+                end = as_utc(parse_datetime(end_str))
+
+                if start <= now <= end:
+                    current_start = start
+                    current_end = end
+                elif now < start and not next_start:
+                    next_start = start
+                    next_end = end
+            except (ValueError, TypeError) as e:
+                _LOGGER.error("Error parsing dispatch dates: %s - %s", dispatch, str(e))
 
         # Build structured data response
         return {
