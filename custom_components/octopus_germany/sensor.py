@@ -15,11 +15,11 @@ from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util.dt import as_local
+from homeassistant.util.dt import as_local, utcnow, parse_datetime, as_utc
 
 from .const import DOMAIN, UPDATE_INTERVAL
 from .octopus_germany import OctopusGermany
@@ -37,7 +37,7 @@ async def async_setup_entry(
     account_number = data["account_number"]
 
     # Wait for coordinator refresh if needed
-    if not coordinator.data:
+    if coordinator.data is None:
         _LOGGER.debug("No data in coordinator, triggering refresh")
         await coordinator.async_refresh()
 
@@ -62,58 +62,129 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
         self._attr_has_entity_name = False
         self._attributes = {}
 
+        # Initialize attributes right after creation
+        self._update_attributes()
+
     @property
     def is_on(self) -> bool:
         """Determine if the binary sensor is currently active."""
         if (
             not self.coordinator.data
+            or not isinstance(self.coordinator.data, dict)
             or self._account_number not in self.coordinator.data
         ):
             return False
 
         account_data = self.coordinator.data[self._account_number]
         planned_dispatches = account_data.get("planned_dispatches", [])
-        now = datetime.now()
+        now = utcnow()  # Use timezone-aware datetime
 
         for dispatch in planned_dispatches:
             try:
-                start = datetime.fromisoformat(dispatch.get("start"))
-                end = datetime.fromisoformat(dispatch.get("end"))
-                if start <= now <= end:
+                start_str = dispatch.get("start")
+                end_str = dispatch.get("end")
+
+                if not start_str or not end_str:
+                    continue
+
+                # Parse string to datetime and ensure it's UTC timezone-aware
+                start = as_utc(parse_datetime(start_str))
+                end = as_utc(parse_datetime(end_str))
+
+                if start and end and start <= now <= end:
                     return True
             except (ValueError, TypeError):
                 continue
         return False
 
+    def _format_dispatch(self, dispatch, is_planned=True):
+        """Format a dispatch entry for display."""
+        try:
+            # Get start and end as strings
+            start_str = dispatch.get("start")
+            end_str = dispatch.get("end")
+
+            if not start_str or not end_str:
+                return None
+
+            # Parse string to datetime and ensure timezone aware
+            start = parse_datetime(start_str)
+            end = parse_datetime(end_str)
+
+            if not start or not end:
+                return None
+
+            # Create a simpler format for the attribute
+            formatted = {
+                "start": start_str,
+                "end": end_str,
+                "start_time": as_local(start).strftime("%Y-%m-%d %H:%M:%S")
+                if start
+                else "Unknown",
+                "end_time": as_local(end).strftime("%Y-%m-%d %H:%M:%S")
+                if end
+                else "Unknown",
+                "charge_kwh": float(dispatch.get("deltaKwh", 0)),
+            }
+
+            # Add source and location if available
+            meta = dispatch.get("meta", {})
+            if meta:
+                if "source" in meta:
+                    formatted["source"] = meta["source"]
+                if "location" in meta:
+                    formatted["location"] = meta["location"]
+
+            return formatted
+        except (ValueError, TypeError) as e:
+            _LOGGER.error("Error formatting dispatch: %s - %s", dispatch, e)
+            return None
+
     def _update_attributes(self) -> None:
         """Update the internal attributes dictionary."""
+        # Default empty attributes
+        default_attributes = {
+            "account_number": self._account_number,
+            "electricity_balance": "0.00 €",
+            "planned_dispatches": [],
+            "completed_dispatches": [],
+            "provider": "Unknown",
+            "vehicle_battery_size_in_kwh": "Unknown",
+            "current_start": "Unknown",
+            "current_end": "Unknown",
+            "devices": [],
+            "products": [],
+            "malo_number": "Unknown",
+            "melo_number": "Unknown",
+            "meter": {},
+            "current_state": "Unknown",
+        }
+
+        # Check if coordinator has valid data
         if (
-            not self.coordinator.data
-            or self._account_number not in self.coordinator.data
+            not self.coordinator
+            or not self.coordinator.data
+            or not isinstance(self.coordinator.data, dict)
         ):
-            _LOGGER.debug("No data available for account %s", self._account_number)
-            self._attributes = {
-                "account_number": self._account_number,
-                "electricity_balance": "0.00 €",
-                "planned_dispatches": [],
-                "completed_dispatches": [],
-                "provider": "Unknown",
-                "vehicle_battery_size_in_kwh": "Unknown",
-                "current_start": "Unknown",
-                "current_end": "Unknown",
-                "devices": [],
-                "products": [],
-                "malo_number": "Unknown",
-                "melo_number": "Unknown",
-                "meter": {},
-                "current_state": "Unknown",
-            }
+            _LOGGER.debug("No valid data structure in coordinator")
+            self._attributes = default_attributes
+            return
+
+        # Check if account number exists in the data
+        if self._account_number not in self.coordinator.data:
+            _LOGGER.debug(
+                "Account %s not found in coordinator data", self._account_number
+            )
+            self._attributes = default_attributes
             return
 
         # Process data from the coordinator
         account_data = self.coordinator.data[self._account_number]
+        if not account_data:
+            self._attributes = default_attributes
+            return
 
-        # Extract all required data
+        # Extract all required data with safe fallbacks
         electricity_balance = account_data.get("electricity_balance", 0)
         planned_dispatches = account_data.get("planned_dispatches", [])
         completed_dispatches = account_data.get("completed_dispatches", [])
@@ -124,7 +195,7 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
         current_end = account_data.get("current_end")
         malo_number = account_data.get("malo_number", "Unknown")
         melo_number = account_data.get("melo_number", "Unknown")
-        meter = account_data.get("meter", {})
+        meter = account_data.get("meter", {}) or {}
 
         # Get current state from devices if available
         current_state = "Unknown"
@@ -139,38 +210,18 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
 
         # Format dispatches for display
         formatted_planned_dispatches = []
-        for dispatch in planned_dispatches:
-            try:
-                start = datetime.fromisoformat(dispatch.get("start"))
-                end = datetime.fromisoformat(dispatch.get("end"))
-                formatted_planned_dispatches.append(
-                    {
-                        "start": as_local(start).strftime("%Y-%m-%d %H:%M:%S"),
-                        "end": as_local(end).strftime("%Y-%m-%d %H:%M:%S"),
-                        "charge_in_kwh": float(dispatch.get("deltaKwh", 0)),
-                        "source": dispatch.get("meta", {}).get("source", "Unknown"),
-                        "location": dispatch.get("meta", {}).get("location", "Unknown"),
-                    }
-                )
-            except (ValueError, TypeError) as e:
-                _LOGGER.error("Error formatting dispatch: %s - %s", dispatch, e)
+        if planned_dispatches:
+            for dispatch in planned_dispatches:
+                formatted = self._format_dispatch(dispatch, is_planned=True)
+                if formatted:
+                    formatted_planned_dispatches.append(formatted)
 
         formatted_completed_dispatches = []
-        for dispatch in completed_dispatches:
-            try:
-                start = datetime.fromisoformat(dispatch.get("start"))
-                end = datetime.fromisoformat(dispatch.get("end"))
-                formatted_completed_dispatches.append(
-                    {
-                        "start": as_local(start).strftime("%Y-%m-%d %H:%M:%S"),
-                        "end": as_local(end).strftime("%Y-%m-%d %H:%M:%S"),
-                        "charge_in_kwh": float(dispatch.get("deltaKwh", 0)),
-                        "source": dispatch.get("meta", {}).get("source", "Unknown"),
-                        "location": dispatch.get("meta", {}).get("location", "Unknown"),
-                    }
-                )
-            except (ValueError, TypeError) as e:
-                _LOGGER.error("Error formatting dispatch: %s - %s", dispatch, e)
+        if completed_dispatches:
+            for dispatch in completed_dispatches:
+                formatted = self._format_dispatch(dispatch, is_planned=False)
+                if formatted:
+                    formatted_completed_dispatches.append(formatted)
 
         # Format current_start and current_end if available
         formatted_current_start = "Unknown"
@@ -193,6 +244,51 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
             except (ValueError, TypeError, AttributeError) as e:
                 _LOGGER.error("Error formatting current_end: %s - %s", current_end, e)
 
+        # Process products to ensure they are serializable
+        processed_products = []
+        for product in products:
+            if not isinstance(product, dict):
+                continue
+            processed_products.append(
+                {
+                    "code": product.get("code", "Unknown"),
+                    "name": product.get("name", "Unknown"),
+                    "description": product.get("description", ""),
+                    "gross_rate": product.get("grossRate", "0"),
+                    "type": product.get("type", "Unknown"),
+                    "valid_from": product.get("validFrom", ""),
+                    "valid_to": product.get("validTo", ""),
+                }
+            )
+
+        # Simplify device data to ensure it's serializable
+        simplified_devices = []
+        for device in devices:
+            if not isinstance(device, dict):
+                continue
+
+            simple_device = {
+                "id": device.get("id", ""),
+                "name": device.get("name", "Unknown"),
+                "device_type": device.get("deviceType", "Unknown"),
+                "provider": device.get("provider", "Unknown"),
+                "status": device.get("status", {}).get("currentState", "Unknown")
+                if isinstance(device.get("status"), dict)
+                else "Unknown",
+            }
+
+            if "vehicleVariant" in device and isinstance(
+                device["vehicleVariant"], dict
+            ):
+                simple_device["model"] = device["vehicleVariant"].get(
+                    "model", "Unknown"
+                )
+                simple_device["battery_size"] = device["vehicleVariant"].get(
+                    "batterySize", "Unknown"
+                )
+
+            simplified_devices.append(simple_device)
+
         # Build and update attributes
         self._attributes = {
             "account_number": self._account_number,
@@ -205,18 +301,24 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
             else "Unknown",
             "current_start": formatted_current_start,
             "current_end": formatted_current_end,
-            "devices": devices,
-            "products": products,
+            "devices": simplified_devices,
+            "products": processed_products,
             "malo_number": malo_number,
             "melo_number": melo_number,
             "meter": meter or {},
             "current_state": current_state,
+            "last_updated": datetime.now().isoformat(),
         }
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self._update_attributes()
+        self.async_write_ha_state()
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return additional state attributes for the binary sensor."""
-        self._update_attributes()
         return self._attributes
 
     async def async_update(self) -> None:
@@ -228,6 +330,8 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
     def available(self) -> bool:
         """Return True if entity is available."""
         return (
-            self.coordinator.last_update_success
+            self.coordinator is not None
+            and self.coordinator.last_update_success
+            and isinstance(self.coordinator.data, dict)
             and self._account_number in self.coordinator.data
         )
