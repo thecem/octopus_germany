@@ -9,6 +9,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict
 from collections.abc import Mapping
+import json
 
 from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
@@ -140,6 +141,39 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
             _LOGGER.error("Error formatting dispatch: %s - %s", dispatch, e)
             return None
 
+    def _process_device_preferences(self, device):
+        """Process and format device preferences for display."""
+        if not isinstance(device, dict):
+            return {}
+
+        preferences = device.get("preferences", {})
+        if not preferences:
+            return {}
+
+        processed_prefs = {}
+
+        # Process mode preference if available
+        if "mode" in preferences:
+            processed_prefs["mode"] = preferences["mode"]
+
+        # Process schedules if available
+        if "schedules" in preferences and isinstance(preferences["schedules"], list):
+            schedules = []
+            for schedule in preferences["schedules"]:
+                if isinstance(schedule, dict):
+                    formatted_schedule = {
+                        "day": schedule.get("dayOfWeek", ""),
+                        "time": schedule.get("time", ""),
+                        "min": schedule.get("min", 0),
+                        "max": schedule.get("max", 100),
+                    }
+                    schedules.append(formatted_schedule)
+
+            if schedules:
+                processed_prefs["schedules"] = schedules
+
+        return processed_prefs
+
     def _update_attributes(self) -> None:
         """Update the internal attributes dictionary."""
         # Default empty attributes
@@ -261,7 +295,7 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
                 }
             )
 
-        # Simplify device data to ensure it's serializable
+        # Simplify device data to ensure it's serializable and include preferences
         simplified_devices = []
         for device in devices:
             if not isinstance(device, dict):
@@ -276,6 +310,12 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
                 if isinstance(device.get("status"), dict)
                 else "Unknown",
             }
+
+            # Process preferences if available
+            if "preferences" in device:
+                device_preferences = self._process_device_preferences(device)
+                if device_preferences:
+                    simple_device["preferences"] = device_preferences
 
             if "vehicleVariant" in device and isinstance(
                 device["vehicleVariant"], dict
