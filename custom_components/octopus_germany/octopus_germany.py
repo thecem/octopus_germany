@@ -5,7 +5,9 @@ various data related to electricity usage and tariffs.
 """
 
 import logging
+import json
 from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 import asyncio
 import jwt
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -384,13 +386,14 @@ class OctopusGermany:
 
         try:
             _LOGGER.debug(
-                "Making consolidated API request to fetch_all_data for account %s",
+                "Making API request to fetch_all_data for account %s",
                 account_number,
             )
             response = await client.execute_async(query=query, variables=variables)
 
-            # Log detailed response information
-            _LOGGER.debug("Fetch all data response status: %s", response is not None)
+            # Log the full API response for debugging
+            _LOGGER.info("API Response: %s", json.dumps(response, indent=2))
+
             if response is None:
                 _LOGGER.error("API returned None response")
                 return None
@@ -411,15 +414,7 @@ class OctopusGermany:
                 _LOGGER.error("API returned errors: %s", response.get("errors"))
                 return None
 
-            # Log specific data parts existence
             data = response.get("data", {})
-            _LOGGER.debug("Response contains account data: %s", "account" in data)
-            _LOGGER.debug("Response contains devices data: %s", "devices" in data)
-            _LOGGER.debug(
-                "Response contains plannedDispatches data: %s",
-                "plannedDispatches" in data,
-            )
-
             account_data = data.get("account", {})
             return {
                 "account": account_data,
