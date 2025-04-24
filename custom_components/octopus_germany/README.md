@@ -1,10 +1,14 @@
 # Octopus Germany Integration for Home Assistant
 
-![Octopus Energy](https://octopusenergy.de/images/branding/primary_logo.svg)
-
 This custom component integrates Octopus Germany services with Home Assistant, providing access to your energy account data, electricity prices, device control, and vehicle charging preferences.
 
+
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+![installation_badge](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=integration%20usage&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=$.octopus_germany.total)
+
+This integration is in no way affiliated with Octopus Energy.
+
+If you find this useful and are planning on moving to Octopus Energy Germany, why not use my [referral link](https://share.octopusenergy.de/free-cat-744)?
 
 ## Features
 
@@ -18,8 +22,10 @@ This custom component integrates Octopus Germany services with Home Assistant, p
 
 ### HACS (Home Assistant Community Store)
 
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration) 
+
 1. Add this repository as a custom repository in HACS
-2. Search for "Octopus Germany" in the HACS integrations
+2. Search for ["Octopus Germany"](https://my.home-assistant.io/redirect/hacs_repository/?owner=thecem&repository=octopus_germany&category=integration) in the HACS integrations
 3. Install the integration
 4. Restart Home Assistant
 5. Add the integration via the UI under **Settings** > **Devices & Services** > **Add Integration**
@@ -132,6 +138,12 @@ logger:
 ## Support
 
 For bug reports and feature requests, please open an issue on the GitHub repository.
+Before raising anything, please read through the [discussion](https://thecem.github.io/octopus_germany/discussions). 
+If you have found a bug or have a feature request please [raise it](https://thecem.github.io/octopus_germany/issues) using the appropriate report template.
+
+## Sponsorship
+
+If you are enjoying the integration, why not use my [referral link](https://share.octopusenergy.de/free-cat-744)
 
 ## License
 
