@@ -31,23 +31,29 @@ async def async_setup_entry(
     account_number = data["account_number"]
     coordinator = data["coordinator"]
 
-    # Extract devices from the coordinator data structure
-    # Data is now stored under the account number in the coordinator data
-    if not coordinator.data or account_number not in coordinator.data:
-        _LOGGER.error(
-            "No data for account %s found in coordinator data: %s",
+    # Check for valid data in coordinator
+    if not coordinator.data:
+        _LOGGER.info("No data in coordinator, not creating switches")
+        return
+
+    if account_number not in coordinator.data:
+        _LOGGER.info(
+            "No data for account %s found in coordinator data, not creating switches",
             account_number,
-            coordinator.data,
         )
         return
 
+    # Extract devices from the coordinator data structure
     account_data = coordinator.data.get(account_number, {})
     devices = account_data.get("devices", [])
 
     if not devices:
-        _LOGGER.info("No devices found for account %s", account_number)
+        _LOGGER.info(
+            "No devices found for account %s, not creating switches", account_number
+        )
         return
 
+    # Only create switches if we have valid devices
     switches = []
     for device in devices:
         if "id" not in device:
@@ -57,7 +63,13 @@ async def async_setup_entry(
             OctopusSwitch(api, device, coordinator, config_entry, account_number)
         )
 
-    async_add_entities(switches, update_before_add=True)
+    # Only add entities if we have any
+    if switches:
+        async_add_entities(switches, update_before_add=True)
+    else:
+        _LOGGER.info(
+            "No valid devices to create switches for account %s", account_number
+        )
 
 
 class OctopusSwitch(CoordinatorEntity, SwitchEntity):
@@ -78,7 +90,7 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
         self._pending_state = None
         self._pending_until = None
 
-        # Use simplified name format without device name
+        # Updated name format to include "Device Smart Control"
         self._attr_name = f"Octopus {self._account_number} Device Smart Control"
         self._attr_unique_id = f"octopus_{self._account_number}_device_smart_control"
         self._update_attributes()
