@@ -175,6 +175,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
             "meter_id": "Unknown",
             "meter_number": "Unknown",
             "meter_type": "Unknown",
+            "account_number": self._account_number,
         }
 
         # Check if coordinator has valid data
