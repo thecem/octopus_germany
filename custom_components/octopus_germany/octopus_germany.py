@@ -566,3 +566,205 @@ class OctopusGermany:
         except Exception as e:
             _LOGGER.error("Error setting vehicle charge preferences: %s", e)
             return False
+
+    async def _fetch_account_and_devices(self, account_number: str):
+        """Fetch account and devices data."""
+        if not await self.ensure_token():
+            return None
+
+        query = """
+            query AccountAndDevicesQuery($accountNumber: String!) {
+              account(accountNumber: $accountNumber) {
+                allProperties {
+                  id
+                  electricityMalos {
+                    agreements {
+                      product {
+                        code
+                        description
+                        fullName
+                      }
+                      unitRateGrossRateInformation {
+                        grossRate
+                      }
+                      unitRateInformation {
+                        ... on SimpleProductUnitRateInformation {
+                          __typename
+                          grossRateInformation {
+                            date
+                            grossRate
+                            rateValidToDate
+                            vatRate
+                          }
+                          latestGrossUnitRateCentsPerKwh
+                          netUnitRateCentsPerKwh
+                        }
+                        ... on TimeOfUseProductUnitRateInformation {
+                          __typename
+                          rates {
+                            grossRateInformation {
+                              date
+                              grossRate
+                              rateValidToDate
+                              vatRate
+                            }
+                            latestGrossUnitRateCentsPerKwh
+                            netUnitRateCentsPerKwh
+                            timeslotActivationRules {
+                              activeFromTime
+                              activeToTime
+                            }
+                            timeslotName
+                          }
+                        }
+                      }
+                      validFrom
+                      validTo
+                    }
+                    maloNumber
+                    meloNumber
+                    meter {
+                      id
+                      meterType
+                      number
+                      shouldReceiveSmartMeterData
+                      submitMeterReadingUrl
+                    }
+                    referenceConsumption
+                  }
+                }
+                id
+                ledgers {
+                  balance
+                  ledgerType
+                }
+              }
+              products(accountNumber: $accountNumber) {
+                code
+                description
+                fullName
+                grossRateInformation {
+                  grossRate
+                }
+              }
+              devices(accountNumber: $accountNumber) {
+                status {
+                  current
+                  currentState
+                  isSuspended
+                }
+                provider
+                preferences {
+                  mode
+                  schedules {
+                    dayOfWeek
+                    max
+                    min
+                    time
+                  }
+                  targetType
+                  unit
+                }
+                name
+                integrationDeviceId
+                id
+                deviceType
+                alerts {
+                  message
+                  publishedAt
+                }
+                ... on SmartFlexVehicle {
+                  id
+                  name
+                  status {
+                    current
+                    currentState
+                    isSuspended
+                  }
+                  vehicleVariant {
+                    model
+                    batterySize
+                  }
+                }
+              }
+            }
+        """
+        variables = {"accountNumber": account_number}
+        client = self._get_graphql_client()
+
+        try:
+            _LOGGER.debug(
+                "Making API request to fetch account and devices for account %s",
+                account_number,
+            )
+            response = await client.execute_async(query=query, variables=variables)
+
+            # Initialize result structure
+            result = {
+                "account": {},
+                "devices": [],
+            }
+
+            if response is None:
+                _LOGGER.error(
+                    "API returned None response for account and devices query"
+                )
+                return result
+
+            if "errors" in response:
+                # Check for specific error cases we can handle
+                errors = response.get("errors", [])
+                for error in errors:
+                    error_code = error.get("extensions", {}).get("errorCode")
+                    error_path = error.get("path", [])
+
+                    # Token expired error
+                    if error_code == "KT-CT-1124":  # JWT expired
+                        _LOGGER.warning(
+                            "Token expired during account/devices fetch, refreshing..."
+                        )
+                        self._token_manager.clear()
+                        success = await self.login()
+                        if success:
+                            # Retry with new token
+                            return await self._fetch_account_and_devices(account_number)
+
+                    # Log but continue for certain path-specific errors
+                    if (
+                        error_path
+                        and error_path[0] == "devices"
+                        and "Unable to find device" in error.get("message", "")
+                    ):
+                        _LOGGER.warning(
+                            "No devices found for account %s: %s",
+                            account_number,
+                            error.get("message"),
+                        )
+                        # Continue with empty devices list
+                    else:
+                        _LOGGER.error("API error in account/devices query: %s", error)
+
+            # Process data from response, safely handling missing fields
+            data = response.get("data", {})
+
+            # Extract account data if available
+            if "account" in data:
+                result["account"] = data.get("account", {})
+
+            # Extract devices if available
+            if "devices" in data:
+                result["devices"] = data.get("devices", [])
+
+            # Check if we got separate products data
+            if "products" in data and data["products"]:
+                _LOGGER.debug("Found direct products data in API response")
+                result["direct_products"] = data["products"]
+
+            return result
+
+        except Exception as e:
+            _LOGGER.error("Error fetching account and devices: %s", e)
+            return {
+                "account": {},
+                "devices": [],
+            }
