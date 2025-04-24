@@ -15,6 +15,11 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
     BinarySensorDeviceClass,
 )
+from homeassistant.components.sensor import (
+    SensorEntity,
+    SensorStateClass,
+    SensorDeviceClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -42,11 +47,145 @@ async def async_setup_entry(
         _LOGGER.debug("No data in coordinator, triggering refresh")
         await coordinator.async_refresh()
 
-    sensors = [OctopusIntelligentDispatchingBinarySensor(account_number, coordinator)]
+    entities = [
+        OctopusIntelligentDispatchingBinarySensor(account_number, coordinator),
+        OctopusElectricityPriceSensor(account_number, coordinator),
+    ]
 
-    # Add any additional sensors you might want here
+    async_add_entities(entities)
 
-    async_add_entities(sensors)
+
+class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for Octopus Germany electricity price."""
+
+    def __init__(self, account_number, coordinator) -> None:
+        """Initialize the electricity price sensor."""
+        super().__init__(coordinator)
+
+        self._account_number = account_number
+        self._attr_name = f"Octopus {account_number} Electricity Price"
+        self._attr_unique_id = f"octopus_{account_number}_electricity_price"
+        self._attr_device_class = SensorDeviceClass.MONETARY
+        self._attr_native_unit_of_measurement = "€/kWh"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_has_entity_name = False
+        self._attributes = {}
+
+        # Initialize attributes right after creation
+        self._update_attributes()
+
+    @property
+    def native_value(self) -> float:
+        """Return the current electricity price."""
+        if (
+            not self.coordinator.data
+            or not isinstance(self.coordinator.data, dict)
+            or self._account_number not in self.coordinator.data
+        ):
+            return None
+
+        account_data = self.coordinator.data[self._account_number]
+        products = account_data.get("products", [])
+
+        if not products:
+            return None
+
+        # Find the current valid product (assuming products are ordered by validity)
+        current_product = None
+        for product in products:
+            # Try to get the gross_rate as a float
+            try:
+                gross_rate = float(product.get("grossRate", 0))
+                # Convert from cents to EUR
+                gross_rate_eur = gross_rate / 100.0
+
+                # Set as current product
+                current_product = product
+                return gross_rate_eur
+            except (ValueError, TypeError):
+                continue
+
+        return None
+
+    def _update_attributes(self) -> None:
+        """Update the internal attributes dictionary."""
+        # Default empty attributes
+        self._attributes = {
+            "code": "Unknown",
+            "name": "Unknown",
+            "description": "Unknown",
+            "type": "Unknown",
+            "valid_from": "Unknown",
+            "valid_to": "Unknown",
+        }
+
+        # Check if coordinator has valid data
+        if (
+            not self.coordinator
+            or not self.coordinator.data
+            or not isinstance(self.coordinator.data, dict)
+        ):
+            _LOGGER.debug("No valid data structure in coordinator")
+            return
+
+        # Check if account number exists in the data
+        if self._account_number not in self.coordinator.data:
+            _LOGGER.debug(
+                "Account %s not found in coordinator data", self._account_number
+            )
+            return
+
+        # Process data from the coordinator
+        account_data = self.coordinator.data[self._account_number]
+        products = account_data.get("products", [])
+
+        if not products:
+            return
+
+        # Find the current valid product
+        for product in products:
+            # Extract attribute values
+            self._attributes = {
+                "code": product.get("code", "Unknown"),
+                "name": product.get("name", "Unknown"),
+                "description": product.get("description", "Unknown"),
+                "type": product.get("type", "Unknown"),
+                "valid_from": product.get(
+                    "validFrom", "Unknown"
+                ),  # Korrekter Schlüsselname: validFrom
+                "valid_to": product.get(
+                    "validTo", "Unknown"
+                ),  # Korrekter Schlüsselname: validTo
+            }
+            # We just use the first product for now
+            # In the future, we could check for validity dates
+            break
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self._update_attributes()
+        self.async_write_ha_state()
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return additional state attributes for the sensor."""
+        return self._attributes
+
+    async def async_update(self) -> None:
+        """Update the entity."""
+        await super().async_update()
+        self._update_attributes()
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return (
+            self.coordinator is not None
+            and self.coordinator.last_update_success
+            and isinstance(self.coordinator.data, dict)
+            and self._account_number in self.coordinator.data
+        )
 
 
 class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorEntity):
