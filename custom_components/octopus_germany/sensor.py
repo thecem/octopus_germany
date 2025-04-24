@@ -47,12 +47,77 @@ async def async_setup_entry(
         _LOGGER.debug("No data in coordinator, triggering refresh")
         await coordinator.async_refresh()
 
-    entities = [
-        OctopusIntelligentDispatchingBinarySensor(account_number, coordinator),
-        OctopusElectricityPriceSensor(account_number, coordinator),
-    ]
+    # Debug log to see the complete data structure
+    if coordinator.data:
+        _LOGGER.debug("Coordinator data keys: %s", coordinator.data.keys())
+        if account_number in coordinator.data:
+            account_data = coordinator.data[account_number]
+            _LOGGER.debug(
+                "Account data keys for %s: %s", account_number, account_data.keys()
+            )
 
-    async_add_entities(entities)
+            # Log product information
+            if "products" in account_data:
+                _LOGGER.debug("Products found: %s", account_data["products"])
+            else:
+                _LOGGER.warning(
+                    "No 'products' key in account_data for account %s", account_number
+                )
+
+    # Initialize entities list
+    entities = []
+
+    # Always add the electricity price sensor if we have product data
+    if (
+        coordinator.data
+        and account_number in coordinator.data
+        and coordinator.data[account_number].get("products")
+    ):
+        _LOGGER.debug(
+            "Creating electricity price sensor for account %s", account_number
+        )
+        entities.append(OctopusElectricityPriceSensor(account_number, coordinator))
+    else:
+        _LOGGER.warning(
+            "Not creating electricity price sensor due to missing product data for account %s",
+            account_number,
+        )
+        if coordinator.data:
+            if account_number not in coordinator.data:
+                _LOGGER.error(
+                    "Account %s missing from coordinator data", account_number
+                )
+            elif not coordinator.data[account_number].get("products"):
+                _LOGGER.error(
+                    "No product data available for account %s", account_number
+                )
+
+    # Only add the dispatching sensor if we have devices
+    if (
+        coordinator.data
+        and account_number in coordinator.data
+        and coordinator.data[account_number].get("devices")
+    ):
+        entities.append(
+            OctopusIntelligentDispatchingBinarySensor(account_number, coordinator)
+        )
+        _LOGGER.debug("Added intelligent dispatching binary sensor")
+    else:
+        _LOGGER.info(
+            "Not creating intelligent dispatching sensor due to missing devices data for account %s",
+            account_number,
+        )
+
+    # Only add entities if we have any
+    if entities:
+        _LOGGER.debug(
+            "Adding %d entities: %s",
+            len(entities),
+            [type(e).__name__ for e in entities],
+        )
+        async_add_entities(entities)
+    else:
+        _LOGGER.warning("No entities to add for account %s", account_number)
 
 
 class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
@@ -82,29 +147,45 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
             or not isinstance(self.coordinator.data, dict)
             or self._account_number not in self.coordinator.data
         ):
+            _LOGGER.warning("No valid coordinator data found for price sensor")
             return None
 
         account_data = self.coordinator.data[self._account_number]
         products = account_data.get("products", [])
 
         if not products:
+            _LOGGER.warning("No products found in coordinator data")
             return None
 
         # Find the current valid product (assuming products are ordered by validity)
-        current_product = None
         for product in products:
             # Try to get the gross_rate as a float
             try:
-                gross_rate = float(product.get("grossRate", 0))
+                # The grossRate might be a string or a number, handle both cases
+                gross_rate_str = product.get("grossRate", "0")
+                gross_rate = float(gross_rate_str)
+
                 # Convert from cents to EUR
                 gross_rate_eur = gross_rate / 100.0
 
-                # Set as current product
-                current_product = product
+                _LOGGER.debug(
+                    "Found price: %s cents = %s EUR for product %s",
+                    gross_rate_str,
+                    gross_rate_eur,
+                    product.get("code", "Unknown"),
+                )
+
                 return gross_rate_eur
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as e:
+                _LOGGER.warning(
+                    "Failed to convert price for product %s: %s - %s",
+                    product.get("code", "Unknown"),
+                    product.get("grossRate", "Unknown"),
+                    str(e),
+                )
                 continue
 
+        _LOGGER.warning("No valid price found in any product")
         return None
 
     def _update_attributes(self) -> None:
