@@ -1,0 +1,49 @@
+set_vehicle_charge_preferences:
+  name: Set vehicle charge preferences
+  description: Set the charging preferences for your electric vehicle
+  fields:
+    account_number:
+      name: Account number
+      description: Your Octopus Energy account number (optional, uses account from configuration if not specified)
+      required: false
+      example: ""
+      selector:
+        text:
+    weekday_target_soc:
+      name: Weekday target state of charge
+      description: Target state of charge (in %) for weekdays
+      required: true
+      default: 10
+      example: 10
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+    weekend_target_soc:
+      name: Weekend target state of charge
+      description: Target state of charge (in %) for weekends
+      required: true
+      default: 15
+      example: 15
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+    weekday_target_time:
+      name: Weekday target time
+      description: Target time for weekday charging (HH:MM)
+      required: true
+      default: "05:01"
+      example: "05:01"
+      selector:
+        time:
+    weekend_target_time:
+      name: Weekend target time
+      description: Target time for weekend charging (HH:MM)
+      required: true
+      default: "05:01"
+      example: "05:01"
+      selector:
+        time:
