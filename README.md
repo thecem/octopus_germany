@@ -76,12 +76,9 @@ The integration is configured via the Home Assistant UI:
 - **Attributes**:
   - `planned_dispatches`: List of upcoming charging sessions
   - `completed_dispatches`: List of past charging sessions
-  - `provider`: Your energy provider
-  - `vehicle_battery_size_in_kwh`: Size of your vehicle's battery (if available)
-  - `current_start`: Start time of the current dispatch
-  - `current_end`: End time of the current dispatch
   - `devices`: List of connected devices
   - `current_state`: Current state of your smart charging device
+  - `last_updated`: Timestamp of the last update
 
 ### Switches
 
