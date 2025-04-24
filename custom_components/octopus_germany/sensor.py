@@ -172,7 +172,9 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
             "type": "Unknown",
             "valid_from": "Unknown",
             "valid_to": "Unknown",
-            "properties": [],
+            "meter_id": "Unknown",
+            "meter_number": "Unknown",
+            "meter_type": "Unknown",
         }
 
         # Check if coordinator has valid data
@@ -197,63 +199,27 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
         account_data = self.coordinator.data[self._account_number]
         products = account_data.get("products", [])
 
-        # Get properties information
-        properties_info = []
-        account_obj = account_data.get("account", {})
-        all_properties = account_obj.get("allProperties", [])
+        # Extract meter information directly
+        meter_data = account_data.get("meter", {})
+        meter_id = "Unknown"
+        meter_number = "Unknown"
+        meter_type = "Unknown"
 
-        for prop in all_properties:
-            property_info = {"id": prop.get("id", "Unknown"), "electricity_malos": []}
-
-            for malo in prop.get("electricityMalos", []):
-                malo_info = {
-                    "malo_number": malo.get("maloNumber", "Unknown"),
-                    "melo_number": malo.get("meloNumber", "Unknown"),
-                    "reference_consumption": malo.get(
-                        "referenceConsumption", "Unknown"
-                    ),
-                    "agreements": [],
-                }
-
-                # Add meter information if available
-                if malo.get("meter"):
-                    meter = malo.get("meter", {})
-                    malo_info["meter"] = {
-                        "id": meter.get("id", "Unknown"),
-                        "meter_type": meter.get("meterType", "Unknown"),
-                        "number": meter.get("number", "Unknown"),
-                        "should_receive_smart_meter_data": meter.get(
-                            "shouldReceiveSmartMeterData", False
-                        ),
-                        "submit_meter_reading_url": meter.get(
-                            "submitMeterReadingUrl", ""
-                        ),
-                    }
-
-                # Add agreements information
-                for agreement in malo.get("agreements", []):
-                    agreement_info = {
-                        "valid_from": agreement.get("validFrom", "Unknown"),
-                        "valid_to": agreement.get("validTo", "Unknown"),
-                        "product": {},
-                    }
-
-                    if agreement.get("product"):
-                        product = agreement.get("product", {})
-                        agreement_info["product"] = {
-                            "code": product.get("code", "Unknown"),
-                            "description": product.get("description", ""),
-                            "full_name": product.get("fullName", ""),
-                        }
-
-                    malo_info["agreements"].append(agreement_info)
-
-                property_info["electricity_malos"].append(malo_info)
-
-            properties_info.append(property_info)
+        if meter_data and isinstance(meter_data, dict):
+            meter_id = meter_data.get("id", "Unknown")
+            meter_number = meter_data.get("number", "Unknown")
+            meter_type = meter_data.get("meterType", "Unknown")
+            _LOGGER.debug(
+                f"Found meter info: id={meter_id}, number={meter_number}, type={meter_type}"
+            )
 
         if not products:
-            self._attributes = {**default_attributes, "properties": properties_info}
+            self._attributes = {
+                **default_attributes,
+                "meter_id": meter_id,
+                "meter_number": meter_number,
+                "meter_type": meter_type,
+            }
             return
 
         # Find the current valid product
@@ -266,7 +232,9 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
                 "type": product.get("type", "Unknown"),
                 "valid_from": product.get("validFrom", "Unknown"),
                 "valid_to": product.get("validTo", "Unknown"),
-                "properties": properties_info,
+                "meter_id": meter_id,
+                "meter_number": meter_number,
+                "meter_type": meter_type,
             }
 
             # Add any additional information from account data
