@@ -18,9 +18,25 @@ from homeassistant.util.dt import utcnow, as_utc, parse_datetime
 from .const import DOMAIN, CONF_EMAIL, CONF_PASSWORD, UPDATE_INTERVAL, DEBUG_ENABLED
 from .octopus_germany import OctopusGermany
 
+import voluptuous as vol
+from homeassistant.core import ServiceCall
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+import aiohttp
+
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH]
+
+API_URL = "https://api.octopus.energy/v1/graphql/"
+
+# Service schemas
+SERVICE_SET_VEHICLE_CHARGE_PREFERENCES = "set_vehicle_charge_preferences"
+ATTR_ACCOUNT_NUMBER = "account_number"
+ATTR_WEEKDAY_TARGET_SOC = "weekday_target_soc"
+ATTR_WEEKEND_TARGET_SOC = "weekend_target_soc"
+ATTR_WEEKDAY_TARGET_TIME = "weekday_target_time"
+ATTR_WEEKEND_TARGET_TIME = "weekend_target_time"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -372,6 +388,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     entry.async_on_unload(entry.add_update_listener(_async_update_options))
+
+    # Register services
+    async def handle_set_vehicle_charge_preferences(call: ServiceCall):
+        """Handle the service call."""
+        # Use account number from service call or fall back to the one from config
+        call_account_number = call.data.get(ATTR_ACCOUNT_NUMBER)
+        used_account_number = call_account_number or account_number
+        weekday_target_soc = call.data.get(ATTR_WEEKDAY_TARGET_SOC)
+        weekend_target_soc = call.data.get(ATTR_WEEKEND_TARGET_SOC)
+        weekday_target_time = call.data.get(ATTR_WEEKDAY_TARGET_TIME)
+        weekend_target_time = call.data.get(ATTR_WEEKEND_TARGET_TIME)
+
+        # Call the method on the API class
+        success = await api.set_vehicle_charge_preferences(
+            used_account_number,
+            weekday_target_soc,
+            weekend_target_soc,
+            weekday_target_time,
+            weekend_target_time,
+        )
+
+        if success:
+            _LOGGER.info("Successfully set vehicle charge preferences")
+            return True
+        else:
+            _LOGGER.error("Failed to set vehicle charge preferences")
+            return False
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_VEHICLE_CHARGE_PREFERENCES,
+        handle_set_vehicle_charge_preferences,
+    )
+
     return True
 
 
