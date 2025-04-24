@@ -60,15 +60,20 @@ The integration is configured via the Home Assistant UI:
   - `type`: Product type (Simple or TimeOfUse)
   - `valid_from`: Start date of validity
   - `valid_to`: End date of validity
-
+  - `meter_id`: ID of your meter
+  - `meter_number`: Number of your meter
+  - `meter_type`: Type of your meter (MME, iMSys, etc.)
+  - `account_number`: Your Octopus Energy account number
+  - `malo_number`: Your electricity meter point number
+  - `melo_number`: Your electricity meter number
+  - `electricity_balance`: Your current account balance in EUR
+    
 #### Intelligent Dispatching Binary Sensor
 
 - **Entity ID**: `binary_sensor.octopus_<account_number>_intelligent_dispatching`
 - **Description**: Shows whether intelligent dispatching (smart charging) is currently active
 - **State**: `on` when a dispatch is active, `off` otherwise
 - **Attributes**:
-  - `account_number`: Your Octopus Energy account number
-  - `electricity_balance`: Your current account balance in EUR
   - `planned_dispatches`: List of upcoming charging sessions
   - `completed_dispatches`: List of past charging sessions
   - `provider`: Your energy provider
@@ -76,10 +81,6 @@ The integration is configured via the Home Assistant UI:
   - `current_start`: Start time of the current dispatch
   - `current_end`: End time of the current dispatch
   - `devices`: List of connected devices
-  - `products`: Details about your energy products
-  - `malo_number`: Your electricity meter point number
-  - `melo_number`: Your electricity meter number
-  - `meter`: Information about your meter
   - `current_state`: Current state of your smart charging device
 
 ### Switches
