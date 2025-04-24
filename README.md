@@ -141,8 +141,8 @@ logger:
 ## Support
 
 For bug reports and feature requests, please open an issue on the GitHub repository.
-Before raising anything, please read through the [discussion](https://github.io/thecem/octopus_germany/discussions). 
-If you have found a bug or have a feature request please [raise it](https://github.io/thecem/octopus_germany/issues) using the appropriate report template.
+Before raising anything, please read through the [discussion](https://github.com/thecem/octopus_germany/discussions). 
+If you have found a bug or have a feature request please [raise it](https://github.com/thecem/octopus_germany/issues) using the appropriate report template.
 
 ## Sponsorship
 
