@@ -236,6 +236,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
                 "meter_id": meter_id,
                 "meter_number": meter_number,
                 "meter_type": meter_type,
+                "account_number": self._account_number,
             }
 
             # Add any additional information from account data
