@@ -110,6 +110,17 @@ class OctopusGermany:
         """Get the current token from the token manager."""
         return self._token_manager.token
 
+    def _get_auth_headers(self):
+        """Get headers with authorization token."""
+        return {"Authorization": self._token} if self._token else {}
+
+    def _get_graphql_client(self, additional_headers=None):
+        """Get a GraphQL client with authorization headers."""
+        headers = self._get_auth_headers()
+        if additional_headers:
+            headers.update(additional_headers)
+        return GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers=headers)
+
     async def login(self) -> bool:
         """Login and obtain a new token."""
         # Use a lock to prevent multiple concurrent login attempts
@@ -127,7 +138,7 @@ class OctopusGermany:
                 }
             """
             variables = {"email": self._email, "password": self._password}
-            client = GraphqlClient(endpoint=GRAPH_QL_ENDPOINT)
+            client = self._get_graphql_client()
 
             retries = 5
             delay = 1  # Start with 1 second delay
@@ -200,8 +211,7 @@ class OctopusGermany:
               }
             }
         """
-        headers = {"authorization": self._token}
-        client = GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers=headers)
+        client = self._get_graphql_client()
 
         try:
             response = await client.execute_async(query=query)
@@ -381,8 +391,7 @@ class OctopusGermany:
             }
         """
         variables = {"accountNumber": account_number}
-        headers = {"authorization": self._token}
-        client = GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers=headers)
+        client = self._get_graphql_client()
 
         try:
             _LOGGER.debug(
@@ -445,8 +454,7 @@ class OctopusGermany:
             device_id,
             action,
         )
-        headers = {"authorization": self._token}
-        client = GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers=headers)
+        client = self._get_graphql_client()
         try:
             response = await client.execute_async(query=query, variables=variables)
             _LOGGER.debug("Change device suspension response: %s", response)
@@ -475,3 +483,86 @@ class OctopusGermany:
         except Exception as e:
             _LOGGER.error("Error changing device suspension: %s", e)
             return None
+
+    async def set_vehicle_charge_preferences(
+        self,
+        account_number: str,
+        weekday_target_soc: int,
+        weekend_target_soc: int,
+        weekday_target_time: str,
+        weekend_target_time: str,
+    ) -> bool:
+        """Set vehicle charging preferences with account number."""
+        if not await self.ensure_token():
+            _LOGGER.error(
+                "Failed to ensure valid token for set_vehicle_charge_preferences"
+            )
+            return False
+
+        # Use the same GraphQL mutation format that has been confirmed to work
+        query = """
+        mutation setVehicleChargePreferences($accountNumber: String = "") {
+          setVehicleChargePreferences(
+            input: {accountNumber: $accountNumber, weekdayTargetSoc: %d, weekendTargetSoc: %d, weekdayTargetTime: "%s", weekendTargetTime: "%s"}
+          ) {
+            krakenflexDevice {
+              provider
+            }
+          }
+        }
+        """ % (
+            weekday_target_soc,
+            weekend_target_soc,
+            weekday_target_time,
+            weekend_target_time,
+        )
+
+        variables = {"accountNumber": account_number}
+
+        # Create a fresh GraphQL client with explicit authorization headers
+        headers = {"Authorization": self._token}
+        client = GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers=headers)
+
+        _LOGGER.debug(
+            "Making set_vehicle_charge_preferences API request with account: %s",
+            account_number,
+        )
+
+        try:
+            response = await client.execute_async(query=query, variables=variables)
+            _LOGGER.debug("Set vehicle charge preferences response: %s", response)
+
+            if "errors" in response:
+                error = response.get("errors", [{}])[0]
+                error_code = error.get("extensions", {}).get("errorCode")
+                error_message = error.get("message", "Unknown error")
+
+                _LOGGER.error(
+                    "API error setting vehicle charge preferences: %s (code: %s)",
+                    error_message,
+                    error_code,
+                )
+
+                # Check if token expired error
+                if error_code == "KT-CT-1124":  # JWT expired
+                    _LOGGER.warning(
+                        "Token expired during setting vehicle charge preferences, refreshing..."
+                    )
+                    self._token_manager.clear()
+                    success = await self.login()
+                    if success:
+                        # Retry with new token
+                        return await self.set_vehicle_charge_preferences(
+                            account_number,
+                            weekday_target_soc,
+                            weekend_target_soc,
+                            weekday_target_time,
+                            weekend_target_time,
+                        )
+
+                return False
+
+            return True
+        except Exception as e:
+            _LOGGER.error("Error setting vehicle charge preferences: %s", e)
+            return False
