@@ -1,0 +1,142 @@
+# Octopus Germany Integration for Home Assistant
+
+![Octopus Energy](https://octopusenergy.de/images/branding/primary_logo.svg)
+
+This custom component integrates Octopus Germany services with Home Assistant, providing access to your energy account data, electricity prices, device control, and vehicle charging preferences.
+
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+
+## Features
+
+- Account information display with electricity balance
+- Current electricity tariff prices
+- Device smart control (suspend/unsuspend charging)
+- Electric vehicle charging preferences management
+- Intelligent dispatching status tracking
+
+## Installation
+
+### HACS (Home Assistant Community Store)
+
+1. Add this repository as a custom repository in HACS
+2. Search for "Octopus Germany" in the HACS integrations
+3. Install the integration
+4. Restart Home Assistant
+5. Add the integration via the UI under **Settings** > **Devices & Services** > **Add Integration**
+
+### Manual Installation
+
+1. Copy the `octopus_germany` directory to your Home Assistant `custom_components` directory
+2. Restart Home Assistant
+3. Add the integration via the UI under **Settings** > **Devices & Services** > **Add Integration**
+
+## Configuration
+
+The integration is configured via the Home Assistant UI:
+
+1. Navigate to **Settings** > **Devices & Services**
+2. Click **+ ADD INTEGRATION** and search for "Octopus Germany"
+3. Enter your Octopus Energy Germany email and password
+4. The integration will automatically fetch your account number and set up the entities
+
+## Entities
+
+### Sensors
+
+#### Electricity Price Sensor
+
+- **Entity ID**: `sensor.octopus_<account_number>_electricity_price`
+- **Description**: Shows the current electricity price in €/kWh
+- **Attributes**:
+  - `code`: Product code
+  - `name`: Product name
+  - `description`: Product description
+  - `type`: Product type (Simple or TimeOfUse)
+  - `valid_from`: Start date of validity
+  - `valid_to`: End date of validity
+
+#### Intelligent Dispatching Binary Sensor
+
+- **Entity ID**: `binary_sensor.octopus_<account_number>_intelligent_dispatching`
+- **Description**: Shows whether intelligent dispatching (smart charging) is currently active
+- **State**: `on` when a dispatch is active, `off` otherwise
+- **Attributes**:
+  - `account_number`: Your Octopus Energy account number
+  - `electricity_balance`: Your current account balance in EUR
+  - `planned_dispatches`: List of upcoming charging sessions
+  - `completed_dispatches`: List of past charging sessions
+  - `provider`: Your energy provider
+  - `vehicle_battery_size_in_kwh`: Size of your vehicle's battery (if available)
+  - `current_start`: Start time of the current dispatch
+  - `current_end`: End time of the current dispatch
+  - `devices`: List of connected devices
+  - `products`: Details about your energy products
+  - `malo_number`: Your electricity meter point number
+  - `melo_number`: Your electricity meter number
+  - `meter`: Information about your meter
+  - `current_state`: Current state of your smart charging device
+
+### Switches
+
+#### Device Smart Control
+
+- **Entity ID**: `switch.octopus_<account_number>_device_smart_control`
+- **Description**: Controls whether smart charging is enabled for your vehicle
+- **Actions**:
+  - Turn **ON** to enable smart charging (unsuspend)
+  - Turn **OFF** to disable smart charging (suspend)
+- **Attributes**:
+  - `device_id`: Internal ID of the connected device
+  - `name`: Name of the device
+  - `model`: Vehicle model (if available)
+  - `battery_size`: Battery capacity (if available)
+  - `provider`: Device provider
+  - `status`: Current status of the device
+  - `last_updated`: Timestamp of the last update
+
+## Services
+
+### Set Vehicle Charge Preferences
+
+- **Service ID**: `octopus_germany.set_vehicle_charge_preferences`
+- **Description**: Configure your vehicle's charging preferences
+- **Parameters**:
+  - `account_number` (optional): Your Octopus Energy account number (uses account from configuration if not specified)
+  - `weekday_target_soc` (required): Target state of charge (in %) for weekdays
+  - `weekend_target_soc` (required): Target state of charge (in %) for weekends
+  - `weekday_target_time` (required): Target time for weekday charging (HH:MM)
+  - `weekend_target_time` (required): Target time for weekend charging (HH:MM)
+
+**Example:**
+
+```yaml
+# Example automation to set vehicle charging preferences to 80% by 7:30 AM on weekdays and 90% by 9:00 AM on weekends
+service: octopus_germany.set_vehicle_charge_preferences
+data:
+  weekday_target_soc: 80
+  weekend_target_soc: 90
+  weekday_target_time: "07:30"
+  weekend_target_time: "09:00"
+```
+
+## Debugging
+
+If you encounter issues, you can enable debug logging by adding the following to your `configuration.yaml`:
+
+```yaml
+logger:
+  logs:
+    custom_components.octopus_germany: debug
+```
+
+## Support
+
+For bug reports and feature requests, please open an issue on the GitHub repository.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Disclaimer
+
+This integration is not officially affiliated with Octopus Energy Germany. Use at your own risk.
