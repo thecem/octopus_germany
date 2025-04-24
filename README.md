@@ -124,6 +124,9 @@ data:
   weekday_target_time: "07:30"
   weekend_target_time: "09:00"
 ```
+## Automation
+
+[Octopus Intelligent Go mit EVCC](https://github.com/ha-puzzles/homeassistant-puzzlepieces/blob/main/use-cases/stromtarife/octopus-intelligent-go/README.md)
 
 ## Debugging
 
