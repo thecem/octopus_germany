@@ -175,16 +175,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not data:
             return {}
 
+        # Initialize the data structure
+        result_data = {
+            account_number: {
+                "account_number": account_number,
+                "electricity_balance": 0,
+                "planned_dispatches": [],
+                "completed_dispatches": [],
+                "property_ids": [],
+                "devices": [],
+                "products": [],
+                "vehicle_battery_size_in_kwh": None,
+                "current_start": None,
+                "current_end": None,
+                "next_start": None,
+                "next_end": None,
+                "ledgers": [],
+                "malo_number": None,
+                "melo_number": None,
+                "meter": None,
+            }
+        }
+
+        # Extract account data - this should be available even if device-related endpoints fail
         account_data = data.get("account", {})
-        devices = data.get("devices", [])
-        direct_products = data.get(
-            "direct_products", []
-        )  # Zusätzliche Produktdaten aus dem direkten products API Feld
-        planned_dispatches = data.get("plannedDispatches", [])
-        completed_dispatches = data.get("completedDispatches", [])
 
         # Log what data we have
         _LOGGER.debug("Processing API data - fields available: %s", list(data.keys()))
+        _LOGGER.debug("Account data fields: %s", list(account_data.keys()))
 
         # Extract electricity balance from ledgers
         ledgers = account_data.get("ledgers", [])
@@ -197,6 +215,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             0,
         )
         electricity_balance_eur = electricity_balance_cents / 100
+        result_data[account_number]["electricity_balance"] = electricity_balance_eur
+        result_data[account_number]["ledgers"] = ledgers
 
         # Extract MALO and MELO numbers
         malo_number = next(
@@ -208,6 +228,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             ),
             None,
         )
+        result_data[account_number]["malo_number"] = malo_number
 
         melo_number = next(
             (
@@ -218,6 +239,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             ),
             None,
         )
+        result_data[account_number]["melo_number"] = melo_number
 
         # Get meter data
         meter = None
@@ -228,9 +250,83 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     break
             if meter:
                 break
+        result_data[account_number]["meter"] = meter
+
+        # Extract property IDs
+        property_ids = [
+            prop.get("id") for prop in account_data.get("allProperties", [])
+        ]
+        result_data[account_number]["property_ids"] = property_ids
+
+        # Handle device-related data if it exists (may be missing with KT-CT-4301 error)
+        devices = data.get("devices", [])
+        result_data[account_number]["devices"] = devices
+
+        # Extract vehicle battery size if available
+        vehicle_battery_size = None
+        for device in devices:
+            if device.get("vehicleVariant") and device["vehicleVariant"].get(
+                "batterySize"
+            ):
+                try:
+                    vehicle_battery_size = float(
+                        device["vehicleVariant"]["batterySize"]
+                    )
+                    break
+                except (ValueError, TypeError):
+                    pass
+        result_data[account_number]["vehicle_battery_size_in_kwh"] = (
+            vehicle_battery_size
+        )
+
+        # Handle dispatch data if it exists
+        planned_dispatches = data.get("plannedDispatches", [])
+        if planned_dispatches is None:  # Handle explicit None value (from API error)
+            planned_dispatches = []
+        result_data[account_number]["planned_dispatches"] = planned_dispatches
+
+        completed_dispatches = data.get("completedDispatches", [])
+        if completed_dispatches is None:  # Handle explicit None value (from API error)
+            completed_dispatches = []
+        result_data[account_number]["completed_dispatches"] = completed_dispatches
+
+        # Calculate current and next dispatches
+        now = utcnow()  # Use timezone-aware UTC now
+        current_start = None
+        current_end = None
+        next_start = None
+        next_end = None
+
+        for dispatch in sorted(planned_dispatches, key=lambda x: x.get("start", "")):
+            try:
+                # Convert string to timezone-aware datetime objects
+                start_str = dispatch.get("start")
+                end_str = dispatch.get("end")
+
+                if not start_str or not end_str:
+                    continue
+
+                # Parse string to datetime and ensure it's UTC timezone-aware
+                start = as_utc(parse_datetime(start_str))
+                end = as_utc(parse_datetime(end_str))
+
+                if start <= now <= end:
+                    current_start = start
+                    current_end = end
+                elif now < start and not next_start:
+                    next_start = start
+                    next_end = end
+            except (ValueError, TypeError) as e:
+                _LOGGER.error("Error parsing dispatch dates: %s - %s", dispatch, str(e))
+
+        result_data[account_number]["current_start"] = current_start
+        result_data[account_number]["current_end"] = current_end
+        result_data[account_number]["next_start"] = next_start
+        result_data[account_number]["next_end"] = next_end
 
         # Extract products - ensure we always have product data
         products = []
+        direct_products = data.get("direct_products", [])
 
         # Check if we have direct products data first
         if direct_products:
@@ -358,15 +454,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                     gross_rate,
                                 )
 
-                        # Add a fallback hard-coded price for testing if nothing was found
-                        if gross_rate == "0" and not found_any_gross_rate:
-                            _LOGGER.warning(
-                                "No gross rate found in API data, using fallback value"
-                            )
-                            gross_rate = (
-                                "30"  # 30 cents as a reasonable fallback for testing
-                            )
-
                         products.append(
                             {
                                 "code": product.get("code", "Unknown"),
@@ -406,75 +493,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 }
             )
 
-        # Extract vehicle battery size if available
-        vehicle_battery_size = None
-        for device in devices:
-            if device.get("vehicleVariant") and device["vehicleVariant"].get(
-                "batterySize"
-            ):
-                try:
-                    vehicle_battery_size = float(
-                        device["vehicleVariant"]["batterySize"]
-                    )
-                    break
-                except (ValueError, TypeError):
-                    pass
+        result_data[account_number]["products"] = products
 
-        # Extract property IDs
-        property_ids = [
-            prop.get("id") for prop in account_data.get("allProperties", [])
-        ]
-
-        # Calculate current and next dispatches
-        now = utcnow()  # Use timezone-aware UTC now
-        current_start = None
-        current_end = None
-        next_start = None
-        next_end = None
-
-        for dispatch in sorted(planned_dispatches, key=lambda x: x.get("start", "")):
-            try:
-                # Convert string to timezone-aware datetime objects
-                start_str = dispatch.get("start")
-                end_str = dispatch.get("end")
-
-                if not start_str or not end_str:
-                    continue
-
-                # Parse string to datetime and ensure it's UTC timezone-aware
-                start = as_utc(parse_datetime(start_str))
-                end = as_utc(parse_datetime(end_str))
-
-                if start <= now <= end:
-                    current_start = start
-                    current_end = end
-                elif now < start and not next_start:
-                    next_start = start
-                    next_end = end
-            except (ValueError, TypeError) as e:
-                _LOGGER.error("Error parsing dispatch dates: %s - %s", dispatch, str(e))
-
-        # Build structured data response
-        return {
-            account_number: {
-                "account_number": account_number,
-                "electricity_balance": electricity_balance_eur,
-                "planned_dispatches": planned_dispatches,
-                "completed_dispatches": completed_dispatches,
-                "property_ids": property_ids,
-                "devices": devices,
-                "products": products,
-                "vehicle_battery_size_in_kwh": vehicle_battery_size,
-                "current_start": current_start,
-                "current_end": current_end,
-                "next_start": next_start,
-                "next_end": next_end,
-                "ledgers": ledgers,
-                "malo_number": malo_number,
-                "melo_number": melo_number,
-                "meter": meter,
-            }
-        }
+        return result_data
 
     coordinator = DataUpdateCoordinator(
         hass,
