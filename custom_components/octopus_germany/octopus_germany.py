@@ -407,7 +407,88 @@ class OctopusGermany:
                 _LOGGER.error("API returned None response")
                 return None
 
-            if "errors" in response:
+            # Initialize the result structure
+            result = {
+                "account": {},
+                "completedDispatches": [],
+                "devices": [],
+                "plannedDispatches": [],
+            }
+
+            # Now check for partial data availability - we'll continue even if there are some errors
+            if "data" in response:
+                data = response["data"]
+
+                # Process available data fields
+                if "account" in data:
+                    result["account"] = data["account"]
+
+                if "devices" in data:
+                    result["devices"] = (
+                        data["devices"] if data["devices"] is not None else []
+                    )
+
+                if "completedDispatches" in data:
+                    result["completedDispatches"] = (
+                        data["completedDispatches"]
+                        if data["completedDispatches"] is not None
+                        else []
+                    )
+
+                if "plannedDispatches" in data:
+                    result["plannedDispatches"] = (
+                        data["plannedDispatches"]
+                        if data["plannedDispatches"] is not None
+                        else []
+                    )
+
+                # Only log errors but don't fail the whole request if we got at least account data
+                if "errors" in response and result["account"]:
+                    # Filter only the errors that are about missing devices
+                    device_errors = [
+                        error
+                        for error in response["errors"]
+                        if (
+                            error.get("path", [])
+                            and error.get("path")[0]
+                            in ["completedDispatches", "plannedDispatches", "devices"]
+                            and error.get("extensions", {}).get("errorCode")
+                            == "KT-CT-4301"
+                        )
+                    ]
+
+                    # Handle other errors that might affect the account data
+                    other_errors = [
+                        error
+                        for error in response["errors"]
+                        if error not in device_errors
+                    ]
+
+                    if device_errors:
+                        _LOGGER.warning(
+                            "API returned device-related errors (expected for accounts without devices): %s",
+                            device_errors,
+                        )
+
+                    if other_errors:
+                        _LOGGER.error(
+                            "API returned non-device related errors: %s", other_errors
+                        )
+
+                        # Check for token expiry in the other errors
+                        for error in other_errors:
+                            error_code = error.get("extensions", {}).get("errorCode")
+                            if error_code == "KT-CT-1124":  # JWT expired
+                                _LOGGER.warning("Token expired, refreshing...")
+                                self._token_manager.clear()
+                                success = await self.login()
+                                if success:
+                                    # Retry with new token
+                                    return await self.fetch_all_data(account_number)
+
+                return result
+            elif "errors" in response:
+                # Handle critical errors that prevent any data from being returned
                 error = response.get("errors", [{}])[0]
                 error_code = error.get("extensions", {}).get("errorCode")
 
@@ -420,17 +501,15 @@ class OctopusGermany:
                         # Retry with new token
                         return await self.fetch_all_data(account_number)
 
-                _LOGGER.error("API returned errors: %s", response.get("errors"))
+                _LOGGER.error(
+                    "API returned critical errors with no data: %s",
+                    response.get("errors"),
+                )
+                return None
+            else:
+                _LOGGER.error("API response contains neither data nor errors")
                 return None
 
-            data = response.get("data", {})
-            account_data = data.get("account", {})
-            return {
-                "account": account_data,
-                "completedDispatches": data.get("completedDispatches", []),
-                "devices": data.get("devices", []),
-                "plannedDispatches": data.get("plannedDispatches", []),
-            }
         except Exception as e:
             _LOGGER.error("Error fetching all data: %s", e)
             return None
