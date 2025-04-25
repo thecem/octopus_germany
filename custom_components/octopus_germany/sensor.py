@@ -46,41 +46,41 @@ async def async_setup_entry(
                 "Account data keys for %s: %s", account_number, account_data.keys()
             )
 
-            # Log product information
-            if "products" in account_data:
-                _LOGGER.debug("Products found: %s", account_data["products"])
-            else:
-                _LOGGER.warning(
-                    "No 'products' key in account_data for account %s", account_number
-                )
-
     # Initialize entities list
     entities = []
 
-    # Always add the electricity price sensor if we have product data
+    # Check for product data
     if (
         coordinator.data
         and account_number in coordinator.data
-        and coordinator.data[account_number].get("products")
+        and "products" in coordinator.data[account_number]
     ):
-        _LOGGER.debug(
-            "Creating electricity price sensor for account %s", account_number
-        )
-        entities.append(OctopusElectricityPriceSensor(account_number, coordinator))
+        products = coordinator.data[account_number].get("products")
+        if products:
+            _LOGGER.debug(
+                "Creating electricity price sensor for account %s with %d products",
+                account_number,
+                len(products),
+            )
+            entities.append(OctopusElectricityPriceSensor(account_number, coordinator))
+        else:
+            _LOGGER.warning(
+                "Not creating electricity price sensor due to empty products list for account %s",
+                account_number,
+            )
     else:
-        _LOGGER.warning(
-            "Not creating electricity price sensor due to missing product data for account %s",
-            account_number,
-        )
-        if coordinator.data:
-            if account_number not in coordinator.data:
-                _LOGGER.error(
-                    "Account %s missing from coordinator data", account_number
-                )
-            elif not coordinator.data[account_number].get("products"):
-                _LOGGER.error(
-                    "No product data available for account %s", account_number
-                )
+        if coordinator.data is None:
+            _LOGGER.error("No coordinator data available")
+        elif account_number not in coordinator.data:
+            _LOGGER.error("Account %s missing from coordinator data", account_number)
+        elif "products" not in coordinator.data[account_number]:
+            _LOGGER.error(
+                "No 'products' key in coordinator data for account %s", account_number
+            )
+        else:
+            _LOGGER.error(
+                "Unknown issue detecting products for account %s", account_number
+            )
 
     # Only add entities if we have any
     if entities:
