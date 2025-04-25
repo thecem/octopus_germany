@@ -14,6 +14,10 @@ If you find this useful and are planning on moving to Octopus Energy Germany, wh
 
 - Account information display with electricity balance
 - Current electricity tariff prices
+- Support for Octopus tariff types:
+  - Simple tariffs (fixed rate)
+  - Time of Use tariffs (different rates at different times)
+  - Heat tariffs (for heat pumps)
 - Device smart control (suspend/unsuspend charging)
 - Electric vehicle charging preferences management
 - Intelligent dispatching status tracking
@@ -22,7 +26,7 @@ If you find this useful and are planning on moving to Octopus Energy Germany, wh
 
 ### HACS (Home Assistant Community Store)
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration) 
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
 
 1. Add this repository as a custom repository in HACS
 2. Search for ["Octopus Germany"](https://my.home-assistant.io/redirect/hacs_repository/?owner=thecem&repository=octopus_germany&category=integration) in the HACS integrations
@@ -53,6 +57,10 @@ The integration is configured via the Home Assistant UI:
 
 - **Entity ID**: `sensor.octopus_<account_number>_electricity_price`
 - **Description**: Shows the current electricity price in €/kWh
+- **Tariff support**:
+  - **Simple tariffs**: Displays the fixed rate
+  - **Time of Use tariffs**: Automatically updates to show the currently active rate based on the time of day
+  - **Heat tariffs**: Supports specific heat pump tariffs like Heat Light and shows the applicable rate
 - **Attributes**:
   - `code`: Product code
   - `name`: Product name
@@ -67,7 +75,9 @@ The integration is configured via the Home Assistant UI:
   - `malo_number`: Your electricity meter point number
   - `melo_number`: Your electricity meter number
   - `electricity_balance`: Your current account balance in EUR
-    
+  - `timeslots`: (For TimeOfUse tariffs) List of all time slots with their rates and activation times
+  - `active_timeslot`: (For TimeOfUse tariffs) Currently active time slot name (e.g., "GO", "STANDARD")
+
 #### Intelligent Dispatching Binary Sensor
 
 - **Entity ID**: `binary_sensor.octopus_<account_number>_intelligent_dispatching`
@@ -139,7 +149,7 @@ logger:
 ## Support
 
 For bug reports and feature requests, please open an issue on the GitHub repository.
-Before raising anything, please read through the [discussion](https://github.com/thecem/octopus_germany/discussions). 
+Before raising anything, please read through the [discussion](https://github.com/thecem/octopus_germany/discussions).
 If you have found a bug or have a feature request please [raise it](https://github.com/thecem/octopus_germany/issues) using the appropriate report template.
 
 ## Sponsorship
