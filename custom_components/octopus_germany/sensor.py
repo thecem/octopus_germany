@@ -149,6 +149,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
         # For SimpleProductUnitRateInformation, just return the single rate
         if product.get("type") == "Simple":
             try:
+                # Convert to float but don't round - divide by 100 to convert from cents to euros
                 return float(product.get("grossRate", "0")) / 100.0
             except (ValueError, TypeError):
                 return None
@@ -168,6 +169,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
                         and self._is_time_between(current_time, from_time, to_time)
                     ):
                         try:
+                            # Convert to float but don't round - divide by 100 to convert from cents to euros
                             return float(timeslot.get("rate", "0")) / 100.0
                         except (ValueError, TypeError):
                             continue
@@ -233,6 +235,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
             try:
                 gross_rate_str = current_product.get("grossRate", "0")
                 gross_rate = float(gross_rate_str)
+                # Convert from cents to EUR without rounding
                 gross_rate_eur = gross_rate / 100.0
 
                 _LOGGER.debug(
@@ -390,6 +393,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
                         ):
                             active_timeslot = timeslot.get("name", "Unknown")
                             product_attributes["active_timeslot"] = active_timeslot
+                            # Store the rate without rounding (convert from cents to euros)
                             product_attributes["active_timeslot_rate"] = (
                                 float(timeslot.get("rate", "0")) / 100.0
                             )
