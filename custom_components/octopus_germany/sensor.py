@@ -6,7 +6,8 @@ electricity price information.
 """
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List
+from datetime import datetime, time
 
 from homeassistant.components.sensor import (
     SensorEntity,
@@ -113,6 +114,67 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
         # Initialize attributes right after creation
         self._update_attributes()
 
+    def _parse_time(self, time_str: str) -> time:
+        """Parse time string in HH:MM:SS format to time object."""
+        try:
+            hour, minute, second = map(int, time_str.split(":"))
+            return time(hour=hour, minute=minute, second=second)
+        except (ValueError, AttributeError):
+            _LOGGER.error(f"Invalid time format: {time_str}")
+            return None
+
+    def _is_time_between(
+        self, current_time: time, time_from: time, time_to: time
+    ) -> bool:
+        """Check if current_time is between time_from and time_to."""
+        # Handle special case where time_to is 00:00:00 (midnight)
+        if time_to.hour == 0 and time_to.minute == 0 and time_to.second == 0:
+            # If time_from is also midnight, the slot is active all day
+            if time_from.hour == 0 and time_from.minute == 0 and time_from.second == 0:
+                return True
+            # Otherwise, the slot is active from time_from until midnight, or from midnight until time_from
+            return current_time >= time_from or current_time < time_to
+        # Normal case: check if time is between start and end
+        elif time_from <= time_to:
+            return time_from <= current_time < time_to
+        # Handle case where range crosses midnight
+        else:
+            return time_from <= current_time or current_time < time_to
+
+    def _get_active_timeslot_rate(self, product):
+        """Get the currently active timeslot rate for a time-of-use product."""
+        if not product:
+            return None
+
+        # For SimpleProductUnitRateInformation, just return the single rate
+        if product.get("type") == "Simple":
+            try:
+                return float(product.get("grossRate", "0")) / 100.0
+            except (ValueError, TypeError):
+                return None
+
+        # For TimeOfUseProductUnitRateInformation, find the currently active timeslot
+        if product.get("type") == "TimeOfUse" and "timeslots" in product:
+            current_time = datetime.now().time()
+
+            for timeslot in product["timeslots"]:
+                for rule in timeslot.get("activation_rules", []):
+                    from_time = self._parse_time(rule.get("from_time", "00:00:00"))
+                    to_time = self._parse_time(rule.get("to_time", "00:00:00"))
+
+                    if (
+                        from_time
+                        and to_time
+                        and self._is_time_between(current_time, from_time, to_time)
+                    ):
+                        try:
+                            return float(timeslot.get("rate", "0")) / 100.0
+                        except (ValueError, TypeError):
+                            continue
+
+        # If no active timeslot found or in case of errors, return None
+        return None
+
     @property
     def native_value(self) -> float:
         """Return the current electricity price."""
@@ -131,35 +193,65 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
             _LOGGER.warning("No products found in coordinator data")
             return None
 
-        # Find the current valid product (assuming products are ordered by validity)
-        for product in products:
-            # Try to get the gross_rate as a float
-            try:
-                # The grossRate might be a string or a number, handle both cases
-                gross_rate_str = product.get("grossRate", "0")
-                gross_rate = float(gross_rate_str)
+        # Find the current valid product based on validity dates
+        now = datetime.now().isoformat()
+        valid_products = []
 
-                # Convert from cents to EUR
+        # First filter products that are currently valid
+        for product in products:
+            valid_from = product.get("validFrom")
+            valid_to = product.get("validTo")
+
+            # Skip products without validity information
+            if not valid_from:
+                continue
+
+            # Check if product is currently valid
+            if valid_from <= now and (not valid_to or now <= valid_to):
+                valid_products.append(product)
+
+        # If we have valid products, use the one with the latest validFrom
+        if valid_products:
+            # Sort by validFrom in descending order to get the most recent one
+            valid_products.sort(key=lambda p: p.get("validFrom", ""), reverse=True)
+            current_product = valid_products[0]
+
+            _LOGGER.debug(
+                "Using product: %s, type: %s, valid from: %s",
+                current_product.get("code", "Unknown"),
+                current_product.get("type", "Unknown"),
+                current_product.get("validFrom", "Unknown"),
+            )
+
+            # For time-of-use tariffs, get the currently active timeslot rate
+            if current_product.get("type") == "TimeOfUse":
+                active_rate = self._get_active_timeslot_rate(current_product)
+                if active_rate is not None:
+                    return active_rate
+
+            # For simple tariffs or fallback, just use the gross rate
+            try:
+                gross_rate_str = current_product.get("grossRate", "0")
+                gross_rate = float(gross_rate_str)
                 gross_rate_eur = gross_rate / 100.0
 
                 _LOGGER.debug(
-                    "Found price: %s cents = %s EUR for product %s",
+                    "Using price: %s cents = %s EUR for product %s",
                     gross_rate_str,
                     gross_rate_eur,
-                    product.get("code", "Unknown"),
+                    current_product.get("code", "Unknown"),
                 )
 
                 return gross_rate_eur
             except (ValueError, TypeError) as e:
                 _LOGGER.warning(
                     "Failed to convert price for product %s: %s - %s",
-                    product.get("code", "Unknown"),
-                    product.get("grossRate", "Unknown"),
+                    current_product.get("code", "Unknown"),
+                    current_product.get("grossRate", "Unknown"),
                     str(e),
                 )
-                continue
 
-        _LOGGER.warning("No valid price found in any product")
+        _LOGGER.warning("No valid product found for current date")
         return None
 
     def _update_attributes(self) -> None:
@@ -223,21 +315,90 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
             }
             return
 
-        # Find the current valid product
+        # Find the current valid product based on validity dates
+        now = datetime.now().isoformat()
+        valid_products = []
+
+        # First filter products that are currently valid
         for product in products:
+            valid_from = product.get("validFrom")
+            valid_to = product.get("validTo")
+
+            # Skip products without validity information
+            if not valid_from:
+                continue
+
+            # Check if product is currently valid
+            if valid_from <= now and (not valid_to or now <= valid_to):
+                valid_products.append(product)
+
+        # If we have valid products, use the one with the latest validFrom
+        if valid_products:
+            # Sort by validFrom in descending order to get the most recent one
+            valid_products.sort(key=lambda p: p.get("validFrom", ""), reverse=True)
+            current_product = valid_products[0]
+
             # Extract attribute values from the product
             product_attributes = {
-                "code": product.get("code", "Unknown"),
-                "name": product.get("name", "Unknown"),
-                "description": product.get("description", "Unknown"),
-                "type": product.get("type", "Unknown"),
-                "valid_from": product.get("validFrom", "Unknown"),
-                "valid_to": product.get("validTo", "Unknown"),
+                "code": current_product.get("code", "Unknown"),
+                "name": current_product.get("name", "Unknown"),
+                "description": current_product.get("description", "Unknown"),
+                "type": current_product.get("type", "Unknown"),
+                "valid_from": current_product.get("validFrom", "Unknown"),
+                "valid_to": current_product.get("validTo", "Unknown"),
                 "meter_id": meter_id,
                 "meter_number": meter_number,
                 "meter_type": meter_type,
                 "account_number": self._account_number,
+                "active_tariff_type": current_product.get("type", "Unknown"),
             }
+
+            # Add time-of-use specific information if available
+            if (
+                current_product.get("type") == "TimeOfUse"
+                and "timeslots" in current_product
+            ):
+                current_time = datetime.now().time()
+                active_timeslot = None
+                timeslots_data = []
+
+                # Get information about all timeslots and find active one
+                for timeslot in current_product.get("timeslots", []):
+                    timeslot_data = {
+                        "name": timeslot.get("name", "Unknown"),
+                        "rate": timeslot.get("rate", "0"),
+                        "activation_rules": [],
+                    }
+
+                    # Add all activation rules
+                    for rule in timeslot.get("activation_rules", []):
+                        from_time = rule.get("from_time", "00:00:00")
+                        to_time = rule.get("to_time", "00:00:00")
+                        timeslot_data["activation_rules"].append(
+                            {"from_time": from_time, "to_time": to_time}
+                        )
+
+                        # Check if this is the active timeslot
+                        from_time_obj = self._parse_time(from_time)
+                        to_time_obj = self._parse_time(to_time)
+                        if (
+                            from_time_obj
+                            and to_time_obj
+                            and self._is_time_between(
+                                current_time, from_time_obj, to_time_obj
+                            )
+                        ):
+                            active_timeslot = timeslot.get("name", "Unknown")
+                            product_attributes["active_timeslot"] = active_timeslot
+                            product_attributes["active_timeslot_rate"] = (
+                                float(timeslot.get("rate", "0")) / 100.0
+                            )
+                            product_attributes["active_timeslot_from"] = from_time
+                            product_attributes["active_timeslot_to"] = to_time
+
+                    timeslots_data.append(timeslot_data)
+
+                product_attributes["timeslots"] = timeslots_data
 
             # Add any additional information from account data
             product_attributes["malo_number"] = account_data.get(
@@ -254,8 +415,14 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
                 )
 
             self._attributes = product_attributes
-            # We just use the first product for now
-            break
+        else:
+            # If no valid products, use default attributes
+            self._attributes = {
+                **default_attributes,
+                "meter_id": meter_id,
+                "meter_number": meter_number,
+                "meter_type": meter_type,
+            }
 
     @callback
     def _handle_coordinator_update(self) -> None:
