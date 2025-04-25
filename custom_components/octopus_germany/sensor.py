@@ -106,7 +106,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"octopus_{account_number}_electricity_price"
         self._attr_device_class = SensorDeviceClass.MONETARY
         self._attr_native_unit_of_measurement = "€/kWh"
-        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_state_class = SensorStateClass.TOTAL
         self._attr_has_entity_name = False
         self._attributes = {}
 
