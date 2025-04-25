@@ -366,6 +366,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         product = agreement.get("product", {})
                         unit_rate_info = agreement.get("unitRateInformation", {})
 
+                        # Log what fields are available to help debug
+                        if unit_rate_info:
+                            _LOGGER.debug(
+                                "Unit rate info keys: %s", list(unit_rate_info.keys())
+                            )
+
                         # Determine the product type
                         product_type = "Simple"
                         if "__typename" in unit_rate_info:
@@ -376,95 +382,143 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                 else "TimeOfUse"
                             )
 
-                        # Get the gross rate - Handle different possible data structures
-                        gross_rate = "0"
+                        # For Simple product types
+                        if product_type == "Simple":
+                            # Get the gross rate from various possible sources
+                            gross_rate = "0"
 
-                        # Log what fields are available to help debug
-                        if unit_rate_info:
-                            _LOGGER.debug(
-                                "Unit rate info keys: %s", list(unit_rate_info.keys())
+                            # Check different possible sources for gross rate
+                            if "grossRateInformation" in unit_rate_info:
+                                found_any_gross_rate = True
+                                if isinstance(
+                                    unit_rate_info["grossRateInformation"], dict
+                                ):
+                                    gross_rate = unit_rate_info[
+                                        "grossRateInformation"
+                                    ].get("grossRate", "0")
+                                elif (
+                                    isinstance(
+                                        unit_rate_info["grossRateInformation"], list
+                                    )
+                                    and unit_rate_info["grossRateInformation"]
+                                ):
+                                    gross_rate = (
+                                        unit_rate_info["grossRateInformation"][0].get(
+                                            "grossRate", "0"
+                                        )
+                                        if unit_rate_info["grossRateInformation"]
+                                        else "0"
+                                    )
+                            elif "latestGrossUnitRateCentsPerKwh" in unit_rate_info:
+                                found_any_gross_rate = True
+                                gross_rate = unit_rate_info[
+                                    "latestGrossUnitRateCentsPerKwh"
+                                ]
+                            elif "unitRateGrossRateInformation" in agreement:
+                                found_any_gross_rate = True
+                                if isinstance(
+                                    agreement["unitRateGrossRateInformation"], dict
+                                ):
+                                    gross_rate = agreement[
+                                        "unitRateGrossRateInformation"
+                                    ].get("grossRate", "0")
+                                elif (
+                                    isinstance(
+                                        agreement["unitRateGrossRateInformation"], list
+                                    )
+                                    and agreement["unitRateGrossRateInformation"]
+                                ):
+                                    gross_rate = (
+                                        agreement["unitRateGrossRateInformation"][
+                                            0
+                                        ].get("grossRate", "0")
+                                        if agreement["unitRateGrossRateInformation"]
+                                        else "0"
+                                    )
+
+                            products.append(
+                                {
+                                    "code": product.get("code", "Unknown"),
+                                    "description": product.get("description", ""),
+                                    "name": product.get("fullName", "Unknown"),
+                                    "grossRate": gross_rate,
+                                    "type": product_type,
+                                    "validFrom": agreement.get("validFrom"),
+                                    "validTo": agreement.get("validTo"),
+                                }
                             )
 
-                        # First case: grossRateInformation exists and is a dictionary
-                        if "grossRateInformation" in unit_rate_info:
-                            found_any_gross_rate = True
-                            # Check if it's a list or a dictionary
-                            if isinstance(unit_rate_info["grossRateInformation"], dict):
-                                gross_rate = unit_rate_info["grossRateInformation"].get(
-                                    "grossRate", "0"
-                                )
-                                _LOGGER.debug(
-                                    "Found gross rate in grossRateInformation dict: %s",
-                                    gross_rate,
-                                )
-                            elif (
-                                isinstance(unit_rate_info["grossRateInformation"], list)
-                                and unit_rate_info["grossRateInformation"]
-                            ):
-                                # Get the first item from the list if it exists
-                                gross_rate = (
-                                    unit_rate_info["grossRateInformation"][0].get(
-                                        "grossRate", "0"
-                                    )
-                                    if unit_rate_info["grossRateInformation"]
-                                    else "0"
-                                )
-                                _LOGGER.debug(
-                                    "Found gross rate in grossRateInformation list: %s",
-                                    gross_rate,
-                                )
-                        # Second case: latestGrossUnitRateCentsPerKwh exists
-                        elif "latestGrossUnitRateCentsPerKwh" in unit_rate_info:
-                            found_any_gross_rate = True
-                            gross_rate = unit_rate_info[
-                                "latestGrossUnitRateCentsPerKwh"
-                            ]
-                            _LOGGER.debug(
-                                "Found gross rate in latestGrossUnitRateCentsPerKwh: %s",
-                                gross_rate,
-                            )
-                        # Third case: unitRateGrossRateInformation exists
-                        elif "unitRateGrossRateInformation" in agreement:
-                            found_any_gross_rate = True
-                            if isinstance(
-                                agreement["unitRateGrossRateInformation"], dict
-                            ):
-                                gross_rate = agreement[
-                                    "unitRateGrossRateInformation"
-                                ].get("grossRate", "0")
-                                _LOGGER.debug(
-                                    "Found gross rate in unitRateGrossRateInformation dict: %s",
-                                    gross_rate,
-                                )
-                            elif (
-                                isinstance(
-                                    agreement["unitRateGrossRateInformation"], list
-                                )
-                                and agreement["unitRateGrossRateInformation"]
-                            ):
-                                gross_rate = (
-                                    agreement["unitRateGrossRateInformation"][0].get(
-                                        "grossRate", "0"
-                                    )
-                                    if agreement["unitRateGrossRateInformation"]
-                                    else "0"
-                                )
-                                _LOGGER.debug(
-                                    "Found gross rate in unitRateGrossRateInformation list: %s",
-                                    gross_rate,
+                        # For TimeOfUse product types
+                        elif product_type == "TimeOfUse" and "rates" in unit_rate_info:
+                            # Process time-of-use rates
+                            timeslots = []
+
+                            for rate in unit_rate_info["rates"]:
+                                gross_rate = "0"
+
+                                # Extract the gross rate
+                                if (
+                                    "grossRateInformation" in rate
+                                    and rate["grossRateInformation"]
+                                ):
+                                    if isinstance(rate["grossRateInformation"], dict):
+                                        gross_rate = rate["grossRateInformation"].get(
+                                            "grossRate", "0"
+                                        )
+                                    elif (
+                                        isinstance(rate["grossRateInformation"], list)
+                                        and rate["grossRateInformation"]
+                                    ):
+                                        gross_rate = rate["grossRateInformation"][
+                                            0
+                                        ].get("grossRate", "0")
+                                elif "latestGrossUnitRateCentsPerKwh" in rate:
+                                    gross_rate = rate["latestGrossUnitRateCentsPerKwh"]
+
+                                # Create activation rules
+                                activation_rules = []
+                                if "timeslotActivationRules" in rate and isinstance(
+                                    rate["timeslotActivationRules"], list
+                                ):
+                                    for rule in rate["timeslotActivationRules"]:
+                                        activation_rules.append(
+                                            {
+                                                "from_time": rule.get(
+                                                    "activeFromTime", "00:00:00"
+                                                ),
+                                                "to_time": rule.get(
+                                                    "activeToTime", "00:00:00"
+                                                ),
+                                            }
+                                        )
+
+                                # Add timeslot data
+                                timeslots.append(
+                                    {
+                                        "name": rate.get("timeslotName", "Unknown"),
+                                        "rate": gross_rate,
+                                        "activation_rules": activation_rules,
+                                    }
                                 )
 
-                        products.append(
-                            {
-                                "code": product.get("code", "Unknown"),
-                                "description": product.get("description", ""),
-                                "name": product.get("fullName", "Unknown"),
-                                "grossRate": gross_rate,
-                                "type": product_type,
-                                "validFrom": agreement.get("validFrom"),
-                                "validTo": agreement.get("validTo"),
-                            }
-                        )
+                            # Create a TimeOfUse product with timeslots
+                            products.append(
+                                {
+                                    "code": product.get("code", "Unknown"),
+                                    "description": product.get("description", ""),
+                                    "name": product.get("fullName", "Unknown"),
+                                    "type": product_type,
+                                    "validFrom": agreement.get("validFrom"),
+                                    "validTo": agreement.get("validTo"),
+                                    "timeslots": timeslots,
+                                }
+                            )
+
+                            _LOGGER.debug(
+                                "Found TimeOfUse product with %d timeslots: %s",
+                                len(timeslots),
+                                [ts.get("name") for ts in timeslots],
+                            )
 
         # Log whether we found products
         if products:
