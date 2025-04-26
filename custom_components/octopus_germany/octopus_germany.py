@@ -18,6 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 GRAPH_QL_ENDPOINT = "https://api.oeg-kraken.energy/v1/graphql/"
 ELECTRICITY_LEDGER = "ELECTRICITY_LEDGER"
 TOKEN_REFRESH_MARGIN = 300  # Refresh token 5 minutes before expiry
+TOKEN_AUTO_REFRESH_INTERVAL = 50 * 60  # Auto refresh token every 50 minutes
 
 # Global token manager to prevent multiple instances from making redundant token requests
 _GLOBAL_TOKEN_MANAGER = None
@@ -33,6 +34,8 @@ class TokenManager:
         self._refresh_lock = asyncio.Lock()
         self._last_check_time = None
         self._last_token_refresh = None
+        self._refresh_task = None
+        self._refresh_callback = None
 
         # Store when token was last checked to avoid excessive checking
         self._token_check_interval = 60  # Check token validity at most every 60 seconds
@@ -41,6 +44,44 @@ class TokenManager:
     def token(self):
         """Get the current token."""
         return self._token
+
+    def set_refresh_callback(self, callback):
+        """Set a callback function to be called when token needs refreshing."""
+        self._refresh_callback = callback
+
+    async def start_auto_refresh(self):
+        """Start the automatic token refresh process."""
+        if self._refresh_task is not None:
+            self._refresh_task.cancel()
+
+        # Create a new task for token refresh
+        self._refresh_task = asyncio.create_task(self._auto_refresh_token())
+        _LOGGER.debug("Started automatic token refresh task")
+
+    async def _auto_refresh_token(self):
+        """Automatically refresh the token at regular intervals."""
+        try:
+            while True:
+                # Wait for the refresh interval
+                await asyncio.sleep(TOKEN_AUTO_REFRESH_INTERVAL)
+
+                _LOGGER.debug(
+                    "Auto-refresh timer triggered after %s minutes",
+                    TOKEN_AUTO_REFRESH_INTERVAL / 60,
+                )
+
+                # Call the refresh callback if set
+                if self._refresh_callback is not None:
+                    _LOGGER.info("Performing scheduled token refresh")
+                    await self._refresh_callback()
+                else:
+                    _LOGGER.warning(
+                        "No refresh callback set, cannot auto-refresh token"
+                    )
+        except asyncio.CancelledError:
+            _LOGGER.debug("Token auto-refresh task cancelled")
+        except Exception as e:
+            _LOGGER.error("Error in token auto-refresh task: %s", e)
 
     def needs_refresh_check(self):
         """Determine if we need to check token validity based on time since last check."""
