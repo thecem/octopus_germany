@@ -155,6 +155,10 @@ class OctopusGermany:
                         error_code = (
                             response["errors"][0].get("extensions", {}).get("errorCode")
                         )
+                        error_message = response["errors"][0].get(
+                            "message", "Unknown error"
+                        )
+
                         if error_code == "KT-CT-1199":  # Too many requests
                             _LOGGER.warning(
                                 "Rate limit hit. Retrying in %s seconds...", delay
@@ -166,13 +170,36 @@ class OctopusGermany:
                             await asyncio.sleep(delay)
                             delay *= 2  # Exponential backoff
                             continue
+                        elif error_code == "KT-CT-1124":  # Expired JWT
+                            _LOGGER.warning(
+                                "JWT expired during login attempt. Clearing token and retrying..."
+                            )
+                            self._token_manager.clear()
+                            # Continue with the retry, don't return False yet
+                            await asyncio.sleep(delay)
+                            delay *= 2  # Exponential backoff
+                            continue
                         else:
-                            _LOGGER.error("Login failed: %s", response["errors"])
+                            _LOGGER.error(
+                                "Login failed: %s - %s",
+                                error_message,
+                                response["errors"],
+                            )
                             return False
 
-                    token = response["data"]["obtainKrakenToken"]["token"]
-                    self._token_manager.set_token(token)
-                    return True
+                    if "data" in response and "obtainKrakenToken" in response["data"]:
+                        token = response["data"]["obtainKrakenToken"].get("token")
+                        if token:
+                            self._token_manager.set_token(token)
+                            return True
+                        else:
+                            _LOGGER.error(
+                                "No token in response despite successful request"
+                            )
+                    else:
+                        _LOGGER.error("Unexpected API response format: %s", response)
+
+                    return False
 
                 except Exception as e:
                     _LOGGER.error("Error during login attempt %s: %s", attempt + 1, e)
