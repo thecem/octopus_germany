@@ -1,0 +1,64 @@
+name: Bug report
+description: Create a report to help us improve
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # Bug Report for the evcc Octopus Germany Integration
+
+        
+        > [!Important]
+        > 
+        > Before submitting an issue:
+        >
+        > ✅ Ensure you are using the latest version of the integration.
+        > ✅ Check the logs for error messages and attach them.
+        > ✅ Search existing [issues][issue] to see if your problem has already been reported.
+        > ✅ Search existing [discussion][df] to see if your problem has already been discussed, or ask a question.
+      
+        Thank you for your report! 🚀
+
+        > [!NOTE]  
+        > Due to amount of issues raised we will close incomplete issues 
+        > (unclear description what the issue actually is, missing log file, unsupported platform) 
+        > without further comments.
+        
+         [df]: https://github.com/thecem/octopus_germany/discussions
+         [issue]: https://github.com/thecem/octopus_germany/issues?q=is%3Aissue
+         
+  - type: textarea
+    validations:
+      required: true
+    attributes:
+      label: Describe the bug
+      description: >-
+        A clear and concise description of what the bug is.
+
+  - type: textarea
+    validations:
+      required: true
+    attributes:
+      value: |
+        1.
+        2.
+        3.
+        ...
+      label: Steps to reproduce
+      description: >-
+        Steps to reproduce the behavior.
+
+  - type: textarea
+    validations:
+      required: true
+    attributes:
+      label: Log details
+      render: text
+      description: >
+        Show log output of the issue, see https://github.com/thecem/octopus_germany/blob/main/README.md for instructions.
+
+  - type: input
+    attributes:
+      label: Version
+      description: >
+        Show installed version of Octopus Germany Integration
