@@ -16,7 +16,7 @@ _LOGGER = logging.getLogger(__name__)
 
 async def validate_credentials(
     hass: HomeAssistant, email: str, password: str
-) -> tuple[bool, str | None, str | None]:
+) -> tuple[bool, str | None, dict | None]:
     """Validate the user credentials by attempting API login."""
     octopus_api = OctopusGermany(email, password)
     try:
@@ -31,8 +31,9 @@ async def validate_credentials(
         if not accounts:
             return False, "no_accounts", None
 
-        account_number = accounts[0]["number"]
-        return True, None, account_number
+        # Return the complete first account data instead of just the number
+        account_data = accounts[0]
+        return True, None, account_data
     except Exception as ex:
         _LOGGER.exception("Unexpected error while validating credentials")
         return False, "unknown", None
@@ -52,13 +53,13 @@ class OctopusGermanyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             email = user_input[CONF_EMAIL]
             password = user_input[CONF_PASSWORD]
 
-            valid, error, account_number = await validate_credentials(
+            valid, error, account_data = await validate_credentials(
                 self.hass, email, password
             )
 
             if valid:
-                # Add account number to the user input
-                user_input["account_number"] = account_number
+                # Store the complete account data in user_input
+                user_input["account_data"] = account_data
                 return self.async_create_entry(
                     title=f"Octopus Germany ({email})", data=user_input
                 )
