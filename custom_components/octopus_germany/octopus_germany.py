@@ -144,16 +144,19 @@ class OctopusGermany:
             variables = {"email": self._email, "password": self._password}
             client = self._get_graphql_client()
 
-            retries = 5
+            retries = 10  # Increased from 5 to 10 retries
+            attempt = 0
             delay = 1  # Start with 1 second delay
+            max_delay = 30  # Cap the delay at 30 seconds
 
-            for attempt in range(retries):
+            while attempt < retries:
+                attempt += 1
                 try:
-                    _LOGGER.debug("Making login attempt %s of %s", attempt + 1, retries)
+                    _LOGGER.debug("Making login attempt %s of %s", attempt, retries)
                     response = await client.execute_async(
                         query=query, variables=variables
                     )
-                    _LOGGER.debug("Login response received for attempt %s", attempt + 1)
+                    _LOGGER.debug("Login response received for attempt %s", attempt)
 
                     if "errors" in response:
                         error_code = (
@@ -165,31 +168,42 @@ class OctopusGermany:
 
                         if error_code == "KT-CT-1199":  # Too many requests
                             _LOGGER.warning(
-                                "Rate limit hit. Retrying in %s seconds...", delay
-                            )
-                            _LOGGER.debug(
-                                "Retrying login due to rate limit: attempt %s",
-                                attempt + 1,
+                                "Rate limit hit. Retrying in %s seconds... (attempt %s of %s)",
+                                delay,
+                                attempt,
+                                retries,
                             )
                             await asyncio.sleep(delay)
-                            delay *= 2  # Exponential backoff
+                            delay = min(
+                                delay * 2, max_delay
+                            )  # Exponential backoff with max cap
                             continue
                         elif error_code == "KT-CT-1124":  # Expired JWT
+                            # For expired JWT, don't count this attempt against the retry limit
                             _LOGGER.warning(
-                                "JWT expired during login attempt. Clearing token and retrying..."
+                                "JWT expired during login attempt %s. Clearing token and retrying in %s seconds...",
+                                attempt,
+                                delay,
                             )
                             self._token_manager.clear()
-                            # Continue with the retry, don't return False yet
                             await asyncio.sleep(delay)
-                            delay *= 2  # Exponential backoff
+                            delay = min(
+                                delay * 2, max_delay
+                            )  # Exponential backoff with max cap
+                            attempt -= 1  # Don't count this attempt against the limit
                             continue
                         else:
                             _LOGGER.error(
-                                "Login failed: %s - %s",
+                                "Login failed: %s - %s (attempt %s of %s)",
                                 error_message,
                                 response["errors"],
+                                attempt,
+                                retries,
                             )
-                            return False
+                            # For other types of errors, continue with retries
+                            await asyncio.sleep(delay)
+                            delay = min(delay * 2, max_delay)
+                            continue
 
                     if "data" in response and "obtainKrakenToken" in response["data"]:
                         token_data = response["data"]["obtainKrakenToken"]
@@ -216,19 +230,27 @@ class OctopusGermany:
                             return True
                         else:
                             _LOGGER.error(
-                                "No token in response despite successful request"
+                                "No token in response despite successful request (attempt %s of %s)",
+                                attempt,
+                                retries,
                             )
                     else:
-                        _LOGGER.error("Unexpected API response format: %s", response)
+                        _LOGGER.error(
+                            "Unexpected API response format at attempt %s: %s",
+                            attempt,
+                            response,
+                        )
 
-                    return False
+                    # If we got here with an invalid response, try again
+                    await asyncio.sleep(delay)
+                    delay = min(delay * 2, max_delay)
 
                 except Exception as e:
-                    _LOGGER.error("Error during login attempt %s: %s", attempt + 1, e)
+                    _LOGGER.error("Error during login attempt %s: %s", attempt, e)
                     await asyncio.sleep(delay)
-                    delay *= 2
+                    delay = min(delay * 2, max_delay)
 
-            _LOGGER.error("All login attempts failed.")
+            _LOGGER.error("All %s login attempts failed.", retries)
             return False
 
     async def ensure_token(self):
@@ -449,8 +471,15 @@ class OctopusGermany:
             )
             response = await client.execute_async(query=query, variables=variables)
 
-            # Log the full API response for debugging
-            _LOGGER.info("API Response: %s", json.dumps(response, indent=2))
+            # Log the full API response only when LOG_API_RESPONSES is enabled
+            from .const import LOG_API_RESPONSES
+
+            if LOG_API_RESPONSES:
+                _LOGGER.info("API Response: %s", json.dumps(response, indent=2))
+            else:
+                _LOGGER.debug(
+                    "API request completed. Set LOG_API_RESPONSES=True for full response logging"
+                )
 
             if response is None:
                 _LOGGER.error("API returned None response")
