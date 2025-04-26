@@ -1,18 +1,15 @@
 """Binary sensors for the Octopus Germany integration."""
 
-import logging
 from datetime import datetime
-from typing import Any, Dict
+import logging
+from typing import Any
 
-from homeassistant.components.binary_sensor import (
-    BinarySensorEntity,
-    BinarySensorDeviceClass,
-)
+from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util.dt import as_local, utcnow, parse_datetime, as_utc
+from homeassistant.util.dt import as_local, as_utc, parse_datetime, utcnow
 
 from .const import DOMAIN
 
@@ -154,7 +151,8 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
                 if "location" in meta:
                     formatted["location"] = meta["location"]
 
-            return formatted
+            else:
+                return formatted
         except (ValueError, TypeError) as e:
             _LOGGER.error("Error formatting dispatch: %s - %s", dispatch, e)
             return None
@@ -312,7 +310,7 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
         self.async_write_ha_state()  # Löst eine Aktualisierung des Sensorstatus aus
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes for the binary sensor."""
         return self._attributes
 
