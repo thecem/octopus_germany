@@ -75,7 +75,7 @@ async def async_setup_entry(
 class OctopusSwitch(CoordinatorEntity, SwitchEntity):
     """Representation of an Octopus Switch entity."""
 
-    def __init__(self, api, device, coordinator, config_entry, account_number):
+    def __init__(self, api, device, coordinator, config_entry, account_number) -> None:
         """Initialize the Octopus switch entity."""
         super().__init__(coordinator)
         self._api = api
@@ -167,7 +167,7 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
                 self._pending_state = None
                 self._pending_until = None
                 _LOGGER.warning(
-                    "Switch state change timeout reached for device_id=%s. Reverting to API state.",
+                    "Switch state change timeout reached for device_id=%s, reverting to API state",
                     self._device_id,
                 )
             else:
