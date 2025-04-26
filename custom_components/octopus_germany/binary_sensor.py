@@ -306,6 +306,16 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
                 else True,
             }
 
+            # Add preferences if available
+            if "preferences" in device:
+                # Use the existing _process_device_preferences method
+                preferences = self._process_device_preferences(device)
+                if preferences:
+                    simple_device["preferences"] = preferences
+                else:
+                    # If our processor didn't extract anything useful, use the raw preferences
+                    simple_device["preferences"] = device.get("preferences", {})
+
             # Add vehicle-specific info if available
             if "vehicleVariant" in device and isinstance(
                 device["vehicleVariant"], dict
@@ -329,10 +339,11 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
         }
 
         # Special log to confirm attributes are correctly set
-        _LOGGER.info(
-            "Binary sensor attributes updated with %d planned dispatches, %d completed dispatches",
+        _LOGGER.debug(
+            "Binary sensor attributes updated with %d planned dispatches, %d completed dispatches, %d devices",
             len(formatted_planned_dispatches),
             len(formatted_completed_dispatches),
+            len(simplified_devices),
         )
 
     @callback
