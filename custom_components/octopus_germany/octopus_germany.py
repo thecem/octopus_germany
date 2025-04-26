@@ -31,35 +31,72 @@ class TokenManager:
         self._token = None
         self._expiry = None
         self._refresh_lock = asyncio.Lock()
+        self._last_check_time = None
+        self._last_token_refresh = None
+
+        # Store when token was last checked to avoid excessive checking
+        self._token_check_interval = 60  # Check token validity at most every 60 seconds
 
     @property
     def token(self):
         """Get the current token."""
         return self._token
 
+    def needs_refresh_check(self):
+        """Determine if we need to check token validity based on time since last check."""
+        now = datetime.utcnow()
+
+        # If we've never checked or it's been more than _token_check_interval, check again
+        if (
+            self._last_check_time is None
+            or (now - self._last_check_time).total_seconds()
+            > self._token_check_interval
+        ):
+            self._last_check_time = now
+            return True
+        return False
+
     @property
     def is_valid(self):
         """Check if the token is valid."""
+        # Fast path: If there is no token, it's definitely invalid
         if not self._token or not self._expiry:
+            _LOGGER.debug("Token invalid: No token or expiry information")
             return False
 
+        # To avoid unnecessary frequent checks, only check at certain intervals
+        if not self.needs_refresh_check():
+            # Use the cached validity without recalculating
+            return True
+
         now = datetime.utcnow().timestamp()
+
+        # Add some random jitter to TOKEN_REFRESH_MARGIN (±30 seconds) to prevent all
+        # instances from refreshing at exactly the same time
+        import random
+
+        jitter = random.uniform(-30, 30)
+        effective_margin = TOKEN_REFRESH_MARGIN + jitter
+
         # Return True if token is valid for at least TOKEN_REFRESH_MARGIN more seconds
-        valid = now < (self._expiry - TOKEN_REFRESH_MARGIN)
+        valid = now < (self._expiry - effective_margin)
 
         if not valid:
             remaining_time = self._expiry - now if self._expiry else 0
             _LOGGER.debug(
-                "Token validity check: invalid (expiry in %s seconds, refresh margin: %s)",
+                "Token validity check: INVALID (expiry in %s seconds, refresh margin: %s)",
                 int(remaining_time),
-                TOKEN_REFRESH_MARGIN,
+                effective_margin,
             )
+
+            # Force a full refresh next time by clearing the last check time
+            self._last_check_time = None
         else:
             remaining_time = self._expiry - now if self._expiry else 0
             _LOGGER.debug(
-                "Token validity check: valid (expiry in %s seconds, refresh margin: %s)",
+                "Token validity check: VALID (expiry in %s seconds, refresh margin: %s)",
                 int(remaining_time),
-                TOKEN_REFRESH_MARGIN,
+                effective_margin,
             )
 
         return valid
@@ -67,9 +104,22 @@ class TokenManager:
     def set_token(self, token, expiry=None):
         """Set a new token and extract its expiry time."""
         self._token = token
+        self._last_token_refresh = datetime.utcnow()
 
         if expiry:
+            # Use expiry directly if provided
             self._expiry = expiry
+            now = datetime.utcnow().timestamp()
+            token_lifetime = self._expiry - now if self._expiry else 0
+
+            _LOGGER.info(
+                "Token set with explicit expiry: %s (%s) - valid for %s seconds",
+                self._expiry,
+                datetime.fromtimestamp(self._expiry).strftime("%Y-%m-%d %H:%M:%S")
+                if self._expiry
+                else "unknown",
+                int(token_lifetime),
+            )
         else:
             # Decode token to get expiry time
             try:
@@ -78,8 +128,8 @@ class TokenManager:
                 now = datetime.utcnow().timestamp()
                 token_lifetime = self._expiry - now if self._expiry else 0
 
-                _LOGGER.debug(
-                    "Token set with expiry timestamp %s (%s) - valid for %s seconds",
+                _LOGGER.info(
+                    "Token set with decoded expiry: %s (%s) - valid for %s seconds",
                     self._expiry,
                     datetime.fromtimestamp(self._expiry).strftime("%Y-%m-%d %H:%M:%S")
                     if self._expiry
@@ -87,13 +137,25 @@ class TokenManager:
                     int(token_lifetime),
                 )
             except Exception as e:
-                _LOGGER.error("Failed to decode token: %s", e)
-                self._expiry = None
+                # Fallback: If token decoding fails, set a conservative expiry
+                # 55 minutes from now (most tokens are valid for 1 hour)
+                now = datetime.utcnow().timestamp()
+                self._expiry = now + (55 * 60)  # 55 minutes in seconds
+                _LOGGER.warning(
+                    "Failed to decode token expiry: %s. Setting fallback expiry to %s (%s)",
+                    e,
+                    self._expiry,
+                    datetime.fromtimestamp(self._expiry).strftime("%Y-%m-%d %H:%M:%S"),
+                )
+
+        # Reset the last check time to force immediate validation on next check
+        self._last_check_time = None
 
     def clear(self):
         """Clear the token."""
         self._token = None
         self._expiry = None
+        self._last_check_time = None
 
 
 class OctopusGermany:
