@@ -572,6 +572,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Initial data refresh - only once to prevent duplicate API calls
     await coordinator.async_config_entry_first_refresh()
 
+    # Log the account data after update to help diagnose attribute issues
+    if coordinator.data and account_number in coordinator.data:
+        _LOGGER.info(
+            "Account %s data keys: %s",
+            account_number,
+            list(coordinator.data[account_number].keys()),
+        )
+        if "plannedDispatches" in coordinator.data[account_number]:
+            _LOGGER.info(
+                "Found %d planned dispatches",
+                len(coordinator.data[account_number]["plannedDispatches"]),
+            )
+            _LOGGER.info(
+                "First planned dispatch: %s",
+                coordinator.data[account_number]["plannedDispatches"][0]
+                if coordinator.data[account_number]["plannedDispatches"]
+                else "None",
+            )
+
     # Store API, account number and coordinator in hass.data
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api,

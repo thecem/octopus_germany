@@ -34,7 +34,21 @@ async def async_setup_entry(
             OctopusIntelligentDispatchingBinarySensor(account_number, coordinator),
         ]
         async_add_entities(entities)
-        _LOGGER.debug("Added intelligent dispatching binary sensor")
+        _LOGGER.info(
+            "Added intelligent dispatching binary sensor for account %s", account_number
+        )
+
+        # Log out the keys in coordinator data for debugging
+        _LOGGER.info(
+            "Available keys in coordinator for %s: %s",
+            account_number,
+            list(coordinator.data[account_number].keys()),
+        )
+        if "plannedDispatches" in coordinator.data[account_number]:
+            _LOGGER.info(
+                "Found %d planned dispatches in coordinator data",
+                len(coordinator.data[account_number]["plannedDispatches"]),
+            )
     else:
         _LOGGER.info(
             "Not creating intelligent dispatching sensor due to missing devices data for account %s",
@@ -52,9 +66,7 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
         self._account_number = account_number
         self._attr_name = f"Octopus {account_number} Intelligent Dispatching"
         self._attr_unique_id = f"octopus_{account_number}_intelligent_dispatching"
-        self._attr_device_class = (
-            None  # Changed from BinarySensorDeviceClass.PLUG to None
-        )
+        self._attr_device_class = None
         self._attr_has_entity_name = False
         self._attributes = {}
 
@@ -65,10 +77,8 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
     def is_on(self) -> bool:
         """Determine if the binary sensor is currently active.
 
-        Der Sensor ist 'on' (true), wenn mindestens ein geplanter Dispatch
-        existiert, dessen Start- und Endzeit den aktuellen Zeitpunkt umschließt.
-
-        Diese Methode wird aufgerufen, wenn Home Assistant den Status des Sensors abfragt.
+        The sensor is 'on' (true) when at least one planned dispatch
+        exists that encompasses the current time.
         """
         if (
             not self.coordinator.data
@@ -78,42 +88,45 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
             return False
 
         account_data = self.coordinator.data[self._account_number]
-        planned_dispatches = account_data.get("planned_dispatches", [])
-        now = utcnow()  # Verwende zeitzonenbewusste UTC-Zeit
+        planned_dispatches = account_data.get("plannedDispatches", [])
 
-        # Durchlaufe alle geplanten Dispatches und prüfe, ob einer aktuell aktiv ist
+        _LOGGER.debug(
+            "Checking %d planned dispatches for active status", len(planned_dispatches)
+        )
+
+        now = utcnow()  # Use timezone-aware UTC time
+
+        # Check all planned dispatches to see if one is currently active
         for dispatch in planned_dispatches:
             try:
-                # Extrahiere Start- und Endzeitpunkt
+                # Extract start and end time
                 start_str = dispatch.get("start")
                 end_str = dispatch.get("end")
 
                 if not start_str or not end_str:
                     continue
 
-                # Wandle Strings in datetime-Objekte um und stelle sicher, dass sie UTC-zeitzonenbewusst sind
+                # Convert strings to datetime objects and ensure they are timezone-aware UTC
                 start = as_utc(parse_datetime(start_str))
                 end = as_utc(parse_datetime(end_str))
 
-                # Wenn die aktuelle Zeit zwischen Start und Ende liegt, ist der Dispatch aktiv
+                # If current time is between start and end, the dispatch is active
                 if start and end and start <= now <= end:
                     _LOGGER.debug(
-                        "Aktiver Dispatch gefunden: %s bis %s (jetzt: %s)",
+                        "Active dispatch found: %s to %s (current: %s)",
                         start.isoformat(),
                         end.isoformat(),
                         now.isoformat(),
                     )
                     return True
             except (ValueError, TypeError) as e:
-                _LOGGER.error(
-                    "Fehler beim Parsen der Dispatch-Daten: %s - %s", dispatch, str(e)
-                )
+                _LOGGER.error("Error parsing dispatch data: %s - %s", dispatch, str(e))
                 continue
 
-        # Wenn kein aktiver Dispatch gefunden wurde, ist der Sensor 'off'
+        # If no active dispatch was found, the sensor is 'off'
         return False
 
-    def _format_dispatch(self, dispatch, is_planned=True):
+    def _format_dispatch(self, dispatch):
         """Format a dispatch entry for display."""
         try:
             # Get start and end as strings
@@ -151,8 +164,7 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
                 if "location" in meta:
                     formatted["location"] = meta["location"]
 
-            else:
-                return formatted
+            return formatted
         except (ValueError, TypeError) as e:
             _LOGGER.error("Error formatting dispatch: %s - %s", dispatch, e)
             return None
@@ -224,36 +236,58 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
             self._attributes = default_attributes
             return
 
-        # Extract all required data with safe fallbacks
-        planned_dispatches = account_data.get("planned_dispatches", [])
-        completed_dispatches = account_data.get("completed_dispatches", [])
+        _LOGGER.debug(
+            "Available keys in account_data: %s",
+            list(account_data.keys())
+            if isinstance(account_data, dict)
+            else "Not a dict",
+        )
+
+        # Extract all required data with consistent field names
+        # First try camelCase names (API response format)
+        planned_dispatches = account_data.get("plannedDispatches", [])
+        if not planned_dispatches:
+            # Try snake_case as a fallback (processed data format)
+            planned_dispatches = account_data.get("planned_dispatches", [])
+
+        completed_dispatches = account_data.get("completedDispatches", [])
+        if not completed_dispatches:
+            completed_dispatches = account_data.get("completed_dispatches", [])
+
         devices = account_data.get("devices", [])
+
+        _LOGGER.debug(
+            "Found %d planned dispatches, %d completed dispatches, %d devices",
+            len(planned_dispatches),
+            len(completed_dispatches),
+            len(devices),
+        )
 
         # Get current state from devices if available
         current_state = "Unknown"
-        if devices:
-            current_state = (
-                devices[0].get("status", {}).get("currentState", "Unknown")
-                if devices
-                else "Unknown"
-            )
+        if devices and devices[0].get("status"):
+            current_state = devices[0]["status"].get("currentState", "Unknown")
 
         # Format dispatches for display
         formatted_planned_dispatches = []
-        if planned_dispatches:
-            for dispatch in planned_dispatches:
-                formatted = self._format_dispatch(dispatch, is_planned=True)
-                if formatted:
-                    formatted_planned_dispatches.append(formatted)
+        for dispatch in planned_dispatches:
+            formatted = self._format_dispatch(dispatch)
+            if formatted:
+                formatted_planned_dispatches.append(formatted)
 
         formatted_completed_dispatches = []
-        if completed_dispatches:
-            for dispatch in completed_dispatches:
-                formatted = self._format_dispatch(dispatch, is_planned=False)
-                if formatted:
-                    formatted_completed_dispatches.append(formatted)
+        for dispatch in completed_dispatches:
+            formatted = self._format_dispatch(dispatch)
+            if formatted:
+                formatted_completed_dispatches.append(formatted)
 
-        # Simplify device data to ensure it's serializable and include preferences
+        _LOGGER.debug(
+            "Formatted %d planned dispatches, %d completed dispatches for attributes",
+            len(formatted_planned_dispatches),
+            len(formatted_completed_dispatches),
+        )
+
+        # Simplify device data to ensure it's serializable
         simplified_devices = []
         for device in devices:
             if not isinstance(device, dict):
@@ -272,12 +306,7 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
                 else True,
             }
 
-            # Process preferences if available
-            if "preferences" in device:
-                device_preferences = self._process_device_preferences(device)
-                if device_preferences:
-                    simple_device["preferences"] = device_preferences
-
+            # Add vehicle-specific info if available
             if "vehicleVariant" in device and isinstance(
                 device["vehicleVariant"], dict
             ):
@@ -290,7 +319,7 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
 
             simplified_devices.append(simple_device)
 
-        # Build and update attributes - only include dispatches and devices
+        # Build and update attributes
         self._attributes = {
             "planned_dispatches": formatted_planned_dispatches,
             "completed_dispatches": formatted_completed_dispatches,
@@ -299,15 +328,18 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
             "last_updated": datetime.now().isoformat(),
         }
 
+        # Special log to confirm attributes are correctly set
+        _LOGGER.info(
+            "Binary sensor attributes updated with %d planned dispatches, %d completed dispatches",
+            len(formatted_planned_dispatches),
+            len(formatted_completed_dispatches),
+        )
+
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator.
-
-        Diese Methode wird jedes Mal aufgerufen, wenn der Coordinator neue Daten liefert.
-        Das passiert in regelmäßigen Intervallen gemäß UPDATE_INTERVAL in der const.py.
-        """
+        """Handle updated data from the coordinator."""
         self._update_attributes()
-        self.async_write_ha_state()  # Löst eine Aktualisierung des Sensorstatus aus
+        self.async_write_ha_state()
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

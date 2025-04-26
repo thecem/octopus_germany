@@ -22,6 +22,156 @@ ELECTRICITY_LEDGER = "ELECTRICITY_LEDGER"
 # Global token manager to prevent multiple instances from making redundant token requests
 _GLOBAL_TOKEN_MANAGER = None
 
+# Comprehensive query that gets all data in one go
+COMPREHENSIVE_QUERY = """
+query ComprehensiveDataQuery($accountNumber: String!) {
+  account(accountNumber: $accountNumber) {
+    id
+    ledgers {
+      balance
+      ledgerType
+    }
+    allProperties {
+      id
+      electricityMalos {
+        agreements {
+          product {
+            code
+            description
+            fullName
+          }
+          unitRateGrossRateInformation {
+            grossRate
+          }
+          unitRateInformation {
+            ... on SimpleProductUnitRateInformation {
+              __typename
+              grossRateInformation {
+                date
+                grossRate
+                rateValidToDate
+                vatRate
+              }
+              latestGrossUnitRateCentsPerKwh
+              netUnitRateCentsPerKwh
+            }
+            ... on TimeOfUseProductUnitRateInformation {
+              __typename
+              rates {
+                grossRateInformation {
+                  date
+                  grossRate
+                  rateValidToDate
+                  vatRate
+                }
+                latestGrossUnitRateCentsPerKwh
+                netUnitRateCentsPerKwh
+                timeslotActivationRules {
+                  activeFromTime
+                  activeToTime
+                }
+                timeslotName
+              }
+            }
+          }
+          validFrom
+          validTo
+        }
+        maloNumber
+        meloNumber
+        meter {
+          id
+          meterType
+          number
+          shouldReceiveSmartMeterData
+          submitMeterReadingUrl
+        }
+        referenceConsumption
+      }
+    }
+  }
+  completedDispatches(accountNumber: $accountNumber) {
+    delta
+    deltaKwh
+    end
+    endDt
+    meta {
+      location
+      source
+    }
+    start
+    startDt
+  }
+  devices(accountNumber: $accountNumber) {
+    status {
+      current
+      currentState
+      isSuspended
+    }
+    provider
+    preferences {
+      mode
+      schedules {
+        dayOfWeek
+        max
+        min
+        time
+      }
+      targetType
+      unit
+    }
+    name
+    integrationDeviceId
+    id
+    deviceType
+    alerts {
+      message
+      publishedAt
+    }
+    ... on SmartFlexVehicle {
+      id
+      name
+      status {
+        current
+        currentState
+        isSuspended
+      }
+      vehicleVariant {
+        model
+        batterySize
+      }
+    }
+  }
+  plannedDispatches(accountNumber: $accountNumber) {
+    delta
+    deltaKwh
+    end
+    endDt
+    meta {
+      location
+      source
+    }
+    start
+    startDt
+  }
+}
+"""
+
+# Simple account discovery query
+ACCOUNT_DISCOVERY_QUERY = """
+query {
+  viewer {
+    accounts {
+      number
+      ledgers {
+        balance
+        ledgerType
+      }
+    }
+  }
+}
+"""
+
 
 class TokenManager:
     """Centralized token management for Octopus Germany API."""
@@ -31,13 +181,8 @@ class TokenManager:
         self._token = None
         self._expiry = None
         self._refresh_lock = asyncio.Lock()
-        self._last_check_time = None
-        self._last_token_refresh = None
-        self._refresh_task = None
         self._refresh_callback = None
-
-        # Store when token was last checked to avoid excessive checking
-        self._token_check_interval = 60  # Check token validity at most every 60 seconds
+        self._refresh_task = None
 
     @property
     def token(self):
@@ -58,60 +203,19 @@ class TokenManager:
         _LOGGER.debug("Started automatic token refresh task")
 
     async def _auto_refresh_token(self):
-        """Automatically refresh the token at regular intervals."""
+        """Automatically refresh the token every TOKEN_AUTO_REFRESH_INTERVAL seconds."""
         try:
             while True:
-                # Wait for the refresh interval
+                # Wait for the configured refresh interval
                 await asyncio.sleep(TOKEN_AUTO_REFRESH_INTERVAL)
 
-                _LOGGER.debug(
-                    "Auto-refresh timer triggered after %s minutes",
-                    TOKEN_AUTO_REFRESH_INTERVAL / 60,
-                )
+                _LOGGER.info("Performing scheduled token refresh")
 
-                # Call the refresh callback if set
                 if self._refresh_callback is not None:
-                    # Import logging constants
-                    from .const import LOG_TOKEN_RESPONSES
-
-                    # Log that we're performing a scheduled refresh
-                    _LOGGER.info("Performing scheduled token refresh")
-
-                    # Ensure LOG_TOKEN_RESPONSES is temporarily enabled for this refresh
-                    # to guarantee token info is logged
-                    import sys
-
-                    # Store the original setting to restore it later
-                    original_module = sys.modules.get(
-                        "custom_components.octopus_germany.const", None
-                    )
-                    original_setting = None
-                    if original_module:
-                        original_setting = getattr(
-                            original_module, "LOG_TOKEN_RESPONSES", None
-                        )
-                        # Temporarily force token logging on
-                        setattr(original_module, "LOG_TOKEN_RESPONSES", True)
-
-                    try:
-                        # Force token refresh by temporarily invalidating the token expiry
-                        # This ensures a new token is always fetched on scheduled refresh
-                        original_expiry = self._expiry
-                        self._expiry = 0  # Set to expired
-
-                        # Call the login method to refresh token
-                        await self._refresh_callback()
-
-                        # Log successful forced refresh
-                        _LOGGER.debug(
-                            "Scheduled token refresh completed - token was forcibly refreshed"
-                        )
-                    finally:
-                        # Restore the original LOG_TOKEN_RESPONSES setting
-                        if original_module and original_setting is not None:
-                            setattr(
-                                original_module, "LOG_TOKEN_RESPONSES", original_setting
-                            )
+                    # Force token refresh by temporarily invalidating the token expiry
+                    self._expiry = 0  # Set to expired
+                    await self._refresh_callback()
+                    _LOGGER.debug("Scheduled token refresh completed")
                 else:
                     _LOGGER.warning(
                         "No refresh callback set, cannot auto-refresh token"
@@ -121,61 +225,23 @@ class TokenManager:
         except Exception as e:
             _LOGGER.error("Error in token auto-refresh task: %s", e)
 
-    def needs_refresh_check(self):
-        """Determine if we need to check token validity based on time since last check."""
-        now = datetime.utcnow()
-
-        # If we've never checked or it's been more than _token_check_interval, check again
-        if (
-            self._last_check_time is None
-            or (now - self._last_check_time).total_seconds()
-            > self._token_check_interval
-        ):
-            self._last_check_time = now
-            return True
-        return False
-
     @property
     def is_valid(self):
         """Check if the token is valid."""
         # Fast path: If there is no token, it's definitely invalid
         if not self._token or not self._expiry:
-            _LOGGER.debug("Token invalid: No token or expiry information")
             return False
-
-        # To avoid unnecessary frequent checks, only check at certain intervals
-        if not self.needs_refresh_check():
-            # Use the cached validity without recalculating
-            return True
 
         now = datetime.utcnow().timestamp()
 
-        # Add some random jitter to TOKEN_REFRESH_MARGIN (±30 seconds) to prevent all
-        # instances from refreshing at exactly the same time
-        import random
-
-        jitter = random.uniform(-30, 30)
-        effective_margin = TOKEN_REFRESH_MARGIN + jitter
-
-        # Return True if token is valid for at least TOKEN_REFRESH_MARGIN more seconds
-        valid = now < (self._expiry - effective_margin)
+        # Token is valid if it has at least TOKEN_REFRESH_MARGIN seconds left before expiry
+        valid = now < (self._expiry - TOKEN_REFRESH_MARGIN)
 
         if not valid:
             remaining_time = self._expiry - now if self._expiry else 0
             _LOGGER.debug(
-                "Token validity check: INVALID (expiry in %s seconds, refresh margin: %s)",
+                "Token validity check: INVALID (expiry in %s seconds)",
                 int(remaining_time),
-                effective_margin,
-            )
-
-            # Force a full refresh next time by clearing the last check time
-            self._last_check_time = None
-        else:
-            remaining_time = self._expiry - now if self._expiry else 0
-            _LOGGER.debug(
-                "Token validity check: VALID (expiry in %s seconds, refresh margin: %s)",
-                int(remaining_time),
-                effective_margin,
             )
 
         return valid
@@ -183,20 +249,14 @@ class TokenManager:
     def set_token(self, token, expiry=None):
         """Set a new token and extract its expiry time."""
         self._token = token
-        self._last_token_refresh = datetime.utcnow()
 
         if expiry:
             # Use expiry directly if provided
             self._expiry = expiry
             now = datetime.utcnow().timestamp()
             token_lifetime = self._expiry - now if self._expiry else 0
-
-            _LOGGER.info(
-                "Token set with explicit expiry: %s (%s) - valid for %s seconds",
-                self._expiry,
-                datetime.fromtimestamp(self._expiry).strftime("%Y-%m-%d %H:%M:%S")
-                if self._expiry
-                else "unknown",
+            _LOGGER.debug(
+                "Token set with explicit expiry - valid for %s seconds",
                 int(token_lifetime),
             )
         else:
@@ -206,42 +266,36 @@ class TokenManager:
                 self._expiry = decoded.get("exp")
                 now = datetime.utcnow().timestamp()
                 token_lifetime = self._expiry - now if self._expiry else 0
-
-                _LOGGER.info(
-                    "Token set with decoded expiry: %s (%s) - valid for %s seconds",
-                    self._expiry,
-                    datetime.fromtimestamp(self._expiry).strftime("%Y-%m-%d %H:%M:%S")
-                    if self._expiry
-                    else "unknown",
+                _LOGGER.debug(
+                    "Token set with decoded expiry - valid for %s seconds",
                     int(token_lifetime),
                 )
             except Exception as e:
-                # Fallback: If token decoding fails, set a conservative expiry
-                # 55 minutes from now (most tokens are valid for 1 hour)
+                # Fallback: If token decoding fails, set expiry to TOKEN_AUTO_REFRESH_INTERVAL from now
                 now = datetime.utcnow().timestamp()
-                self._expiry = now + (55 * 60)  # 55 minutes in seconds
+                self._expiry = now + TOKEN_AUTO_REFRESH_INTERVAL
                 _LOGGER.warning(
-                    "Failed to decode token expiry: %s. Setting fallback expiry to %s (%s)",
+                    "Failed to decode token expiry: %s. Setting fallback expiry to %s minutes",
                     e,
-                    self._expiry,
-                    datetime.fromtimestamp(self._expiry).strftime("%Y-%m-%d %H:%M:%S"),
+                    TOKEN_AUTO_REFRESH_INTERVAL // 60,
                 )
 
-        # Reset the last check time to force immediate validation on next check
-        self._last_check_time = None
-
     def clear(self):
-        """Clear token expiry but keep the token itself."""
-        # Don't clear the token, only reset expiry
+        """Clear token and expiry."""
+        self._token = None
         self._expiry = None
-        self._last_check_time = None
 
 
 class OctopusGermany:
     def __init__(self, email: str, password: str):
+        """Initialize the OctopusGermany API client.
+
+        Args:
+            email: The email address for the Octopus Germany account
+            password: The password for the Octopus Germany account
+        """
         self._email = email
         self._password = password
-        self._session = None
 
         # Use global token manager to prevent redundant login attempts across instances
         global _GLOBAL_TOKEN_MANAGER
@@ -251,7 +305,8 @@ class OctopusGermany:
 
         # Set up the token manager refresh callback
         self._token_manager.set_refresh_callback(self.login)
-        # Start the auto-refresh task when initializing
+
+        # Start the auto-refresh task immediately
         asyncio.create_task(self._token_manager.start_auto_refresh())
 
     @property
@@ -293,7 +348,7 @@ class OctopusGermany:
             variables = {"email": self._email, "password": self._password}
             client = self._get_graphql_client()
 
-            retries = 10  # Increased from 5 to 10 retries
+            retries = 5  # Reduced from 10 to 5 retries for simpler logic
             attempt = 0
             delay = 1  # Start with 1 second delay
             max_delay = 30  # Cap the delay at 30 seconds
@@ -305,7 +360,6 @@ class OctopusGermany:
                     response = await client.execute_async(
                         query=query, variables=variables
                     )
-                    _LOGGER.debug("Login response received for attempt %s", attempt)
 
                     # Log token response when LOG_TOKEN_RESPONSES is enabled
                     if LOG_TOKEN_RESPONSES:
@@ -354,25 +408,10 @@ class OctopusGermany:
                                 delay * 2, max_delay
                             )  # Exponential backoff with max cap
                             continue
-                        elif error_code == "KT-CT-1124":  # Expired JWT
-                            # For expired JWT, don't count this attempt against the retry limit
-                            _LOGGER.warning(
-                                "JWT expired during login attempt %s. Clearing token and retrying in %s seconds...",
-                                attempt,
-                                delay,
-                            )
-                            self._token_manager.clear()
-                            await asyncio.sleep(delay)
-                            delay = min(
-                                delay * 2, max_delay
-                            )  # Exponential backoff with max cap
-                            attempt -= 1  # Don't count this attempt against the limit
-                            continue
                         else:
                             _LOGGER.error(
-                                "Login failed: %s - %s (attempt %s of %s)",
+                                "Login failed: %s (attempt %s of %s)",
                                 error_message,
-                                response["errors"],
                                 attempt,
                                 retries,
                             )
@@ -394,10 +433,6 @@ class OctopusGermany:
                                 and "exp" in payload
                             ):
                                 expiration = payload["exp"]
-                                _LOGGER.debug(
-                                    "Token received with expiration timestamp %s from payload",
-                                    expiration,
-                                )
                                 self._token_manager.set_token(token, expiration)
                             else:
                                 # Fall back to JWT decoding if no payload available
@@ -438,30 +473,13 @@ class OctopusGermany:
 
     # Consolidated query to get both accounts list and initial data in one API call
     async def fetch_accounts_with_initial_data(self):
-        """Fetch accounts and initial data in a single API call.
-
-        This consolidated query gets account numbers and basic info in one call,
-        reducing API requests during component setup.
-        """
+        """Fetch accounts and initial data in a single API call."""
         await self.ensure_token()
 
-        query = """
-            query {
-              viewer {
-                accounts {
-                  number
-                  ledgers {
-                    balance
-                    ledgerType
-                  }
-                }
-              }
-            }
-        """
         client = self._get_graphql_client()
 
         try:
-            response = await client.execute_async(query=query)
+            response = await client.execute_async(query=ACCOUNT_DISCOVERY_QUERY)
             _LOGGER.debug("Fetch accounts with initial data response: %s", response)
 
             if "data" in response and "viewer" in response["data"]:
@@ -470,7 +488,7 @@ class OctopusGermany:
                     _LOGGER.error("No accounts found")
                     return None
 
-                # Return both the accounts and first account data
+                # Return the accounts data
                 return accounts
             else:
                 _LOGGER.error("Unexpected API response structure: %s", response)
@@ -504,139 +522,6 @@ class OctopusGermany:
             _LOGGER.error("Failed to ensure valid token for fetch_all_data")
             return None
 
-        query = """
-            query ComprehensiveDataQuery($accountNumber: String!) {
-              account(accountNumber: $accountNumber) {
-                allProperties {
-                  id
-                  electricityMalos {
-                    agreements {
-                      product {
-                        code
-                        description
-                        fullName
-                      }
-                      unitRateGrossRateInformation {
-                        grossRate
-                      }
-                      unitRateInformation {
-                        ... on SimpleProductUnitRateInformation {
-                          __typename
-                          grossRateInformation {
-                            date
-                            grossRate
-                            rateValidToDate
-                            vatRate
-                          }
-                          latestGrossUnitRateCentsPerKwh
-                          netUnitRateCentsPerKwh
-                        }
-                        ... on TimeOfUseProductUnitRateInformation {
-                          __typename
-                          rates {
-                            grossRateInformation {
-                              date
-                              grossRate
-                              rateValidToDate
-                              vatRate
-                            }
-                            latestGrossUnitRateCentsPerKwh
-                            netUnitRateCentsPerKwh
-                            timeslotActivationRules {
-                              activeFromTime
-                              activeToTime
-                            }
-                            timeslotName
-                          }
-                        }
-                      }
-                      validFrom
-                      validTo
-                    }
-                    maloNumber
-                    meloNumber
-                    meter {
-                      id
-                      meterType
-                      number
-                      shouldReceiveSmartMeterData
-                      submitMeterReadingUrl
-                    }
-                    referenceConsumption
-                  }
-                }
-                id
-                ledgers {
-                  balance
-                  ledgerType
-                }
-              }
-              completedDispatches(accountNumber: $accountNumber) {
-                delta
-                deltaKwh
-                end
-                endDt
-                meta {
-                  location
-                  source
-                }
-                start
-                startDt
-              }
-              devices(accountNumber: $accountNumber) {
-                status {
-                  current
-                  currentState
-                  isSuspended
-                }
-                provider
-                preferences {
-                  mode
-                  schedules {
-                    dayOfWeek
-                    max
-                    min
-                    time
-                  }
-                  targetType
-                  unit
-                }
-                name
-                integrationDeviceId
-                id
-                deviceType
-                alerts {
-                  message
-                  publishedAt
-                }
-                ... on SmartFlexVehicle {
-                  id
-                  name
-                  status {
-                    current
-                    currentState
-                    isSuspended
-                  }
-                  vehicleVariant {
-                    model
-                    batterySize
-                  }
-                }
-              }
-              plannedDispatches(accountNumber: $accountNumber) {
-                delta
-                deltaKwh
-                end
-                endDt
-                meta {
-                  location
-                  source
-                }
-                start
-                startDt
-              }
-            }
-        """
         variables = {"accountNumber": account_number}
         client = self._get_graphql_client()
 
@@ -645,7 +530,9 @@ class OctopusGermany:
                 "Making API request to fetch_all_data for account %s",
                 account_number,
             )
-            response = await client.execute_async(query=query, variables=variables)
+            response = await client.execute_async(
+                query=COMPREHENSIVE_QUERY, variables=variables
+            )
 
             # Log the full API response only when LOG_API_RESPONSES is enabled
             from .const import LOG_API_RESPONSES
@@ -661,9 +548,11 @@ class OctopusGermany:
                 _LOGGER.error("API returned None response")
                 return None
 
-            # Initialize the result structure
+            # Initialize the result structure - note that 'products' is an empty list
+            # since we removed that field from the query
             result = {
                 "account": {},
+                "products": [],  # This will stay empty as we removed the property field
                 "completedDispatches": [],
                 "devices": [],
                 "plannedDispatches": [],
@@ -676,6 +565,39 @@ class OctopusGermany:
                 # Process available data fields
                 if "account" in data:
                     result["account"] = data["account"]
+
+                    # Extract product information from the account agreements if available
+                    # This helps maintain compatibility with code expecting the products field
+                    if (
+                        result["account"]
+                        and "allProperties" in result["account"]
+                        and result["account"]["allProperties"]
+                    ):
+                        try:
+                            # Try to extract products from electricityMalos agreements
+                            products = []
+                            for property_data in result["account"]["allProperties"]:
+                                if "electricityMalos" in property_data:
+                                    for malo in property_data["electricityMalos"]:
+                                        if "agreements" in malo:
+                                            for agreement in malo["agreements"]:
+                                                if "product" in agreement:
+                                                    products.append(
+                                                        agreement["product"]
+                                                    )
+
+                            # Only update if we found products
+                            if products:
+                                result["products"] = products
+                                _LOGGER.debug(
+                                    "Extracted %d products from account data",
+                                    len(products),
+                                )
+                        except Exception as extract_error:
+                            _LOGGER.warning(
+                                "Error extracting products from account data: %s",
+                                extract_error,
+                            )
 
                 if "devices" in data:
                     result["devices"] = (
@@ -698,8 +620,8 @@ class OctopusGermany:
 
                 # Only log errors but don't fail the whole request if we got at least account data
                 if "errors" in response and result["account"]:
-                    # Filter only the errors that are about missing devices
-                    device_errors = [
+                    # Filter only the errors that are about missing devices or dispatches
+                    non_critical_errors = [
                         error
                         for error in response["errors"]
                         if (
@@ -715,19 +637,17 @@ class OctopusGermany:
                     other_errors = [
                         error
                         for error in response["errors"]
-                        if error not in device_errors
+                        if error not in non_critical_errors
                     ]
 
-                    if device_errors:
+                    if non_critical_errors:
                         _LOGGER.warning(
-                            "API returned device-related errors (expected for accounts without devices): %s",
-                            device_errors,
+                            "API returned non-critical errors (expected for accounts without devices/dispatches): %s",
+                            non_critical_errors,
                         )
 
                     if other_errors:
-                        _LOGGER.error(
-                            "API returned non-device related errors: %s", other_errors
-                        )
+                        _LOGGER.error("API returned critical errors: %s", other_errors)
 
                         # Check for token expiry in the other errors
                         for error in other_errors:
@@ -900,204 +820,27 @@ class OctopusGermany:
             _LOGGER.error("Error setting vehicle charge preferences: %s", e)
             return False
 
+    # Remove redundant _fetch_account_and_devices method since fetch_all_data does the same thing
+    # The method below is kept only for backward compatibility
     async def _fetch_account_and_devices(self, account_number: str):
-        """Fetch account and devices data."""
-        if not await self.ensure_token():
-            return None
+        """Fetch account and devices data using the comprehensive query.
 
-        query = """
-            query AccountAndDevicesQuery($accountNumber: String!) {
-              account(accountNumber: $accountNumber) {
-                allProperties {
-                  id
-                  electricityMalos {
-                    agreements {
-                      product {
-                        code
-                        description
-                        fullName
-                      }
-                      unitRateGrossRateInformation {
-                        grossRate
-                      }
-                      unitRateInformation {
-                        ... on SimpleProductUnitRateInformation {
-                          __typename
-                          grossRateInformation {
-                            date
-                            grossRate
-                            rateValidToDate
-                            vatRate
-                          }
-                          latestGrossUnitRateCentsPerKwh
-                          netUnitRateCentsPerKwh
-                        }
-                        ... on TimeOfUseProductUnitRateInformation {
-                          __typename
-                          rates {
-                            grossRateInformation {
-                              date
-                              grossRate
-                              rateValidToDate
-                              vatRate
-                            }
-                            latestGrossUnitRateCentsPerKwh
-                            netUnitRateCentsPerKwh
-                            timeslotActivationRules {
-                              activeFromTime
-                              activeToTime
-                            }
-                            timeslotName
-                          }
-                        }
-                      }
-                      validFrom
-                      validTo
-                    }
-                    maloNumber
-                    meloNumber
-                    meter {
-                      id
-                      meterType
-                      number
-                      shouldReceiveSmartMeterData
-                      submitMeterReadingUrl
-                    }
-                    referenceConsumption
-                  }
-                }
-                id
-                ledgers {
-                  balance
-                  ledgerType
-                }
-              }
-              products(accountNumber: $accountNumber) {
-                code
-                description
-                fullName
-                grossRateInformation {
-                  grossRate
-                }
-              }
-              devices(accountNumber: $accountNumber) {
-                status {
-                  current
-                  currentState
-                  isSuspended
-                }
-                provider
-                preferences {
-                  mode
-                  schedules {
-                    dayOfWeek
-                    max
-                    min
-                    time
-                  }
-                  targetType
-                  unit
-                }
-                name
-                integrationDeviceId
-                id
-                deviceType
-                alerts {
-                  message
-                  publishedAt
-                }
-                ... on SmartFlexVehicle {
-                  id
-                  name
-                  status {
-                    current
-                    currentState
-                    isSuspended
-                  }
-                  vehicleVariant {
-                    model
-                    batterySize
-                  }
-                }
-              }
-            }
+        This method is kept for backward compatibility but now uses the same
+        comprehensive query as fetch_all_data.
         """
-        variables = {"accountNumber": account_number}
-        client = self._get_graphql_client()
+        _LOGGER.info(
+            "Using _fetch_account_and_devices (deprecated - using comprehensive query)"
+        )
+        all_data = await self.fetch_all_data(account_number)
 
-        try:
-            _LOGGER.debug(
-                "Making API request to fetch account and devices for account %s",
-                account_number,
-            )
-            response = await client.execute_async(query=query, variables=variables)
-
-            # Initialize result structure
-            result = {
-                "account": {},
-                "devices": [],
-            }
-
-            if response is None:
-                _LOGGER.error(
-                    "API returned None response for account and devices query"
-                )
-                return result
-
-            if "errors" in response:
-                # Check for specific error cases we can handle
-                errors = response.get("errors", [])
-                for error in errors:
-                    error_code = error.get("extensions", {}).get("errorCode")
-                    error_path = error.get("path", [])
-
-                    # Token expired error
-                    if error_code == "KT-CT-1124":  # JWT expired
-                        _LOGGER.warning(
-                            "Token expired during account/devices fetch, refreshing..."
-                        )
-                        self._token_manager.clear()
-                        success = await self.login()
-                        if success:
-                            # Retry with new token
-                            return await self._fetch_account_and_devices(account_number)
-
-                    # Log but continue for certain path-specific errors
-                    if (
-                        error_path
-                        and error_path[0] == "devices"
-                        and "Unable to find device" in error.get("message", "")
-                    ):
-                        _LOGGER.warning(
-                            "No devices found for account %s: %s",
-                            account_number,
-                            error.get("message"),
-                        )
-                        # Continue with empty devices list
-                    else:
-                        _LOGGER.error("API error in account/devices query: %s", error)
-
-            # Process data from response, safely handling missing fields
-            data = response.get("data", {})
-
-            # Extract account data if available
-            if "account" in data:
-                result["account"] = data.get("account", {})
-
-            # Extract devices if available
-            if "devices" in data:
-                result["devices"] = data.get("devices", [])
-
-            # Check if we got separate products data
-            if "products" in data and data["products"]:
-                _LOGGER.debug("Found direct products data in API response")
-                result["direct_products"] = data["products"]
-
-            return result
-
-        except Exception as e:
-            _LOGGER.error("Error fetching account and devices: %s", e)
+        if not all_data:
             return {
                 "account": {},
                 "devices": [],
             }
+
+        # Return just the parts needed by the legacy method
+        return {
+            "account": all_data["account"],
+            "devices": all_data["devices"],
+        }

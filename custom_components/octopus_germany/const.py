@@ -18,5 +18,5 @@ TOKEN_AUTO_REFRESH_INTERVAL = 50 * 60  # Auto refresh token every 50 minutes
 DEBUG_ENABLED = True
 LOG_API_RESPONSES = False  # Set to True to log full API responses
 LOG_TOKEN_RESPONSES = (
-    True  # Set to True to log token-related responses (login, refresh)
+    False  # Set to True to log token-related responses (login, refresh)
 )
