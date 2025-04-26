@@ -55,7 +55,7 @@ body:
       label: Log details
       render: text
       description: >
-        Show log output of the issue, see https://github.com/thecem/octopus_germany/blob/main/README.md for instructions.
+        Show log output of the issue, see https://github.com/thecem/octopus_germany/README.md#debugging for instructions.
 
   - type: input
     attributes:
