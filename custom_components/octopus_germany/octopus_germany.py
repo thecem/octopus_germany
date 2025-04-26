@@ -12,13 +12,12 @@ import asyncio
 import jwt
 from homeassistant.exceptions import ConfigEntryNotReady
 from python_graphql_client import GraphqlClient
+from .const import TOKEN_AUTO_REFRESH_INTERVAL, TOKEN_REFRESH_MARGIN
 
 _LOGGER = logging.getLogger(__name__)
 
 GRAPH_QL_ENDPOINT = "https://api.oeg-kraken.energy/v1/graphql/"
 ELECTRICITY_LEDGER = "ELECTRICITY_LEDGER"
-TOKEN_REFRESH_MARGIN = 300  # Refresh token 5 minutes before expiry
-TOKEN_AUTO_REFRESH_INTERVAL = 50 * 60  # Auto refresh token every 50 minutes
 
 # Global token manager to prevent multiple instances from making redundant token requests
 _GLOBAL_TOKEN_MANAGER = None
@@ -72,8 +71,47 @@ class TokenManager:
 
                 # Call the refresh callback if set
                 if self._refresh_callback is not None:
+                    # Import logging constants
+                    from .const import LOG_TOKEN_RESPONSES
+
+                    # Log that we're performing a scheduled refresh
                     _LOGGER.info("Performing scheduled token refresh")
-                    await self._refresh_callback()
+
+                    # Ensure LOG_TOKEN_RESPONSES is temporarily enabled for this refresh
+                    # to guarantee token info is logged
+                    import sys
+
+                    # Store the original setting to restore it later
+                    original_module = sys.modules.get(
+                        "custom_components.octopus_germany.const", None
+                    )
+                    original_setting = None
+                    if original_module:
+                        original_setting = getattr(
+                            original_module, "LOG_TOKEN_RESPONSES", None
+                        )
+                        # Temporarily force token logging on
+                        setattr(original_module, "LOG_TOKEN_RESPONSES", True)
+
+                    try:
+                        # Force token refresh by temporarily invalidating the token expiry
+                        # This ensures a new token is always fetched on scheduled refresh
+                        original_expiry = self._expiry
+                        self._expiry = 0  # Set to expired
+
+                        # Call the login method to refresh token
+                        await self._refresh_callback()
+
+                        # Log successful forced refresh
+                        _LOGGER.debug(
+                            "Scheduled token refresh completed - token was forcibly refreshed"
+                        )
+                    finally:
+                        # Restore the original LOG_TOKEN_RESPONSES setting
+                        if original_module and original_setting is not None:
+                            setattr(
+                                original_module, "LOG_TOKEN_RESPONSES", original_setting
+                            )
                 else:
                     _LOGGER.warning(
                         "No refresh callback set, cannot auto-refresh token"
@@ -193,8 +231,8 @@ class TokenManager:
         self._last_check_time = None
 
     def clear(self):
-        """Clear the token."""
-        self._token = None
+        """Clear token expiry but keep the token itself."""
+        # Don't clear the token, only reset expiry
         self._expiry = None
         self._last_check_time = None
 
@@ -210,6 +248,11 @@ class OctopusGermany:
         if _GLOBAL_TOKEN_MANAGER is None:
             _GLOBAL_TOKEN_MANAGER = TokenManager()
         self._token_manager = _GLOBAL_TOKEN_MANAGER
+
+        # Set up the token manager refresh callback
+        self._token_manager.set_refresh_callback(self.login)
+        # Start the auto-refresh task when initializing
+        asyncio.create_task(self._token_manager.start_auto_refresh())
 
     @property
     def _token(self):
@@ -229,6 +272,9 @@ class OctopusGermany:
 
     async def login(self) -> bool:
         """Login and obtain a new token."""
+        # Import constants for logging options
+        from .const import LOG_TOKEN_RESPONSES
+
         # Use a lock to prevent multiple concurrent login attempts
         async with self._token_manager._refresh_lock:
             # Check if token is still valid after waiting for the lock
@@ -260,6 +306,33 @@ class OctopusGermany:
                         query=query, variables=variables
                     )
                     _LOGGER.debug("Login response received for attempt %s", attempt)
+
+                    # Log token response when LOG_TOKEN_RESPONSES is enabled
+                    if LOG_TOKEN_RESPONSES:
+                        # Create a safe copy of the response for logging
+                        import copy
+
+                        safe_response = copy.deepcopy(response)
+                        # Check if we have a token in the response and mask most of it for logging
+                        if (
+                            "data" in safe_response
+                            and "obtainKrakenToken" in safe_response["data"]
+                            and "token" in safe_response["data"]["obtainKrakenToken"]
+                        ):
+                            token = safe_response["data"]["obtainKrakenToken"]["token"]
+                            if token and len(token) > 10:
+                                # Keep first 5 and last 5 chars, mask the rest
+                                mask_length = len(token) - 10
+                                masked_token = (
+                                    token[:5] + "*" * mask_length + token[-5:]
+                                )
+                                safe_response["data"]["obtainKrakenToken"]["token"] = (
+                                    masked_token
+                                )
+                        _LOGGER.info(
+                            "Token response (partial): %s",
+                            json.dumps(safe_response, indent=2),
+                        )
 
                     if "errors" in response:
                         error_code = (

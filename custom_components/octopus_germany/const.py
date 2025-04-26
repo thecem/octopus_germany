@@ -12,11 +12,11 @@ UPDATE_INTERVAL = 1  # Update interval in minutes
 TOKEN_REFRESH_MARGIN = (
     300  # Refresh token if less than 300 seconds (5 minutes) remaining
 )
+TOKEN_AUTO_REFRESH_INTERVAL = 50 * 60  # Auto refresh token every 50 minutes
 
 # Debug options
 DEBUG_ENABLED = True
 LOG_API_RESPONSES = False  # Set to True to log full API responses
-
-# Add a constant to track external update requests
-EXTERNAL_UPDATE_COUNT = 0
-LAST_EXTERNAL_UPDATE = None
+LOG_TOKEN_RESPONSES = (
+    True  # Set to True to log token-related responses (login, refresh)
+)
