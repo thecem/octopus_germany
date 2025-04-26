@@ -200,9 +200,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Extract account data - this should be available even if device-related endpoints fail
         account_data = data.get("account", {})
 
-        # Log what data we have
-        _LOGGER.debug("Processing API data - fields available: %s", list(data.keys()))
-        _LOGGER.debug("Account data fields: %s", list(account_data.keys()))
+        # Log what data we have - safely handle None values
+        _LOGGER.debug(
+            "Processing API data - fields available: %s",
+            list(data.keys()) if data else [],
+        )
+
+        # Only try to access account_data keys if it's not None and is a dictionary
+        if account_data and isinstance(account_data, dict):
+            _LOGGER.debug("Account data fields: %s", list(account_data.keys()))
+        else:
+            _LOGGER.warning("Account data is missing or invalid: %s", account_data)
+            # Return the basic structure with default values
+            return result_data
 
         # Extract electricity balance from ledgers
         ledgers = account_data.get("ledgers", [])
