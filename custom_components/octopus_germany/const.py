@@ -13,8 +13,9 @@ TOKEN_REFRESH_MARGIN = (
     300  # Refresh token if less than 300 seconds (5 minutes) remaining
 )
 
-# Create a debug constant to enable detailed logging
+# Debug options
 DEBUG_ENABLED = True
+LOG_API_RESPONSES = False  # Set to True to log full API responses
 
 # Add a constant to track external update requests
 EXTERNAL_UPDATE_COUNT = 0
