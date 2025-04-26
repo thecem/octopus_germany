@@ -64,28 +64,31 @@ class TokenManager:
 
         return valid
 
-    def set_token(self, token):
+    def set_token(self, token, expiry=None):
         """Set a new token and extract its expiry time."""
         self._token = token
 
-        # Decode token to get expiry time
-        try:
-            decoded = jwt.decode(token, options={"verify_signature": False})
-            self._expiry = decoded.get("exp")
-            now = datetime.utcnow().timestamp()
-            token_lifetime = self._expiry - now if self._expiry else 0
+        if expiry:
+            self._expiry = expiry
+        else:
+            # Decode token to get expiry time
+            try:
+                decoded = jwt.decode(token, options={"verify_signature": False})
+                self._expiry = decoded.get("exp")
+                now = datetime.utcnow().timestamp()
+                token_lifetime = self._expiry - now if self._expiry else 0
 
-            _LOGGER.debug(
-                "Token set with expiry timestamp %s (%s) - valid for %s seconds",
-                self._expiry,
-                datetime.fromtimestamp(self._expiry).strftime("%Y-%m-%d %H:%M:%S")
-                if self._expiry
-                else "unknown",
-                int(token_lifetime),
-            )
-        except Exception as e:
-            _LOGGER.error("Failed to decode token: %s", e)
-            self._expiry = None
+                _LOGGER.debug(
+                    "Token set with expiry timestamp %s (%s) - valid for %s seconds",
+                    self._expiry,
+                    datetime.fromtimestamp(self._expiry).strftime("%Y-%m-%d %H:%M:%S")
+                    if self._expiry
+                    else "unknown",
+                    int(token_lifetime),
+                )
+            except Exception as e:
+                _LOGGER.error("Failed to decode token: %s", e)
+                self._expiry = None
 
     def clear(self):
         """Clear the token."""
@@ -134,6 +137,7 @@ class OctopusGermany:
                 mutation krakenTokenAuthentication($email: String!, $password: String!) {
                   obtainKrakenToken(input: { email: $email, password: $password }) {
                     token
+                    payload
                   }
                 }
             """
@@ -149,7 +153,7 @@ class OctopusGermany:
                     response = await client.execute_async(
                         query=query, variables=variables
                     )
-                    _LOGGER.debug("Login response: %s", response)
+                    _LOGGER.debug("Login response received for attempt %s", attempt + 1)
 
                     if "errors" in response:
                         error_code = (
@@ -188,9 +192,27 @@ class OctopusGermany:
                             return False
 
                     if "data" in response and "obtainKrakenToken" in response["data"]:
-                        token = response["data"]["obtainKrakenToken"].get("token")
+                        token_data = response["data"]["obtainKrakenToken"]
+                        token = token_data.get("token")
+                        payload = token_data.get("payload")
+
                         if token:
-                            self._token_manager.set_token(token)
+                            # Pass both token and expiration time to the token manager
+                            if (
+                                payload
+                                and isinstance(payload, dict)
+                                and "exp" in payload
+                            ):
+                                expiration = payload["exp"]
+                                _LOGGER.debug(
+                                    "Token received with expiration timestamp %s from payload",
+                                    expiration,
+                                )
+                                self._token_manager.set_token(token, expiration)
+                            else:
+                                # Fall back to JWT decoding if no payload available
+                                self._token_manager.set_token(token)
+
                             return True
                         else:
                             _LOGGER.error(
