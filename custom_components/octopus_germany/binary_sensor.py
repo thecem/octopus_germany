@@ -85,16 +85,27 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
             or not isinstance(self.coordinator.data, dict)
             or self._account_number not in self.coordinator.data
         ):
+            _LOGGER.debug("No valid data structure in coordinator for is_on check")
             return False
 
         account_data = self.coordinator.data[self._account_number]
+
+        # Check for both camelCase and snake_case keys
         planned_dispatches = account_data.get("plannedDispatches", [])
+        if not planned_dispatches:
+            planned_dispatches = account_data.get("planned_dispatches", [])
+
+        if not planned_dispatches:
+            _LOGGER.debug("No planned dispatches found")
+            return False
 
         _LOGGER.debug(
             "Checking %d planned dispatches for active status", len(planned_dispatches)
         )
 
-        now = utcnow()  # Use timezone-aware UTC time
+        # Get current time in UTC
+        now = utcnow()
+        _LOGGER.debug("Current time (UTC): %s", now.isoformat())
 
         # Check all planned dispatches to see if one is currently active
         for dispatch in planned_dispatches:
@@ -104,26 +115,60 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
                 end_str = dispatch.get("end")
 
                 if not start_str or not end_str:
+                    _LOGGER.debug("Dispatch missing start or end time: %s", dispatch)
                     continue
 
                 # Convert strings to datetime objects and ensure they are timezone-aware UTC
                 start = as_utc(parse_datetime(start_str))
                 end = as_utc(parse_datetime(end_str))
 
-                # If current time is between start and end, the dispatch is active
-                if start and end and start <= now <= end:
+                if not start or not end:
                     _LOGGER.debug(
-                        "Active dispatch found: %s to %s (current: %s)",
+                        "Failed to parse start or end time for dispatch: %s", dispatch
+                    )
+                    continue
+
+                _LOGGER.debug(
+                    "Checking dispatch: start=%s, end=%s, current=%s",
+                    start.isoformat(),
+                    end.isoformat(),
+                    now.isoformat(),
+                )
+
+                # If current time is between start and end, the dispatch is active
+                if start <= now <= end:
+                    _LOGGER.info(
+                        "Active dispatch found! From %s to %s (current: %s)",
                         start.isoformat(),
                         end.isoformat(),
                         now.isoformat(),
                     )
                     return True
+                else:
+                    time_to_start = (
+                        (start - now).total_seconds() if start > now else None
+                    )
+                    time_since_end = (now - end).total_seconds() if now > end else None
+
+                    if time_to_start is not None:
+                        _LOGGER.debug(
+                            "Dispatch not yet active - starts in %d seconds (%s)",
+                            int(time_to_start),
+                            start.isoformat(),
+                        )
+                    elif time_since_end is not None:
+                        _LOGGER.debug(
+                            "Dispatch already ended - ended %d seconds ago (%s)",
+                            int(time_since_end),
+                            end.isoformat(),
+                        )
+
             except (ValueError, TypeError) as e:
                 _LOGGER.error("Error parsing dispatch data: %s - %s", dispatch, str(e))
                 continue
 
         # If no active dispatch was found, the sensor is 'off'
+        _LOGGER.debug("No active dispatches found, sensor is OFF")
         return False
 
     def _format_dispatch(self, dispatch):
