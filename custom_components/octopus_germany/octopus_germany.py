@@ -752,6 +752,23 @@ class OctopusGermany:
             )
             return False
 
+        # Format and validate the input times
+        try:
+            # Format weekday time - ensure it's in HH:MM format
+            weekday_time = self._format_time_to_hh_mm(weekday_target_time)
+
+            # Format weekend time - ensure it's in HH:MM format
+            weekend_time = self._format_time_to_hh_mm(weekend_target_time)
+
+            _LOGGER.debug(
+                "Formatted times for API: weekday=%s, weekend=%s",
+                weekday_time,
+                weekend_time,
+            )
+        except ValueError as e:
+            _LOGGER.error("Time format validation error: %s", e)
+            return False
+
         # Use the same GraphQL mutation format that has been confirmed to work
         query = """
         mutation setVehicleChargePreferences($accountNumber: String = "") {
@@ -766,8 +783,8 @@ class OctopusGermany:
         """ % (
             weekday_target_soc,
             weekend_target_soc,
-            weekday_target_time,
-            weekend_target_time,
+            weekday_time,
+            weekend_time,
         )
 
         variables = {"accountNumber": account_number}
@@ -819,6 +836,77 @@ class OctopusGermany:
         except Exception as e:
             _LOGGER.error("Error setting vehicle charge preferences: %s", e)
             return False
+
+    def _format_time_to_hh_mm(self, time_str: str) -> str:
+        """Format time to HH:MM format required by the API.
+
+        Handles various input formats like "HH:MM:SS", "HH:MM",
+        or time selector values from Home Assistant.
+
+        Args:
+            time_str: Time string in various formats
+
+        Returns:
+            Time formatted as "HH:MM"
+
+        Raises:
+            ValueError: If time_str cannot be parsed or contains invalid hours/minutes
+        """
+        if not time_str:
+            raise ValueError("Empty time value provided")
+
+        # Try parsing with different formats
+        try:
+            # First try to split by colon
+            parts = time_str.split(":")
+            if len(parts) >= 2:
+                # Extract hours and minutes
+                try:
+                    hours = int(parts[0])
+                    minutes = int(parts[1])
+                except ValueError:
+                    raise ValueError(
+                        f"Invalid time format: '{time_str}' - Hours and minutes must be numbers"
+                    )
+
+                # Validate hours and minutes
+                if not 0 <= hours <= 23:
+                    raise ValueError(
+                        f"Invalid hour value: {hours}. Hours must be between 0 and 23"
+                    )
+                if not 0 <= minutes <= 59:
+                    raise ValueError(
+                        f"Invalid minute value: {minutes}. Minutes must be between 0 and 59"
+                    )
+
+                return f"{hours:02d}:{minutes:02d}"
+
+            else:
+                # For other formats, try using datetime
+                from datetime import datetime
+
+                # Try different common formats
+                formats = ["%H:%M:%S", "%H:%M", "%I:%M %p", "%I:%M:%S %p"]
+
+                for fmt in formats:
+                    try:
+                        dt = datetime.strptime(time_str, fmt)
+                        return f"{dt.hour:02d}:{dt.minute:02d}"
+                    except ValueError:
+                        continue
+
+                # If we got here, none of the formats worked
+                raise ValueError(
+                    f"Could not parse time: '{time_str}'. Please use HH:MM format (e.g. '05:00')"
+                )
+
+        except Exception as e:
+            if isinstance(e, ValueError):
+                # Pass through ValueError with informative messages
+                raise
+            else:
+                # Wrap other exceptions
+                raise ValueError(f"Error processing time '{time_str}': {str(e)}")
 
     # Remove redundant _fetch_account_and_devices method since fetch_all_data does the same thing
     # The method below is kept only for backward compatibility
