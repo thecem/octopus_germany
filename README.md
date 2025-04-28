@@ -152,6 +152,10 @@ For bug reports and feature requests, please open an issue on the GitHub reposit
 Before raising anything, please read through the [discussion](https://github.com/thecem/octopus_germany/discussions).
 If you have found a bug or have a feature request please [raise it](https://github.com/thecem/octopus_germany/issues) using the appropriate report template.
 
+## DeepWiki
+
+[https://deepwiki.com/thecem/octopus_germany](https://deepwiki.com/thecem/octopus_germany)
+
 ## Sponsorship
 
 If you are enjoying the integration, why not use my [referral link](https://share.octopusenergy.de/free-cat-744)
