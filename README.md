@@ -145,6 +145,16 @@ logger:
   logs:
     custom_components.octopus_germany: debug
 ```
+### API-Debug
+
+If you need more information for API debug set in const
+
+`/config/custom_components/octopus_germany/const.py`
+
+```yaml
+LOG_API_RESPONSES = True
+```
+
 
 ## Support
 
