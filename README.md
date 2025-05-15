@@ -154,7 +154,7 @@ If you need more information for API debug set in const:
 ```yaml
 LOG_API_RESPONSES = True
 ```
-After restarting HA the API-Response and additional information will be in debug log.
+After restarting HA the API-Responses and additional information will be in debug log.
 
 
 ## Support
