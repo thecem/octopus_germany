@@ -147,13 +147,14 @@ logger:
 ```
 ### API-Debug
 
-If you need more information for API debug set in const
+If you need more information for API debug set in const:
 
 `/config/custom_components/octopus_germany/const.py`
 
 ```yaml
 LOG_API_RESPONSES = True
 ```
+After restarting HA the API-Response and additional information will be in debug log.
 
 
 ## Support
