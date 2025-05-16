@@ -64,10 +64,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not accounts:
             _LOGGER.error("No accounts found for the provided credentials")
             return False
-        account_number = accounts[0]["number"]  # Use the first account by default
-        _LOGGER.debug("Using account number: %s", account_number)
-
-        # Persist the account_number in the config entry
+        # Find the first account with an ELECTRICITY_LEDGER
+        selected_account = None
+        for acc in accounts:
+            for ledger in acc.get("ledgers", []):
+                if ledger.get("ledgerType") == "ELECTRICITY_LEDGER":
+                    selected_account = acc["number"]
+                    break
+            if selected_account:
+                break
+        if not selected_account:
+            selected_account = accounts[0]["number"]
+            _LOGGER.warning(
+                "No account with ELECTRICITY_LEDGER found, using first account: %s",
+                selected_account,
+            )
+        else:
+            _LOGGER.debug(
+                "Using first account with ELECTRICITY_LEDGER: %s", selected_account
+            )
+        account_number = selected_account
         hass.config_entries.async_update_entry(
             entry, data={**entry.data, "account_number": account_number}
         )
