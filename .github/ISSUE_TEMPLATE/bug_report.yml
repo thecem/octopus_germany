@@ -44,8 +44,8 @@ body:
     attributes:
       label: Is your tariff still in a transition phase?
       options:
-        - Yes
-        - No
+        - "Yes"
+        - "No"
     validations:
       required: true
 
@@ -54,8 +54,8 @@ body:
     attributes:
       label: Is an IMS (Intelligent Metering System) already installed?
       options:
-        - Yes
-        - No
+        - "Yes"
+        - "No"
     validations:
       required: true
 
@@ -64,9 +64,9 @@ body:
     attributes:
       label: Can the IMS already be read in the app for consumption data?
       options:
-        - Yes
-        - No
-        - Not applicable / No IMS installed
+        - "Yes"
+        - "No"
+        - "Not applicable / No IMS installed"
     validations:
       required: true
 
