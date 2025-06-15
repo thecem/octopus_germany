@@ -26,7 +26,53 @@ body:
         
          [df]: https://github.com/thecem/octopus_germany/discussions
          [issue]: https://github.com/thecem/octopus_germany/issues?q=is%3Aissue
-         
+  - type: input
+    id: tariff_name
+    attributes:
+      label: Welcher Tarif besteht?
+      description: Bitte gib den Namen deines aktuellen Tarifs an.
+    validations:
+      required: true
+
+  - type: input
+    id: tariff_since
+    attributes:
+      label: Seit wann besteht der Tarif?
+      description: Bitte gib das Startdatum deines Tarifs an (z. B. 01.01.2024).
+    validations:
+      required: true
+  
+  - type: dropdown
+    id: tariff_transition
+    attributes:
+      label: Ist der Tarif noch in der Übergangsphase?
+      options:
+        - Ja
+        - Nein
+    validations:
+      required: true
+  
+  - type: dropdown
+    id: ims_installed
+    attributes:
+      label: Ist bereits ein IMS (intelligentes Messsystem) installiert?
+      options:
+        - Ja
+        - Nein
+    validations:
+      required: true
+  
+  - type: dropdown
+    id: ims_readable
+    attributes:
+      label: Kann das IMS schon in der App im Verbrauch ausgelesen werden?
+      options:
+        - Ja
+        - Nein
+        - Nicht zutreffend / Kein IMS vorhanden
+    validations:
+      required: true
+      
   - type: textarea
     validations:
       required: true
