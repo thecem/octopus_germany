@@ -7,79 +7,76 @@ body:
       value: |
         # Bug Report for the Octopus Germany Integration
 
-        
-        > [!Important]
+        > [!IMPORTANT]
+        > **Before submitting an issue:**
         > 
-        > Before submitting an issue:
-        >
-        > ✅ Ensure you are using the latest version of the integration.
-        > ✅ Check the logs for error messages and attach them.
+        > ✅ Make sure you are using the latest version of the integration.
+        > ✅ Check your logs for error messages and attach them.
         > ✅ Search existing [issues][issue] to see if your problem has already been reported.
-        > ✅ Search existing [discussion][df] to see if your problem has already been discussed, or ask a question.
-      
-        Thank you for your report! 🚀
+        > ✅ Search existing [discussions][df] to see if your problem has already been discussed, or to ask a question.
+        >
+        > Thank you for your report! 🚀
+        >
+        > [!NOTE]
+        > Due to the high number of issues, incomplete reports (unclear description, missing log files, unsupported platform) will be closed without further comment.
+        >
+        > [df]: https://github.com/thecem/octopus_germany/discussions
+        > [issue]: https://github.com/thecem/octopus_germany/issues?q=is%3Aissue
 
-        > [!NOTE]  
-        > Due to amount of issues raised we will close incomplete issues 
-        > (unclear description what the issue actually is, missing log file, unsupported platform) 
-        > without further comments.
-        
-         [df]: https://github.com/thecem/octopus_germany/discussions
-         [issue]: https://github.com/thecem/octopus_germany/issues?q=is%3Aissue
   - type: input
     id: tariff_name
     attributes:
-      label: Welcher Tarif besteht?
-      description: Bitte gib den Namen deines aktuellen Tarifs an.
+      label: What is your current tariff?
+      description: Please provide the name of your current tariff.
     validations:
       required: true
 
   - type: input
     id: tariff_since
     attributes:
-      label: Seit wann besteht der Tarif?
-      description: Bitte gib das Startdatum deines Tarifs an (z. B. 01.01.2024).
+      label: Since when is this tariff active?
+      description: Please enter the start date of your tariff (e.g., 2024-01-01).
     validations:
       required: true
-  
+
   - type: dropdown
     id: tariff_transition
     attributes:
-      label: Ist der Tarif noch in der Übergangsphase?
+      label: Is your tariff still in a transition phase?
       options:
-        - Ja
-        - Nein
+        - Yes
+        - No
     validations:
       required: true
-  
+
   - type: dropdown
     id: ims_installed
     attributes:
-      label: Ist bereits ein IMS (intelligentes Messsystem) installiert?
+      label: Is an IMS (Intelligent Metering System) already installed?
       options:
-        - Ja
-        - Nein
+        - Yes
+        - No
     validations:
       required: true
-  
+
   - type: dropdown
     id: ims_readable
     attributes:
-      label: Kann das IMS schon in der App im Verbrauch ausgelesen werden?
+      label: Can the IMS already be read in the app for consumption data?
       options:
-        - Ja
-        - Nein
-        - Nicht zutreffend / Kein IMS vorhanden
+        - Yes
+        - No
+        - Not applicable / No IMS installed
     validations:
       required: true
-      
+
   - type: textarea
     validations:
       required: true
     attributes:
       label: Describe the bug
       description: >-
-        A clear and concise description of what the bug is.
+        Provide a clear and concise description of the issue.
 
   - type: textarea
     validations:
@@ -92,7 +89,7 @@ body:
         ...
       label: Steps to reproduce
       description: >-
-        Steps to reproduce the behavior.
+        List the steps to reproduce the behavior.
 
   - type: textarea
     validations:
@@ -101,10 +98,10 @@ body:
       label: Log details
       render: text
       description: >
-        Show log output of the issue, see https://github.com/thecem/octopus_germany/blob/main/README.md#debugging for instructions.
+        Attach relevant log output. See https://github.com/thecem/octopus_germany/blob/main/README.md#debugging for instructions.
 
   - type: input
     attributes:
       label: Version
       description: >
-        Show installed version of Octopus Germany Integration
+        State the installed version of the Octopus Germany Integration.
