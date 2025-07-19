@@ -36,40 +36,51 @@ async def async_setup_entry(
         _LOGGER.info("No data in coordinator, not creating switches")
         return
 
-    if account_number not in coordinator.data:
-        _LOGGER.info(
-            "No data for account %s found in coordinator data, not creating switches",
-            account_number,
-        )
-        return
+    # Get all account numbers from entry data or coordinator data
+    account_numbers = config_entry.data.get("account_numbers", [])
+    if not account_numbers and account_number:
+        account_numbers = [account_number]
 
-    # Extract devices from the coordinator data structure
-    account_data = coordinator.data.get(account_number, {})
-    devices = account_data.get("devices", [])
+    # If still no account numbers, try to get them from coordinator data
+    if not account_numbers and coordinator.data:
+        account_numbers = list(coordinator.data.keys())
 
-    if not devices:
-        _LOGGER.info(
-            "No devices found for account %s, not creating switches", account_number
-        )
-        return
+    _LOGGER.debug("Creating switches for accounts: %s", account_numbers)
 
-    # Only create switches if we have valid devices
     switches = []
-    for device in devices:
-        if "id" not in device:
-            _LOGGER.warning("Device missing ID field: %s", device)
+
+    for acc_num in account_numbers:
+        if acc_num not in coordinator.data:
+            _LOGGER.info(
+                "No data for account %s found in coordinator data, not creating switches",
+                acc_num,
+            )
             continue
-        switches.append(
-            OctopusSwitch(api, device, coordinator, config_entry, account_number)
-        )
+
+        # Extract devices from the coordinator data structure
+        account_data = coordinator.data.get(acc_num, {})
+        devices = account_data.get("devices", [])
+
+        if not devices:
+            _LOGGER.info(
+                "No devices found for account %s, not creating switches", acc_num
+            )
+            continue
+
+        # Only create switches if we have valid devices
+        for device in devices:
+            if "id" not in device:
+                _LOGGER.warning("Device missing ID field: %s", device)
+                continue
+            switches.append(
+                OctopusSwitch(api, device, coordinator, config_entry, acc_num)
+            )
 
     # Only add entities if we have any
     if switches:
         async_add_entities(switches, update_before_add=True)
     else:
-        _LOGGER.info(
-            "No valid devices to create switches for account %s", account_number
-        )
+        _LOGGER.info("No valid devices to create switches for any account")
 
 
 class OctopusSwitch(CoordinatorEntity, SwitchEntity):

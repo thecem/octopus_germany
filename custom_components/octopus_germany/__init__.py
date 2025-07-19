@@ -56,41 +56,39 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if DOMAIN not in hass.data:
         hass.data[DOMAIN] = {}
 
-    # Ensure account_number is fetched and stored during setup
-    account_number = entry.data.get("account_number")
-    if not account_number:
-        _LOGGER.debug("Account number not found in entry data, fetching from API")
-        accounts = await api.fetch_accounts()
-        if not accounts:
-            _LOGGER.error("No accounts found for the provided credentials")
-            return False
-        # Find the first account with an ELECTRICITY_LEDGER
-        selected_account = None
-        for acc in accounts:
-            for ledger in acc.get("ledgers", []):
-                if ledger.get("ledgerType") == "ELECTRICITY_LEDGER":
-                    selected_account = acc["number"]
-                    break
-            if selected_account:
-                break
-        if not selected_account:
-            selected_account = accounts[0]["number"]
-            _LOGGER.warning(
-                "No account with ELECTRICITY_LEDGER found, using first account: %s",
-                selected_account,
-            )
+    # Enhanced multi-account support with all ledgers
+    account_numbers = entry.data.get("account_numbers", [])
+    if not account_numbers:
+        # Backward compatibility: try single account_number
+        single_account = entry.data.get("account_number")
+        if single_account:
+            account_numbers = [single_account]
         else:
-            _LOGGER.debug(
-                "Using first account with ELECTRICITY_LEDGER: %s", selected_account
+            _LOGGER.debug("No account numbers found in entry data, fetching from API")
+            accounts = await api.fetch_accounts()
+            if not accounts:
+                _LOGGER.error("No accounts found for the provided credentials")
+                return False
+
+            # Store all accounts, not just the first one with electricity ledger
+            account_numbers = [acc["number"] for acc in accounts]
+            _LOGGER.info("Found %d accounts: %s", len(account_numbers), account_numbers)
+
+            # Update config entry with all account numbers
+            hass.config_entries.async_update_entry(
+                entry, data={**entry.data, "account_numbers": account_numbers}
             )
-        account_number = selected_account
+
+    # For backward compatibility, set primary account_number to first account
+    primary_account_number = account_numbers[0] if account_numbers else None
+    if not entry.data.get("account_number"):
         hass.config_entries.async_update_entry(
-            entry, data={**entry.data, "account_number": account_number}
+            entry, data={**entry.data, "account_number": primary_account_number}
         )
 
     # Create data update coordinator with improved error handling and retry logic
     async def async_update_data():
-        """Fetch data from API with improved error handling."""
+        """Fetch data from API with improved error handling for all accounts."""
         current_time = datetime.now()
 
         # Add throttling to prevent too frequent API calls
@@ -156,30 +154,44 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "Fetching data from API at %s", current_time.strftime("%H:%M:%S")
             )
 
-            # Fetch all data in one call to minimize API requests
-            data = await api.fetch_all_data(account_number)
+            # Fetch data for all accounts
+            all_accounts_data = {}
+            for account_num in account_numbers:
+                try:
+                    # Fetch all data in one call to minimize API requests
+                    account_data = await api.fetch_all_data(account_num)
+                    if account_data:
+                        # Process the raw API data into a more usable format
+                        processed_account_data = await process_api_data(
+                            account_data, account_num
+                        )
+                        all_accounts_data.update(processed_account_data)
+                    else:
+                        _LOGGER.warning(
+                            "Failed to fetch data for account %s", account_num
+                        )
+                except Exception as e:
+                    _LOGGER.error(
+                        "Error fetching data for account %s: %s", account_num, e
+                    )
+                    continue
 
             # Update last API call timestamp only on successful calls
-            async_update_data.last_api_call = datetime.now()
+            if all_accounts_data:
+                async_update_data.last_api_call = datetime.now()
 
-            if data is None:
+            if not all_accounts_data:
                 _LOGGER.error(
-                    "Failed to fetch data from API, returning last known data"
+                    "Failed to fetch data from API for any account, returning last known data"
                 )
                 return coordinator.data if hasattr(coordinator, "data") else {}
 
-            # Process the raw API data into a more usable format
-            try:
-                processed_data = await process_api_data(data, account_number)
-
-                _LOGGER.debug(
-                    "Successfully fetched data from API at %s",
-                    datetime.now().strftime("%H:%M:%S"),
-                )
-                return processed_data
-            except Exception as e:
-                _LOGGER.exception("Error processing API data: %s", str(e))
-                return coordinator.data if hasattr(coordinator, "data") else {}
+            _LOGGER.debug(
+                "Successfully fetched data from API at %s for %d accounts",
+                datetime.now().strftime("%H:%M:%S"),
+                len(all_accounts_data),
+            )
+            return all_accounts_data
 
         except Exception as e:
             _LOGGER.exception("Unexpected error during data update: %s", e)
@@ -230,19 +242,52 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Return the basic structure with default values
             return result_data
 
-        # Extract electricity balance from ledgers
+        # Extract ALL ledger data (not just electricity)
         ledgers = account_data.get("ledgers", [])
-        electricity_balance_cents = next(
-            (
-                ledger.get("balance", 0)
-                for ledger in ledgers
-                if ledger.get("ledgerType") == "ELECTRICITY_LEDGER"
-            ),
-            0,
-        )
-        electricity_balance_eur = electricity_balance_cents / 100
-        result_data[account_number]["electricity_balance"] = electricity_balance_eur
         result_data[account_number]["ledgers"] = ledgers
+
+        # Initialize all ledger balances
+        electricity_balance_eur = 0
+        gas_balance_eur = 0
+        heat_balance_eur = 0
+        other_ledgers = {}
+
+        # Process all available ledgers
+        for ledger in ledgers:
+            ledger_type = ledger.get("ledgerType")
+            balance_cents = ledger.get("balance", 0)
+            balance_eur = balance_cents / 100
+
+            if ledger_type == "ELECTRICITY_LEDGER":
+                electricity_balance_eur = balance_eur
+            elif ledger_type == "GAS_LEDGER":
+                gas_balance_eur = balance_eur
+            elif ledger_type == "HEAT_LEDGER":
+                heat_balance_eur = balance_eur
+            else:
+                # Store any other ledger types we might encounter
+                other_ledgers[ledger_type] = balance_eur
+                _LOGGER.debug(
+                    "Found additional ledger type: %s with balance: %.2f EUR",
+                    ledger_type,
+                    balance_eur,
+                )
+
+        # Store all ledger balances in result
+        result_data[account_number]["electricity_balance"] = electricity_balance_eur
+        result_data[account_number]["gas_balance"] = gas_balance_eur
+        result_data[account_number]["heat_balance"] = heat_balance_eur
+        result_data[account_number]["other_ledgers"] = other_ledgers
+
+        _LOGGER.debug(
+            "Processed %d ledgers for account %s: electricity=%.2f, gas=%.2f, heat=%.2f, other=%d",
+            len(ledgers),
+            account_number,
+            electricity_balance_eur,
+            gas_balance_eur,
+            heat_balance_eur,
+            len(other_ledgers),
+        )
 
         # Extract MALO and MELO numbers
         malo_number = next(
@@ -580,7 +625,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = DataUpdateCoordinator(
         hass,
         _LOGGER,
-        name=f"{DOMAIN}_{account_number}",
+        name=f"{DOMAIN}_{primary_account_number}",
         update_method=async_update_data,
         update_interval=timedelta(minutes=UPDATE_INTERVAL),
     )
@@ -589,28 +634,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
 
     # Log the account data after update to help diagnose attribute issues
-    if coordinator.data and account_number in coordinator.data:
+    if coordinator.data and primary_account_number in coordinator.data:
         _LOGGER.info(
             "Account %s data keys: %s",
-            account_number,
-            list(coordinator.data[account_number].keys()),
+            primary_account_number,
+            list(coordinator.data[primary_account_number].keys()),
         )
-        if "plannedDispatches" in coordinator.data[account_number]:
+        if "plannedDispatches" in coordinator.data[primary_account_number]:
             _LOGGER.info(
                 "Found %d planned dispatches",
-                len(coordinator.data[account_number]["plannedDispatches"]),
+                len(coordinator.data[primary_account_number]["plannedDispatches"]),
             )
             _LOGGER.info(
                 "First planned dispatch: %s",
-                coordinator.data[account_number]["plannedDispatches"][0]
-                if coordinator.data[account_number]["plannedDispatches"]
+                coordinator.data[primary_account_number]["plannedDispatches"][0]
+                if coordinator.data[primary_account_number]["plannedDispatches"]
                 else "None",
             )
 
     # Store API, account number and coordinator in hass.data
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api,
-        "account_number": account_number,
+        "account_number": primary_account_number,
+        "account_numbers": account_numbers,
         "coordinator": coordinator,
     }
 
@@ -622,9 +668,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register services
     async def handle_set_vehicle_charge_preferences(call: ServiceCall):
         """Handle the set_vehicle_charge_preferences service call."""
-        # Use account number from service call or fall back to the one from config
+        # Use account number from service call or fall back to the primary one from config
         call_account_number = call.data.get(ATTR_ACCOUNT_NUMBER)
-        used_account_number = call_account_number or account_number
+
+        # Use provided account number or default to the primary account
+        used_account_number = call_account_number or primary_account_number
+
+        # Validate that the account number is in our list of known accounts
+        if used_account_number not in account_numbers:
+            _LOGGER.error(
+                "Account number %s not found in configured accounts: %s",
+                used_account_number,
+                account_numbers,
+            )
+            from homeassistant.exceptions import ServiceValidationError
+
+            raise ServiceValidationError(
+                f"Account number {used_account_number} not found in configured accounts",
+                translation_domain=DOMAIN,
+            )
+
         weekday_target_soc = call.data.get(ATTR_WEEKDAY_TARGET_SOC)
         weekend_target_soc = call.data.get(ATTR_WEEKEND_TARGET_SOC)
         weekday_target_time = call.data.get(ATTR_WEEKDAY_TARGET_TIME)

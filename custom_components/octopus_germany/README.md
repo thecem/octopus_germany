@@ -13,7 +13,17 @@ If you find this useful and are planning on moving to Octopus Energy Germany, wh
 ## Features
 
 - Account information display with electricity balance
+- Support for multiple accounts under one integration
 - Current electricity tariff prices
+- Support for all ledger types:
+  - Electricity ledgers
+  - Gas ledgers
+  - Heat ledgers
+  - Other ledger types
+- Support for Octopus tariff types:
+  - Simple tariffs (fixed rate)
+  - Time of Use tariffs (different rates at different times)
+  - Heat tariffs (for heat pumps)
 - Device smart control (suspend/unsuspend charging)
 - Electric vehicle charging preferences management
 - Intelligent dispatching status tracking
@@ -22,7 +32,7 @@ If you find this useful and are planning on moving to Octopus Energy Germany, wh
 
 ### HACS (Home Assistant Community Store)
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration) 
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
 
 1. Add this repository as a custom repository in HACS
 2. Search for ["Octopus Germany"](https://my.home-assistant.io/redirect/hacs_repository/?owner=thecem&repository=octopus_germany&category=integration) in the HACS integrations
@@ -138,7 +148,7 @@ logger:
 ## Support
 
 For bug reports and feature requests, please open an issue on the GitHub repository.
-Before raising anything, please read through the [discussion](https://thecem.github.io/octopus_germany/discussions). 
+Before raising anything, please read through the [discussion](https://thecem.github.io/octopus_germany/discussions).
 If you have found a bug or have a feature request please [raise it](https://thecem.github.io/octopus_germany/issues) using the appropriate report template.
 
 ## Sponsorship

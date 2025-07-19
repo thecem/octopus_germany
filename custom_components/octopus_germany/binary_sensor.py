@@ -24,36 +24,54 @@ async def async_setup_entry(
     coordinator = data["coordinator"]
     account_number = data["account_number"]
 
-    # Only add the binary sensors if we have devices
-    if (
-        coordinator.data
-        and account_number in coordinator.data
-        and coordinator.data[account_number].get("devices")
-    ):
-        entities = [
-            OctopusIntelligentDispatchingBinarySensor(account_number, coordinator),
-        ]
-        async_add_entities(entities)
-        _LOGGER.info(
-            "Added intelligent dispatching binary sensor for account %s", account_number
-        )
+    # Get all account numbers from entry data or coordinator data
+    account_numbers = entry.data.get("account_numbers", [])
+    if not account_numbers and account_number:
+        account_numbers = [account_number]
 
-        # Log out the keys in coordinator data for debugging
-        _LOGGER.info(
-            "Available keys in coordinator for %s: %s",
-            account_number,
-            list(coordinator.data[account_number].keys()),
-        )
-        if "plannedDispatches" in coordinator.data[account_number]:
-            _LOGGER.info(
-                "Found %d planned dispatches in coordinator data",
-                len(coordinator.data[account_number]["plannedDispatches"]),
+    # If still no account numbers, try to get them from coordinator data
+    if not account_numbers and coordinator.data:
+        account_numbers = list(coordinator.data.keys())
+
+    _LOGGER.debug("Creating binary sensors for accounts: %s", account_numbers)
+
+    entities = []
+
+    # Create binary sensors for each account with devices
+    for acc_num in account_numbers:
+        if (
+            coordinator.data
+            and acc_num in coordinator.data
+            and coordinator.data[acc_num].get("devices")
+        ):
+            entities.append(
+                OctopusIntelligentDispatchingBinarySensor(acc_num, coordinator)
             )
+            _LOGGER.info(
+                "Added intelligent dispatching binary sensor for account %s", acc_num
+            )
+
+            # Log out the keys in coordinator data for debugging
+            _LOGGER.info(
+                "Available keys in coordinator for %s: %s",
+                acc_num,
+                list(coordinator.data[acc_num].keys()),
+            )
+            if "plannedDispatches" in coordinator.data[acc_num]:
+                _LOGGER.info(
+                    "Found %d planned dispatches in coordinator data",
+                    len(coordinator.data[acc_num]["plannedDispatches"]),
+                )
+        else:
+            _LOGGER.info(
+                "Not creating intelligent dispatching sensor due to missing devices data for account %s",
+                acc_num,
+            )
+
+    if entities:
+        async_add_entities(entities)
     else:
-        _LOGGER.info(
-            "Not creating intelligent dispatching sensor due to missing devices data for account %s",
-            account_number,
-        )
+        _LOGGER.info("No binary sensors to add for any account")
 
 
 class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorEntity):
