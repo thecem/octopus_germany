@@ -88,6 +88,61 @@ query ComprehensiveDataQuery($accountNumber: String!) {
         }
         referenceConsumption
       }
+      gasMalos {
+        agreements {
+          product {
+            code
+            description
+            fullName
+          }
+          unitRateGrossRateInformation {
+            grossRate
+          }
+          unitRateInformation {
+            ... on SimpleProductUnitRateInformation {
+              __typename
+              grossRateInformation {
+                date
+                grossRate
+                rateValidToDate
+                vatRate
+              }
+              latestGrossUnitRateCentsPerKwh
+              netUnitRateCentsPerKwh
+            }
+            ... on TimeOfUseProductUnitRateInformation {
+              __typename
+              rates {
+                grossRateInformation {
+                  date
+                  grossRate
+                  rateValidToDate
+                  vatRate
+                }
+                latestGrossUnitRateCentsPerKwh
+                netUnitRateCentsPerKwh
+                timeslotActivationRules {
+                  activeFromTime
+                  activeToTime
+                }
+                timeslotName
+              }
+            }
+          }
+          validFrom
+          validTo
+        }
+        maloNumber
+        meloNumber
+        meter {
+          id
+          meterType
+          number
+          shouldReceiveSmartMeterData
+          submitMeterReadingUrl
+        }
+        referenceConsumption
+      }
     }
   }
   completedDispatches(accountNumber: $accountNumber) {

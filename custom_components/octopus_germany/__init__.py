@@ -213,6 +213,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "property_ids": [],
                 "devices": [],
                 "products": [],
+                "gas_products": [],
                 "vehicle_battery_size_in_kwh": None,
                 "current_start": None,
                 "current_end": None,
@@ -222,6 +223,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "malo_number": None,
                 "melo_number": None,
                 "meter": None,
+                "gas_malo_number": None,
+                "gas_melo_number": None,
+                "gas_meter": None,
             }
         }
 
@@ -322,6 +326,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if meter:
                 break
         result_data[account_number]["meter"] = meter
+
+        # Extract gas MALO and MELO numbers
+        gas_malo_number = next(
+            (
+                malo.get("maloNumber")
+                for prop in account_data.get("allProperties", [])
+                for malo in prop.get("gasMalos", [])
+                if malo.get("maloNumber")
+            ),
+            None,
+        )
+        result_data[account_number]["gas_malo_number"] = gas_malo_number
+
+        gas_melo_number = next(
+            (
+                malo.get("meloNumber")
+                for prop in account_data.get("allProperties", [])
+                for malo in prop.get("gasMalos", [])
+                if malo.get("meloNumber")
+            ),
+            None,
+        )
+        result_data[account_number]["gas_melo_number"] = gas_melo_number
+
+        # Get gas meter data
+        gas_meter = None
+        for prop in account_data.get("allProperties", []):
+            for malo in prop.get("gasMalos", []):
+                if malo.get("meter"):
+                    gas_meter = malo.get("meter")
+                    break
+            if gas_meter:
+                break
+        result_data[account_number]["gas_meter"] = gas_meter
 
         # Extract property IDs
         property_ids = [
@@ -619,6 +657,164 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
 
         result_data[account_number]["products"] = products
+
+        # Extract gas products - similar process to electricity products
+        gas_products = []
+
+        for prop in account_data.get("allProperties", []):
+            for malo in prop.get("gasMalos", []):
+                for agreement in malo.get("agreements", []):
+                    product = agreement.get("product", {})
+                    unit_rate_info = agreement.get("unitRateInformation", {})
+
+                    # Determine the product type
+                    product_type = "Simple"
+                    if "__typename" in unit_rate_info:
+                        product_type = (
+                            "Simple"
+                            if unit_rate_info["__typename"]
+                            == "SimpleProductUnitRateInformation"
+                            else "TimeOfUse"
+                        )
+
+                    # For Simple product types
+                    if product_type == "Simple":
+                        # Get the gross rate from various possible sources
+                        gross_rate = "0"
+
+                        # Check different possible sources for gross rate
+                        if "grossRateInformation" in unit_rate_info:
+                            if isinstance(unit_rate_info["grossRateInformation"], dict):
+                                gross_rate = unit_rate_info["grossRateInformation"].get(
+                                    "grossRate", "0"
+                                )
+                            elif (
+                                isinstance(unit_rate_info["grossRateInformation"], list)
+                                and unit_rate_info["grossRateInformation"]
+                            ):
+                                gross_rate = (
+                                    unit_rate_info["grossRateInformation"][0].get(
+                                        "grossRate", "0"
+                                    )
+                                    if unit_rate_info["grossRateInformation"]
+                                    else "0"
+                                )
+                        elif "latestGrossUnitRateCentsPerKwh" in unit_rate_info:
+                            gross_rate = unit_rate_info[
+                                "latestGrossUnitRateCentsPerKwh"
+                            ]
+                        elif "unitRateGrossRateInformation" in agreement:
+                            if isinstance(
+                                agreement["unitRateGrossRateInformation"], dict
+                            ):
+                                gross_rate = agreement[
+                                    "unitRateGrossRateInformation"
+                                ].get("grossRate", "0")
+                            elif (
+                                isinstance(
+                                    agreement["unitRateGrossRateInformation"], list
+                                )
+                                and agreement["unitRateGrossRateInformation"]
+                            ):
+                                gross_rate = (
+                                    agreement["unitRateGrossRateInformation"][0].get(
+                                        "grossRate", "0"
+                                    )
+                                    if agreement["unitRateGrossRateInformation"]
+                                    else "0"
+                                )
+
+                        gas_products.append(
+                            {
+                                "code": product.get("code", "Unknown"),
+                                "description": product.get("description", ""),
+                                "name": product.get("fullName", "Unknown"),
+                                "grossRate": gross_rate,
+                                "type": product_type,
+                                "validFrom": agreement.get("validFrom"),
+                                "validTo": agreement.get("validTo"),
+                            }
+                        )
+
+                    # For TimeOfUse product types (if gas supports it)
+                    elif product_type == "TimeOfUse" and "rates" in unit_rate_info:
+                        # Process time-of-use rates for gas
+                        timeslots = []
+
+                        for rate in unit_rate_info["rates"]:
+                            gross_rate = "0"
+
+                            # Get the gross rate for this timeslot
+                            if "grossRateInformation" in rate:
+                                if isinstance(rate["grossRateInformation"], dict):
+                                    gross_rate = rate["grossRateInformation"].get(
+                                        "grossRate", "0"
+                                    )
+                                elif (
+                                    isinstance(rate["grossRateInformation"], list)
+                                    and rate["grossRateInformation"]
+                                ):
+                                    gross_rate = (
+                                        rate["grossRateInformation"][0].get(
+                                            "grossRate", "0"
+                                        )
+                                        if rate["grossRateInformation"]
+                                        else "0"
+                                    )
+                            elif "latestGrossUnitRateCentsPerKwh" in rate:
+                                gross_rate = rate["latestGrossUnitRateCentsPerKwh"]
+
+                            # Process activation rules
+                            activation_rules = []
+                            for rule in rate.get("timeslotActivationRules", []):
+                                activation_rules.append(
+                                    {
+                                        "from_time": rule.get(
+                                            "activeFromTime", "00:00:00"
+                                        ),
+                                        "to_time": rule.get("activeToTime", "00:00:00"),
+                                    }
+                                )
+
+                            timeslots.append(
+                                {
+                                    "name": rate.get("timeslotName", "Unknown"),
+                                    "rate": gross_rate,
+                                    "activation_rules": activation_rules,
+                                }
+                            )
+
+                        gas_products.append(
+                            {
+                                "code": product.get("code", "Unknown"),
+                                "description": product.get("description", ""),
+                                "name": product.get("fullName", "Unknown"),
+                                "grossRate": "0",  # For TimeOfUse, this is not used
+                                "type": product_type,
+                                "validFrom": agreement.get("validFrom"),
+                                "validTo": agreement.get("validTo"),
+                                "timeslots": timeslots,
+                            }
+                        )
+
+        # Log gas products found
+        if gas_products:
+            _LOGGER.debug(
+                "Found %d gas products for account %s",
+                len(gas_products),
+                account_number,
+            )
+            for idx, product in enumerate(gas_products):
+                _LOGGER.debug(
+                    "Gas Product %d: code=%s, grossRate=%s",
+                    idx + 1,
+                    product.get("code"),
+                    product.get("grossRate"),
+                )
+        else:
+            _LOGGER.debug("No gas products found for account %s", account_number)
+
+        result_data[account_number]["gas_products"] = gas_products
 
         return result_data
 
