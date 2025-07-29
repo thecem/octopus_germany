@@ -163,7 +163,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     if account_data:
                         # Process the raw API data into a more usable format
                         processed_account_data = await process_api_data(
-                            account_data, account_num
+                            account_data, account_num, api
                         )
                         all_accounts_data.update(processed_account_data)
                     else:
@@ -198,7 +198,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Return previous data if available, empty dict otherwise
             return coordinator.data if hasattr(coordinator, "data") else {}
 
-    async def process_api_data(data, account_number):
+    async def process_api_data(data, account_number, api):
         """Process raw API response into structured data."""
         if not data:
             return {}
@@ -815,6 +815,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.debug("No gas products found for account %s", account_number)
 
         result_data[account_number]["gas_products"] = gas_products
+
+        # Fetch latest gas meter reading if gas meter exists
+        gas_latest_reading = None
+        if gas_meter and gas_meter.get("id"):
+            try:
+                gas_meter_id = gas_meter.get("id")
+                _LOGGER.debug(
+                    "Attempting to fetch gas meter reading for account %s, meter %s",
+                    account_number,
+                    gas_meter_id
+                )
+                gas_latest_reading = await api.fetch_gas_meter_reading(
+                    account_number, gas_meter_id
+                )
+                
+                if gas_latest_reading:
+                    _LOGGER.debug(
+                        "Successfully fetched gas meter reading: %s %s at %s",
+                        gas_latest_reading.get("value"),
+                        gas_latest_reading.get("units"),
+                        gas_latest_reading.get("intervalEnd")
+                    )
+                else:
+                    _LOGGER.debug("No gas meter reading returned for meter %s", gas_meter_id)
+                    
+            except Exception as e:
+                _LOGGER.warning(
+                    "Failed to fetch gas meter reading for account %s, meter %s: %s",
+                    account_number,
+                    gas_meter_id,
+                    str(e)
+                )
+        
+        result_data[account_number]["gas_latest_reading"] = gas_latest_reading
 
         return result_data
 

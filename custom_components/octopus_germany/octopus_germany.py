@@ -212,6 +212,24 @@ query ComprehensiveDataQuery($accountNumber: String!) {
 }
 """
 
+# Query to get latest gas meter readings
+GAS_METER_READINGS_QUERY = """
+query GasMeterReadings($accountNumber: String!, $meterId: ID!) {
+  gasMeterReadings(accountNumber: $accountNumber, meterId: $meterId, first: 1) {
+    edges {
+      node {
+        value
+        readAt
+        registerObisCode
+        typeOfRead
+        origin
+        meterId
+      }
+    }
+  }
+}
+"""
+
 # Simple account discovery query
 ACCOUNT_DISCOVERY_QUERY = """
 query {
@@ -987,3 +1005,66 @@ class OctopusGermany:
             "account": all_data["account"],
             "devices": all_data["devices"],
         }
+
+    async def fetch_gas_meter_reading(self, account_number: str, meter_id: str):
+        """Fetch the latest gas meter reading for a specific meter.
+
+        Args:
+            account_number: The account number
+            meter_id: The gas meter ID
+
+        Returns:
+            Dict containing the latest reading data or None if error
+        """
+        if not await self.ensure_token():
+            _LOGGER.error("Failed to ensure valid token for fetch_gas_meter_reading")
+            return None
+
+        variables = {"accountNumber": account_number, "meterId": meter_id}
+        client = self._get_graphql_client()
+
+        try:
+            _LOGGER.debug(
+                "Fetching gas meter reading for account %s, meter %s",
+                account_number,
+                meter_id,
+            )
+            response = await client.execute_async(
+                query=GAS_METER_READINGS_QUERY, variables=variables
+            )
+
+            if response is None:
+                _LOGGER.error("API returned None response for gas meter reading")
+                return None
+
+            if "errors" in response:
+                _LOGGER.error(
+                    "GraphQL errors in gas meter reading response: %s",
+                    response["errors"]
+                )
+                return None
+
+            if "data" in response and "gasMeterReadings" in response["data"]:
+                readings_data = response["data"]["gasMeterReadings"]
+
+                if readings_data and "edges" in readings_data and readings_data["edges"]:
+                    # Get the first (latest) reading
+                    latest_reading = readings_data["edges"][0]["node"]
+                    _LOGGER.debug(
+                        "Got gas meter reading: %s at %s (type: %s, origin: %s)",
+                        latest_reading.get("value"),
+                        latest_reading.get("readAt"),
+                        latest_reading.get("typeOfRead"),
+                        latest_reading.get("origin")
+                    )
+                    return latest_reading
+                else:
+                    _LOGGER.warning("No gas meter readings found for meter %s", meter_id)
+                    return None
+            else:
+                _LOGGER.error("Invalid response structure for gas meter reading")
+                return None
+
+        except Exception as e:
+            _LOGGER.error("Error fetching gas meter reading: %s", e)
+            return None

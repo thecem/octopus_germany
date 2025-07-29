@@ -99,6 +99,10 @@ async def async_setup_entry(
                 if account_data.get("gas_meter"):
                     entities.append(OctopusGasMeterSensor(acc_num, coordinator))
 
+                # Create gas latest reading sensor if gas reading data exists
+                if account_data.get("gas_latest_reading"):
+                    entities.append(OctopusGasLatestReadingSensor(acc_num, coordinator))
+
                 # Create heat balance sensor if heat ledger exists
                 if account_data.get("heat_balance", 0) != 0:
                     entities.append(OctopusHeatBalanceSensor(acc_num, coordinator))
@@ -962,4 +966,136 @@ class OctopusGasMeterSensor(CoordinatorEntity, SensorEntity):
             and isinstance(self.coordinator.data, dict)
             and self._account_number in self.coordinator.data
             and self.coordinator.data[self._account_number].get("gas_meter") is not None
+        )
+
+
+class OctopusGasLatestReadingSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for Octopus Germany latest gas meter reading."""
+
+    def __init__(self, account_number, coordinator) -> None:
+        """Initialize the gas latest reading sensor."""
+        super().__init__(coordinator)
+
+        self._account_number = account_number
+        self._attr_name = f"Octopus {account_number} Gas Latest Reading"
+        self._attr_unique_id = f"octopus_{account_number}_gas_latest_reading"
+        self._attr_device_class = SensorDeviceClass.GAS
+        self._attr_has_entity_name = False
+        self._attributes = {}
+
+        # Initialize attributes right after creation
+        self._update_attributes()
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the latest gas meter reading value."""
+        if (
+            not self.coordinator.data
+            or not isinstance(self.coordinator.data, dict)
+            or self._account_number not in self.coordinator.data
+        ):
+            return None
+
+        account_data = self.coordinator.data[self._account_number]
+        gas_reading = account_data.get("gas_latest_reading")
+
+        if gas_reading and isinstance(gas_reading, dict):
+            try:
+                reading_value = gas_reading.get("value")
+                if reading_value is not None:
+                    return float(reading_value)
+            except (ValueError, TypeError):
+                _LOGGER.warning("Invalid gas meter reading value: %s", reading_value)
+
+        return None
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        """Return the unit of measurement."""
+        # Since the GraphQL API doesn't provide units directly for gas readings,
+        # we default to m³ which is the standard for gas consumption in Germany
+        return "m³"
+
+    def _update_attributes(self) -> None:
+        """Update the internal attributes dictionary."""
+        default_attributes = {
+            "reading_value": "Unknown",
+            "reading_units": "m³",
+            "reading_date": "Unknown",
+            "reading_origin": "Unknown",
+            "reading_type": "Unknown",
+            "register_obis_code": "Unknown",
+            "meter_id": "Unknown",
+            "account_number": self._account_number,
+        }
+
+        if (
+            not self.coordinator.data
+            or not isinstance(self.coordinator.data, dict)
+            or self._account_number not in self.coordinator.data
+        ):
+            self._attributes = default_attributes
+            return
+
+        account_data = self.coordinator.data[self._account_number]
+        gas_reading = account_data.get("gas_latest_reading")
+
+        if gas_reading and isinstance(gas_reading, dict):
+            # Extract reading date from readAt
+            reading_date = gas_reading.get("readAt")
+
+            # Format the date if available
+            if reading_date:
+                try:
+                    from datetime import datetime
+
+                    # Try to parse and format the date
+                    parsed_date = datetime.fromisoformat(
+                        reading_date.replace("Z", "+00:00")
+                    )
+                    reading_date = parsed_date.strftime("%Y-%m-%d %H:%M:%S")
+                except (ValueError, AttributeError):
+                    # Keep original date if parsing fails
+                    pass
+
+            self._attributes = {
+                "reading_value": gas_reading.get("value", "Unknown"),
+                "reading_units": "m³",
+                "reading_date": reading_date or "Unknown",
+                "reading_origin": gas_reading.get("origin", "Unknown"),
+                "reading_type": gas_reading.get("typeOfRead", "Unknown"),
+                "register_obis_code": gas_reading.get("registerObisCode", "Unknown"),
+                "meter_id": gas_reading.get("meterId", "Unknown"),
+                "read_at": gas_reading.get("readAt", "Unknown"),
+                "account_number": self._account_number,
+            }
+        else:
+            self._attributes = default_attributes
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self._update_attributes()
+        self.async_write_ha_state()
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return additional state attributes for the sensor."""
+        return self._attributes
+
+    async def async_update(self) -> None:
+        """Update the entity."""
+        await super().async_update()
+        self._update_attributes()
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return (
+            self.coordinator is not None
+            and self.coordinator.last_update_success
+            and isinstance(self.coordinator.data, dict)
+            and self._account_number in self.coordinator.data
+            and self.coordinator.data[self._account_number].get("gas_latest_reading")
+            is not None
         )
