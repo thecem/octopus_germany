@@ -816,6 +816,67 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         result_data[account_number]["gas_products"] = gas_products
 
+        # Extract additional gas information
+        # Gas price from current valid gas product
+        gas_price = None
+        gas_contract_start = None
+        gas_contract_end = None
+
+        if gas_products:
+            # Find current valid gas product based on validity dates
+            now = datetime.now().isoformat()
+            valid_gas_products = []
+
+            for product in gas_products:
+                valid_from = product.get("validFrom")
+                valid_to = product.get("validTo")
+
+                if not valid_from:
+                    continue
+
+                if valid_from <= now and (not valid_to or now <= valid_to):
+                    valid_gas_products.append(product)
+
+            if valid_gas_products:
+                # Sort by validFrom to get the most recent one
+                valid_gas_products.sort(key=lambda p: p.get("validFrom", ""), reverse=True)
+                current_gas_product = valid_gas_products[0]
+
+                # Extract gas price
+                try:
+                    gross_rate_str = current_gas_product.get("grossRate", "0")
+                    gas_price = float(gross_rate_str) / 100.0  # Convert from cents to EUR
+                except (ValueError, TypeError):
+                    gas_price = None
+
+                # Extract contract dates
+                gas_contract_start = current_gas_product.get("validFrom")
+                gas_contract_end = current_gas_product.get("validTo")
+
+        result_data[account_number]["gas_price"] = gas_price
+        result_data[account_number]["gas_contract_start"] = gas_contract_start
+        result_data[account_number]["gas_contract_end"] = gas_contract_end
+
+        # Calculate days until contract expiry
+        gas_contract_days_until_expiry = None
+        if gas_contract_end:
+            try:
+                end_date = datetime.fromisoformat(gas_contract_end.replace("Z", "+00:00"))
+                now_date = datetime.now(end_date.tzinfo)
+                days_diff = (end_date - now_date).days
+                gas_contract_days_until_expiry = max(0, days_diff)  # Don't show negative days
+            except (ValueError, TypeError) as e:
+                _LOGGER.warning("Error calculating gas contract expiry days: %s", e)
+
+        result_data[account_number]["gas_contract_days_until_expiry"] = gas_contract_days_until_expiry
+
+        # Gas meter smart reading capability
+        gas_meter_smart_reading = None
+        if gas_meter and isinstance(gas_meter, dict):
+            gas_meter_smart_reading = gas_meter.get("shouldReceiveSmartMeterData", None)
+
+        result_data[account_number]["gas_meter_smart_reading"] = gas_meter_smart_reading
+
         # Fetch latest gas meter reading if gas meter exists
         gas_latest_reading = None
         if gas_meter and gas_meter.get("id"):
@@ -824,30 +885,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 _LOGGER.debug(
                     "Attempting to fetch gas meter reading for account %s, meter %s",
                     account_number,
-                    gas_meter_id
+                    gas_meter_id,
                 )
                 gas_latest_reading = await api.fetch_gas_meter_reading(
                     account_number, gas_meter_id
                 )
-                
+
                 if gas_latest_reading:
                     _LOGGER.debug(
                         "Successfully fetched gas meter reading: %s %s at %s",
                         gas_latest_reading.get("value"),
                         gas_latest_reading.get("units"),
-                        gas_latest_reading.get("intervalEnd")
+                        gas_latest_reading.get("intervalEnd"),
                     )
                 else:
-                    _LOGGER.debug("No gas meter reading returned for meter %s", gas_meter_id)
-                    
+                    _LOGGER.debug(
+                        "No gas meter reading returned for meter %s", gas_meter_id
+                    )
+
             except Exception as e:
                 _LOGGER.warning(
                     "Failed to fetch gas meter reading for account %s, meter %s: %s",
                     account_number,
                     gas_meter_id,
-                    str(e)
+                    str(e),
                 )
-        
+
         result_data[account_number]["gas_latest_reading"] = gas_latest_reading
 
         return result_data
