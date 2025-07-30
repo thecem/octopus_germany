@@ -58,23 +58,22 @@ async def async_setup_entry(
 
     # Create sensors for each account
     for acc_num in account_numbers:
-        if (
-            coordinator.data
-            and acc_num in coordinator.data
-            and "products" in coordinator.data[acc_num]
-        ):
-            products = coordinator.data[acc_num].get("products")
-            if products:
-                _LOGGER.debug(
-                    "Creating electricity price sensor for account %s with %d products",
-                    acc_num,
-                    len(products),
-                )
-                entities.append(OctopusElectricityPriceSensor(acc_num, coordinator))
+        if coordinator.data and acc_num in coordinator.data:
+            account_data = coordinator.data[acc_num]
 
-                # Also create sensors for other ledger types if they exist
-                account_data = coordinator.data[acc_num]
+            # Create electricity sensors if account has electricity service
+            if account_data.get("malo_number"):
+                products = account_data.get("products", [])
+                if products:
+                    _LOGGER.debug(
+                        "Creating electricity price sensor for account %s with %d products",
+                        acc_num,
+                        len(products),
+                    )
+                    entities.append(OctopusElectricityPriceSensor(acc_num, coordinator))
 
+            # Create gas sensors if account has gas service
+            if account_data.get("gas_malo_number"):
                 # Create gas balance sensor if gas ledger exists
                 if account_data.get("gas_balance", 0) != 0:
                     entities.append(OctopusGasBalanceSensor(acc_num, coordinator))
@@ -89,9 +88,8 @@ async def async_setup_entry(
                     )
                     entities.append(OctopusGasTariffSensor(acc_num, coordinator))
 
-                # Create gas infrastructure sensors if gas data exists
-                if account_data.get("gas_malo_number"):
-                    entities.append(OctopusGasMaloSensor(acc_num, coordinator))
+                # Create gas infrastructure sensors
+                entities.append(OctopusGasMaloSensor(acc_num, coordinator))
 
                 if account_data.get("gas_melo_number"):
                     entities.append(OctopusGasMeloSensor(acc_num, coordinator))
@@ -123,25 +121,19 @@ async def async_setup_entry(
                         OctopusGasContractExpiryDaysSensor(acc_num, coordinator)
                     )
 
-                # Create heat balance sensor if heat ledger exists
-                if account_data.get("heat_balance", 0) != 0:
-                    entities.append(OctopusHeatBalanceSensor(acc_num, coordinator))
+            # Create heat balance sensor if heat ledger exists
+            if account_data.get("heat_balance", 0) != 0:
+                entities.append(OctopusHeatBalanceSensor(acc_num, coordinator))
 
-                # Create sensors for other ledgers
-                other_ledgers = account_data.get("other_ledgers", {})
-                for ledger_type, balance in other_ledgers.items():
-                    if balance != 0:
-                        entities.append(
-                            OctopusLedgerBalanceSensor(
-                                acc_num, coordinator, ledger_type
-                            )
+            # Create sensors for other ledgers
+            other_ledgers = account_data.get("other_ledgers", {})
+            for ledger_type, balance in other_ledgers.items():
+                if balance != 0:
+                    entities.append(
+                        OctopusLedgerBalanceSensor(
+                            acc_num, coordinator, ledger_type
                         )
-
-            else:
-                _LOGGER.warning(
-                    "Not creating electricity price sensor due to empty products list for account %s",
-                    acc_num,
-                )
+                    )
         else:
             if coordinator.data is None:
                 _LOGGER.error("No coordinator data available")
