@@ -12,12 +12,14 @@ If you find this useful and are planning on moving to Octopus Energy Germany, wh
 
 ## Features
 
-- Account information display with electricity balance
-- Current electricity tariff prices
+- Account information display with electricity and gas balances
+- Current electricity and gas tariff prices
 - Support for Octopus tariff types:
   - Simple tariffs (fixed rate)
   - Time of Use tariffs (different rates at different times)
   - Heat tariffs (for heat pumps)
+- Gas infrastructure monitoring (MALO/MELO numbers, meters, readings)
+- Gas contract tracking with expiry countdown
 - Device smart control (suspend/unsuspend charging)
 - Electric vehicle charging preferences management
 - Intelligent dispatching status tracking
@@ -77,6 +79,70 @@ The integration is configured via the Home Assistant UI:
   - `electricity_balance`: Your current account balance in EUR
   - `timeslots`: (For TimeOfUse tariffs) List of all time slots with their rates and activation times
   - `active_timeslot`: (For TimeOfUse tariffs) Currently active time slot name (e.g., "GO", "STANDARD")
+
+#### Gas Sensors
+
+##### Gas Tariff Sensor
+- **Entity ID**: `sensor.octopus_<account_number>_gas_tariff`
+- **Description**: Shows the current gas product code and tariff details
+- **Attributes**:
+  - `code`: Product code
+  - `name`: Product name
+  - `description`: Product description
+  - `type`: Product type
+  - `valid_from`: Start date of validity
+  - `valid_to`: End date of validity
+  - `account_number`: Your Octopus Energy account number
+
+##### Gas Balance Sensor
+- **Entity ID**: `sensor.octopus_<account_number>_gas_balance`
+- **Description**: Shows the current gas account balance in EUR
+
+##### Gas Infrastructure Sensors
+- **Entity ID**: `sensor.octopus_<account_number>_gas_malo_number`
+- **Description**: Market location identifier for gas supply
+
+- **Entity ID**: `sensor.octopus_<account_number>_gas_melo_number`
+- **Description**: Meter location identifier for gas supply
+
+- **Entity ID**: `sensor.octopus_<account_number>_gas_meter`
+- **Description**: Current gas meter information with ID, number, and type
+- **Attributes**:
+  - `meter_id`: ID of your gas meter
+  - `meter_number`: Number of your gas meter
+  - `meter_type`: Type of your gas meter
+  - `account_number`: Your Octopus Energy account number
+
+##### Gas Reading and Price Sensors
+- **Entity ID**: `sensor.octopus_<account_number>_gas_latest_reading`
+- **Description**: Latest gas meter reading with timestamp and origin information
+- **Unit**: m³
+- **Attributes**:
+  - `reading_value`: Reading value
+  - `reading_units`: Reading units (m³)
+  - `reading_date`: Date of the reading
+  - `reading_origin`: Origin of the reading
+  - `reading_type`: Type of reading
+  - `register_obis_code`: OBIS code for the register
+  - `meter_id`: ID of the meter
+  - `account_number`: Your Octopus Energy account number
+
+- **Entity ID**: `sensor.octopus_<account_number>_gas_price`
+- **Description**: Current gas tariff rate from valid contracts
+- **Unit**: €/kWh
+
+- **Entity ID**: `sensor.octopus_<account_number>_gas_smart_reading`
+- **Description**: Smart meter capability status (Enabled/Disabled)
+
+##### Gas Contract Sensors
+- **Entity ID**: `sensor.octopus_<account_number>_gas_contract_start`
+- **Description**: Contract validity start date
+
+- **Entity ID**: `sensor.octopus_<account_number>_gas_contract_end`
+- **Description**: Contract validity end date
+
+- **Entity ID**: `sensor.octopus_<account_number>_gas_contract_days_until_expiry`
+- **Description**: Contract expiration countdown in days
 
 #### Intelligent Dispatching Binary Sensor
 
