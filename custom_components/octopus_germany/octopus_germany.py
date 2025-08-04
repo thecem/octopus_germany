@@ -39,6 +39,7 @@ query ComprehensiveDataQuery($accountNumber: String!) {
             code
             description
             fullName
+            isTimeOfUse
           }
           unitRateGrossRateInformation {
             grossRate
@@ -74,6 +75,21 @@ query ComprehensiveDataQuery($accountNumber: String!) {
               }
             }
           }
+          unitRateForecast {
+            validFrom
+            validTo
+            unitRateInformation {
+              __typename
+              ... on SimpleProductUnitRateInformation {
+                latestGrossUnitRateCentsPerKwh
+              }
+              ... on TimeOfUseProductUnitRateInformation {
+                rates {
+                  latestGrossUnitRateCentsPerKwh
+                }
+              }
+            }
+          }
           validFrom
           validTo
         }
@@ -94,6 +110,7 @@ query ComprehensiveDataQuery($accountNumber: String!) {
             code
             description
             fullName
+            isTimeOfUse
           }
           unitRateGrossRateInformation {
             grossRate
@@ -1040,14 +1057,18 @@ class OctopusGermany:
             if "errors" in response:
                 _LOGGER.error(
                     "GraphQL errors in gas meter reading response: %s",
-                    response["errors"]
+                    response["errors"],
                 )
                 return None
 
             if "data" in response and "gasMeterReadings" in response["data"]:
                 readings_data = response["data"]["gasMeterReadings"]
 
-                if readings_data and "edges" in readings_data and readings_data["edges"]:
+                if (
+                    readings_data
+                    and "edges" in readings_data
+                    and readings_data["edges"]
+                ):
                     # Get the first (latest) reading
                     latest_reading = readings_data["edges"][0]["node"]
                     _LOGGER.debug(
@@ -1055,11 +1076,13 @@ class OctopusGermany:
                         latest_reading.get("value"),
                         latest_reading.get("readAt"),
                         latest_reading.get("typeOfRead"),
-                        latest_reading.get("origin")
+                        latest_reading.get("origin"),
                     )
                     return latest_reading
                 else:
-                    _LOGGER.warning("No gas meter readings found for meter %s", meter_id)
+                    _LOGGER.warning(
+                        "No gas meter readings found for meter %s", meter_id
+                    )
                     return None
             else:
                 _LOGGER.error("Invalid response structure for gas meter reading")
