@@ -101,6 +101,13 @@ The integration is configured via the Home Assistant UI:
   - `read_at`: Raw timestamp from API
   - `account_number`: Your Octopus Energy account number
 
+#### Electricity Balance Sensor
+
+- **Entity ID**: `sensor.octopus_<account_number>_electricity_balance`
+- **Description**: Shows the current electricity account balance in EUR
+- **Unit**: €
+- **Note**: Only available for accounts with electricity service (MALO number present)
+
 #### Gas Sensors
 
 ##### Gas Tariff Sensor
@@ -118,6 +125,8 @@ The integration is configured via the Home Assistant UI:
 ##### Gas Balance Sensor
 - **Entity ID**: `sensor.octopus_<account_number>_gas_balance`
 - **Description**: Shows the current gas account balance in EUR
+- **Unit**: €
+- **Note**: Only available for accounts with gas service (gas MALO number present)
 
 ##### Gas Infrastructure Sensors
 - **Entity ID**: `sensor.octopus_<account_number>_gas_malo_number`

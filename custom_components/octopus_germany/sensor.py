@@ -78,10 +78,14 @@ async def async_setup_entry(
                         OctopusElectricityLatestReadingSensor(acc_num, coordinator)
                     )
 
+            # Create electricity balance sensor if electricity ledger exists and account has electricity service
+            if "electricity_balance" in account_data and account_data.get("malo_number"):
+                entities.append(OctopusElectricityBalanceSensor(acc_num, coordinator))
+
             # Create gas sensors if account has gas service
             if account_data.get("gas_malo_number"):
                 # Create gas balance sensor if gas ledger exists
-                if account_data.get("gas_balance", 0) != 0:
+                if "gas_balance" in account_data and account_data.get("gas_malo_number"):
                     entities.append(OctopusGasBalanceSensor(acc_num, coordinator))
 
                 # Create gas tariff sensor if gas products exist
@@ -137,17 +141,16 @@ async def async_setup_entry(
                 )
                 entities.append(OctopusDeviceStatusSensor(acc_num, coordinator))
 
-            # Create heat balance sensor if heat ledger exists
-            if account_data.get("heat_balance", 0) != 0:
+            # Create heat balance sensor if heat ledger exists and has non-zero balance
+            if "heat_balance" in account_data and account_data.get("heat_balance", 0) != 0:
                 entities.append(OctopusHeatBalanceSensor(acc_num, coordinator))
 
             # Create sensors for other ledgers
             other_ledgers = account_data.get("other_ledgers", {})
             for ledger_type, balance in other_ledgers.items():
-                if balance != 0:
-                    entities.append(
-                        OctopusLedgerBalanceSensor(acc_num, coordinator, ledger_type)
-                    )
+                entities.append(
+                    OctopusLedgerBalanceSensor(acc_num, coordinator, ledger_type)
+                )
         else:
             if coordinator.data is None:
                 _LOGGER.error("No coordinator data available")
@@ -646,6 +649,45 @@ class OctopusGasBalanceSensor(CoordinatorEntity, SensorEntity):
 
         account_data = self.coordinator.data[self._account_number]
         return account_data.get("gas_balance", 0.0)
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return (
+            self.coordinator is not None
+            and self.coordinator.last_update_success
+            and isinstance(self.coordinator.data, dict)
+            and self._account_number in self.coordinator.data
+        )
+
+
+class OctopusElectricityBalanceSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for Octopus Germany electricity balance."""
+
+    def __init__(self, account_number, coordinator) -> None:
+        """Initialize the electricity balance sensor."""
+        super().__init__(coordinator)
+
+        self._account_number = account_number
+        self._attr_name = f"Octopus {account_number} Electricity Balance"
+        self._attr_unique_id = f"octopus_{account_number}_electricity_balance"
+        self._attr_device_class = SensorDeviceClass.MONETARY
+        self._attr_native_unit_of_measurement = "€"
+        self._attr_state_class = SensorStateClass.TOTAL
+        self._attr_has_entity_name = False
+
+    @property
+    def native_value(self) -> float:
+        """Return the electricity balance."""
+        if (
+            not self.coordinator.data
+            or not isinstance(self.coordinator.data, dict)
+            or self._account_number not in self.coordinator.data
+        ):
+            return None
+
+        account_data = self.coordinator.data[self._account_number]
+        return account_data.get("electricity_balance", 0.0)
 
     @property
     def available(self) -> bool:
