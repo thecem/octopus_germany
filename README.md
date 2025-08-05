@@ -20,6 +20,7 @@ If you find this useful and are planning on moving to Octopus Energy Germany, wh
   - Dynamic tariffs (with real-time pricing using unit rate forecasts)
   - Heat tariffs (for heat pumps)
 - Gas infrastructure monitoring (MALO/MELO numbers, meters, readings)
+- Latest Electricity meter reading
 - Gas contract tracking with expiry countdown
 - Device smart control (suspend/unsuspend charging)
 - Electric vehicle charging preferences management
@@ -82,6 +83,23 @@ The integration is configured via the Home Assistant UI:
   - `timeslots`: (For TimeOfUse tariffs) List of all time slots with their rates and activation times
   - `active_timeslot`: (For TimeOfUse tariffs) Currently active time slot name (e.g., "GO", "STANDARD")
   - `is_dynamic_tariff`: Boolean flag indicating whether this is a dynamic pricing tariff with real-time rates
+
+#### Electricity Latest Reading Sensor
+
+- **Entity ID**: `sensor.octopus_<account_number>_electricity_latest_reading`
+- **Description**: Latest electricity meter reading with timestamp and origin information
+- **Unit**: kWh
+- **Attributes**:
+  - `reading_value`: Reading value in kWh
+  - `reading_units`: Reading units (kWh)
+  - `reading_date`: Date of the reading (formatted)
+  - `reading_origin`: Origin of the reading (CUSTOMER, ESTIMATED, etc.)
+  - `reading_type`: Type of reading (ACTUAL, ESTIMATED, etc.)
+  - `register_obis_code`: OBIS code for the register
+  - `register_type`: Type of the register
+  - `meter_id`: ID of the electricity meter
+  - `read_at`: Raw timestamp from API
+  - `account_number`: Your Octopus Energy account number
 
 #### Gas Sensors
 
