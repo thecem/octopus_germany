@@ -24,6 +24,7 @@ If you find this useful and are planning on moving to Octopus Energy Germany, wh
 - Device smart control (suspend/unsuspend charging)
 - Electric vehicle charging preferences management
 - Intelligent dispatching status tracking
+- [octopus-energy-rates-card](https://github.com/lozzd/octopus-energy-rates-card) compatibility for dynamic tariff visualization
 
 ## Installation
 
@@ -82,6 +83,9 @@ The integration is configured via the Home Assistant UI:
   - `timeslots`: (For TimeOfUse tariffs) List of all time slots with their rates and activation times
   - `active_timeslot`: (For TimeOfUse tariffs) Currently active time slot name (e.g., "GO", "STANDARD")
   - `is_dynamic_tariff`: Boolean flag indicating whether this is a dynamic pricing tariff with real-time rates
+  - `rates`: (For Dynamic tariffs) Rate data formatted for octopus-energy-rates-card compatibility
+  - `rates_count`: (For Dynamic tariffs) Number of available rates
+  - `unit_rate_forecast`: (For Dynamic tariffs) Native German API unit rate forecast data
 
 #### Gas Sensors
 

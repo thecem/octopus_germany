@@ -566,6 +566,18 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
 
             product_attributes["is_dynamic_tariff"] = is_time_of_use
 
+            # Add dual format rate data for compatibility
+            if is_time_of_use:
+                # UK format for octopus-energy-rates-card compatibility
+                uk_rates = self._format_uk_rates(current_product)
+                product_attributes["rates"] = uk_rates
+                product_attributes["rates_count"] = len(uk_rates)
+
+                # German format for native tools
+                product_attributes["unit_rate_forecast"] = current_product.get(
+                    "unitRateForecast", []
+                )
+
             self._attributes = product_attributes
         else:
             # If no valid products, use default attributes
@@ -575,6 +587,66 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
                 "meter_number": meter_number,
                 "meter_type": meter_type,
             }
+
+    def _format_uk_rates(self, product):
+        """Format unitRateForecast data into UK-style rates attribute."""
+        if not product:
+            return []
+
+        unit_rate_forecast = product.get("unitRateForecast", [])
+        if not unit_rate_forecast:
+            return []
+
+        all_rates = []
+
+        for forecast_entry in unit_rate_forecast:
+            valid_from_str = forecast_entry.get("validFrom")
+            valid_to_str = forecast_entry.get("validTo")
+
+            if not valid_from_str or not valid_to_str:
+                continue
+
+            try:
+                # Extract rate information
+                unit_rate_info = forecast_entry.get("unitRateInformation", {})
+                price_eur_kwh = None
+
+                if (
+                    unit_rate_info.get("__typename")
+                    == "SimpleProductUnitRateInformation"
+                ):
+                    rate_cents = unit_rate_info.get("latestGrossUnitRateCentsPerKwh")
+                    if rate_cents is not None:
+                        price_eur_kwh = float(rate_cents) / 100.0
+
+                elif (
+                    unit_rate_info.get("__typename")
+                    == "TimeOfUseProductUnitRateInformation"
+                ):
+                    rates = unit_rate_info.get("rates", [])
+                    if rates and len(rates) > 0:
+                        rate_cents = rates[0].get("latestGrossUnitRateCentsPerKwh")
+                        if rate_cents is not None:
+                            price_eur_kwh = float(rate_cents) / 100.0
+
+                if price_eur_kwh is not None:
+                    all_rates.append(
+                        {
+                            "start": valid_from_str,
+                            "end": valid_to_str,
+                            "value_inc_vat": round(price_eur_kwh, 4),
+                        }
+                    )
+
+            except (ValueError, TypeError) as e:
+                _LOGGER.debug("Error processing forecast entry: %s", e)
+                continue
+
+        # Sort by start time
+        all_rates.sort(key=lambda x: x["start"])
+
+        _LOGGER.debug("Formatted %d rates for UK compatibility", len(all_rates))
+        return all_rates
 
     @callback
     def _handle_coordinator_update(self) -> None:
