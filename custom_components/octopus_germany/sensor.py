@@ -561,10 +561,10 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
                     f"{account_data['electricity_balance']:.2f} €"
                 )
 
-            # Add dynamic pricing information
+            # Add time-of-use tariff information
             is_time_of_use = current_product.get("isTimeOfUse", False)
 
-            product_attributes["is_dynamic_tariff"] = is_time_of_use
+            product_attributes["is_time_of_use"] = is_time_of_use
 
             # Add dual format rate data for compatibility
             if is_time_of_use:
