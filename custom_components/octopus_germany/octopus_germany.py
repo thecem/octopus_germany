@@ -247,6 +247,25 @@ query GasMeterReadings($accountNumber: String!, $meterId: ID!) {
 }
 """
 
+# Query to get latest electricity meter readings
+ELECTRICITY_METER_READINGS_QUERY = """
+query ElectricityMeterReadings($accountNumber: String!, $meterId: ID!) {
+  electricityMeterReadings(accountNumber: $accountNumber, meterId: $meterId, first: 1) {
+    edges {
+      node {
+        value
+        readAt
+        registerObisCode
+        typeOfRead
+        origin
+        meterId
+        registerType
+      }
+    }
+  }
+}
+"""
+
 # Simple account discovery query
 ACCOUNT_DISCOVERY_QUERY = """
 query {
@@ -1090,4 +1109,73 @@ class OctopusGermany:
 
         except Exception as e:
             _LOGGER.error("Error fetching gas meter reading: %s", e)
+            return None
+
+    async def fetch_electricity_meter_reading(self, account_number: str, meter_id: str):
+        """Fetch the latest electricity meter reading for a specific meter.
+
+        Args:
+            account_number: The account number
+            meter_id: The electricity meter ID
+
+        Returns:
+            Dict containing the latest reading data or None if error
+        """
+        if not await self.ensure_token():
+            _LOGGER.error("Failed to ensure valid token for fetch_electricity_meter_reading")
+            return None
+
+        variables = {"accountNumber": account_number, "meterId": meter_id}
+        client = self._get_graphql_client()
+
+        try:
+            _LOGGER.debug(
+                "Fetching electricity meter reading for account %s, meter %s",
+                account_number,
+                meter_id,
+            )
+            response = await client.execute_async(
+                query=ELECTRICITY_METER_READINGS_QUERY, variables=variables
+            )
+
+            if response is None:
+                _LOGGER.error("API returned None response for electricity meter reading")
+                return None
+
+            if "errors" in response:
+                _LOGGER.error(
+                    "GraphQL errors in electricity meter reading response: %s",
+                    response["errors"],
+                )
+                return None
+
+            if "data" in response and "electricityMeterReadings" in response["data"]:
+                readings_data = response["data"]["electricityMeterReadings"]
+
+                if (
+                    readings_data
+                    and "edges" in readings_data
+                    and readings_data["edges"]
+                ):
+                    # Get the first (latest) reading
+                    latest_reading = readings_data["edges"][0]["node"]
+                    _LOGGER.debug(
+                        "Got electricity meter reading: %s at %s (type: %s, origin: %s)",
+                        latest_reading.get("value"),
+                        latest_reading.get("readAt"),
+                        latest_reading.get("typeOfRead"),
+                        latest_reading.get("origin"),
+                    )
+                    return latest_reading
+                else:
+                    _LOGGER.warning(
+                        "No electricity meter readings found for meter %s", meter_id
+                    )
+                    return None
+            else:
+                _LOGGER.error("Invalid response structure for electricity meter reading")
+                return None
+
+        except Exception as e:
+            _LOGGER.error("Error fetching electricity meter reading: %s", e)
             return None
