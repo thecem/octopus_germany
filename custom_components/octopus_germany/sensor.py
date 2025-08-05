@@ -353,10 +353,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
                 current_product.get("validFrom", "Unknown"),
             )
 
-            # Check if this is a TimeOfUse tariff (dynamic pricing)
-            is_time_of_use = current_product.get("isTimeOfUse", False)
-
-            if is_time_of_use:
+            if current_product.get("isTimeOfUse", False):
                 # For dynamic TimeOfUse tariffs, use unitRateForecast data
                 forecast_rate = self._get_current_forecast_rate(current_product)
                 if forecast_rate is not None:
@@ -561,13 +558,8 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
                     f"{account_data['electricity_balance']:.2f} €"
                 )
 
-            # Add time-of-use tariff information
-            is_time_of_use = current_product.get("isTimeOfUse", False)
-
-            product_attributes["is_time_of_use"] = is_time_of_use
-
             # Add dual format rate data for compatibility
-            if is_time_of_use:
+            if current_product.get("isTimeOfUse", False):
                 # UK format for octopus-energy-rates-card compatibility
                 uk_rates = self._format_uk_rates(current_product)
                 product_attributes["rates"] = uk_rates

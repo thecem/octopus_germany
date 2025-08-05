@@ -82,7 +82,6 @@ The integration is configured via the Home Assistant UI:
   - `electricity_balance`: Your current account balance in EUR
   - `timeslots`: (For TimeOfUse tariffs) List of all time slots with their rates and activation times
   - `active_timeslot`: (For TimeOfUse tariffs) Currently active time slot name (e.g., "GO", "STANDARD")
-  - `is_time_of_use`: Boolean flag indicating whether this is a time-of-use tariff (includes both Intelligent Octopus Go and Dynamic tariffs)
   - `rates`: (For Dynamic tariffs) Rate data formatted for octopus-energy-rates-card compatibility
   - `rates_count`: (For Dynamic tariffs) Number of available rates
   - `unit_rate_forecast`: (For Dynamic tariffs) Native German API unit rate forecast data
