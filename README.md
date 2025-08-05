@@ -17,6 +17,7 @@ If you find this useful and are planning on moving to Octopus Energy Germany, wh
 - Support for Octopus tariff types:
   - Simple tariffs (fixed rate)
   - Time of Use tariffs (different rates at different times)
+  - Dynamic tariffs (with real-time pricing using unit rate forecasts)
   - Heat tariffs (for heat pumps)
 - Gas infrastructure monitoring (MALO/MELO numbers, meters, readings)
 - Gas contract tracking with expiry countdown
@@ -62,6 +63,7 @@ The integration is configured via the Home Assistant UI:
 - **Tariff support**:
   - **Simple tariffs**: Displays the fixed rate
   - **Time of Use tariffs**: Automatically updates to show the currently active rate based on the time of day
+  - **Dynamic tariffs**: Uses real-time pricing data from unit rate forecasts for the most accurate current price
   - **Heat tariffs**: Supports specific heat pump tariffs like Heat Light and shows the applicable rate
 - **Attributes**:
   - `code`: Product code
@@ -79,6 +81,7 @@ The integration is configured via the Home Assistant UI:
   - `electricity_balance`: Your current account balance in EUR
   - `timeslots`: (For TimeOfUse tariffs) List of all time slots with their rates and activation times
   - `active_timeslot`: (For TimeOfUse tariffs) Currently active time slot name (e.g., "GO", "STANDARD")
+  - `is_dynamic_tariff`: Boolean flag indicating whether this is a dynamic pricing tariff with real-time rates
 
 #### Gas Sensors
 

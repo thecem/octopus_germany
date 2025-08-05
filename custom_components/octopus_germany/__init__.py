@@ -459,6 +459,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         "type": "Simple",  # Default type for direct products
                         "validFrom": None,  # We don't have this info from direct products
                         "validTo": None,  # We don't have this info from direct products
+                        "isTimeOfUse": product.get("isTimeOfUse", False),
                     }
                 )
 
@@ -545,6 +546,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                         else "0"
                                     )
 
+                            # Add unitRateForecast for TimeOfUse products
+                            unit_rate_forecast = agreement.get("unitRateForecast", [])
+
                             products.append(
                                 {
                                     "code": product.get("code", "Unknown"),
@@ -554,6 +558,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                     "type": product_type,
                                     "validFrom": agreement.get("validFrom"),
                                     "validTo": agreement.get("validTo"),
+                                    "isTimeOfUse": product.get("isTimeOfUse", False),
+                                    "unitRateForecast": unit_rate_forecast,
                                 }
                             )
 
@@ -610,6 +616,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                     }
                                 )
 
+                            # Add unitRateForecast for TimeOfUse products
+                            unit_rate_forecast = agreement.get("unitRateForecast", [])
+
                             # Create a TimeOfUse product with timeslots
                             products.append(
                                 {
@@ -620,6 +629,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                     "validFrom": agreement.get("validFrom"),
                                     "validTo": agreement.get("validTo"),
                                     "timeslots": timeslots,
+                                    "isTimeOfUse": product.get("isTimeOfUse", False),
+                                    "unitRateForecast": unit_rate_forecast,
                                 }
                             )
 
@@ -653,6 +664,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     "type": "Simple",
                     "validFrom": None,
                     "validTo": None,
+                    "isTimeOfUse": False,
                 }
             )
 
@@ -733,6 +745,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                 "type": product_type,
                                 "validFrom": agreement.get("validFrom"),
                                 "validTo": agreement.get("validTo"),
+                                "isTimeOfUse": product.get("isTimeOfUse", False),
                             }
                         )
 
@@ -794,6 +807,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                                 "validFrom": agreement.get("validFrom"),
                                 "validTo": agreement.get("validTo"),
                                 "timeslots": timeslots,
+                                "isTimeOfUse": product.get("isTimeOfUse", False),
                             }
                         )
 
@@ -839,13 +853,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
             if valid_gas_products:
                 # Sort by validFrom to get the most recent one
-                valid_gas_products.sort(key=lambda p: p.get("validFrom", ""), reverse=True)
+                valid_gas_products.sort(
+                    key=lambda p: p.get("validFrom", ""), reverse=True
+                )
                 current_gas_product = valid_gas_products[0]
 
                 # Extract gas price
                 try:
                     gross_rate_str = current_gas_product.get("grossRate", "0")
-                    gas_price = float(gross_rate_str) / 100.0  # Convert from cents to EUR
+                    gas_price = (
+                        float(gross_rate_str) / 100.0
+                    )  # Convert from cents to EUR
                 except (ValueError, TypeError):
                     gas_price = None
 
@@ -861,14 +879,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         gas_contract_days_until_expiry = None
         if gas_contract_end:
             try:
-                end_date = datetime.fromisoformat(gas_contract_end.replace("Z", "+00:00"))
+                end_date = datetime.fromisoformat(
+                    gas_contract_end.replace("Z", "+00:00")
+                )
                 now_date = datetime.now(end_date.tzinfo)
                 days_diff = (end_date - now_date).days
-                gas_contract_days_until_expiry = max(0, days_diff)  # Don't show negative days
+                gas_contract_days_until_expiry = max(
+                    0, days_diff
+                )  # Don't show negative days
             except (ValueError, TypeError) as e:
                 _LOGGER.warning("Error calculating gas contract expiry days: %s", e)
 
-        result_data[account_number]["gas_contract_days_until_expiry"] = gas_contract_days_until_expiry
+        result_data[account_number]["gas_contract_days_until_expiry"] = (
+            gas_contract_days_until_expiry
+        )
 
         # Gas meter smart reading capability
         gas_meter_smart_reading = None

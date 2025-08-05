@@ -7,7 +7,7 @@ electricity price information.
 
 import logging
 from typing import Any, Dict, List
-from datetime import datetime, time
+from datetime import datetime, time, timezone
 
 from homeassistant.components.sensor import (
     SensorEntity,
@@ -130,9 +130,7 @@ async def async_setup_entry(
             for ledger_type, balance in other_ledgers.items():
                 if balance != 0:
                     entities.append(
-                        OctopusLedgerBalanceSensor(
-                            acc_num, coordinator, ledger_type
-                        )
+                        OctopusLedgerBalanceSensor(acc_num, coordinator, ledger_type)
                     )
         else:
             if coordinator.data is None:
@@ -242,6 +240,68 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
         # If no active timeslot found or in case of errors, return None
         return None
 
+    def _get_current_forecast_rate(self, product):
+        """Get the current rate from unitRateForecast for dynamic pricing."""
+        if not product:
+            return None
+
+        unit_rate_forecast = product.get("unitRateForecast", [])
+        if not unit_rate_forecast:
+            return None
+
+        now = datetime.now(timezone.utc)
+
+        # Find the forecast entry that covers the current time
+        for forecast_entry in unit_rate_forecast:
+            valid_from_str = forecast_entry.get("validFrom")
+            valid_to_str = forecast_entry.get("validTo")
+
+            if not valid_from_str or not valid_to_str:
+                continue
+
+            try:
+                # Parse the time stamps
+                valid_from = datetime.fromisoformat(
+                    valid_from_str.replace("Z", "+00:00")
+                )
+                valid_to = datetime.fromisoformat(valid_to_str.replace("Z", "+00:00"))
+
+                # Check if current time is within this forecast period
+                if valid_from <= now < valid_to:
+                    # Extract the rate from unitRateInformation
+                    unit_rate_info = forecast_entry.get("unitRateInformation", {})
+
+                    if (
+                        unit_rate_info.get("__typename")
+                        == "TimeOfUseProductUnitRateInformation"
+                    ):
+                        rates = unit_rate_info.get("rates", [])
+                        if rates and len(rates) > 0:
+                            rate_cents = rates[0].get("latestGrossUnitRateCentsPerKwh")
+                            if rate_cents is not None:
+                                try:
+                                    rate_eur = float(rate_cents) / 100.0
+                                    _LOGGER.debug(
+                                        "Found forecast rate: %.4f EUR/kWh for period %s - %s",
+                                        rate_eur,
+                                        valid_from_str,
+                                        valid_to_str,
+                                    )
+                                    return rate_eur
+                                except (ValueError, TypeError):
+                                    continue
+
+            except (ValueError, TypeError) as e:
+                _LOGGER.warning(
+                    "Error parsing forecast entry: %s - %s", forecast_entry, str(e)
+                )
+                continue
+
+        _LOGGER.debug(
+            "No current forecast rate found for current time %s", now.isoformat()
+        )
+        return None
+
     @property
     def native_value(self) -> float:
         """Return the current electricity price."""
@@ -283,38 +343,56 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
             valid_products.sort(key=lambda p: p.get("validFrom", ""), reverse=True)
             current_product = valid_products[0]
 
+            product_code = current_product.get("code", "Unknown")
+            product_type = current_product.get("type", "Unknown")
+
             _LOGGER.debug(
                 "Using product: %s, type: %s, valid from: %s",
-                current_product.get("code", "Unknown"),
-                current_product.get("type", "Unknown"),
+                product_code,
+                product_type,
                 current_product.get("validFrom", "Unknown"),
             )
 
-            # For time-of-use tariffs, get the currently active timeslot rate
-            if current_product.get("type") == "TimeOfUse":
-                active_rate = self._get_active_timeslot_rate(current_product)
-                if active_rate is not None:
-                    return active_rate
+            # Check if this is a TimeOfUse tariff (dynamic pricing)
+            is_time_of_use = current_product.get("isTimeOfUse", False)
 
-            # For simple tariffs or fallback, just use the gross rate
+            if is_time_of_use:
+                # For dynamic TimeOfUse tariffs, use unitRateForecast data
+                forecast_rate = self._get_current_forecast_rate(current_product)
+                if forecast_rate is not None:
+                    _LOGGER.debug(
+                        "Dynamic forecast price: %.4f EUR/kWh for product %s",
+                        forecast_rate,
+                        product_code,
+                    )
+                    return forecast_rate
+
+                # Fallback to timeslot rate if no forecast available
+                if product_type == "TimeOfUse":
+                    active_rate = self._get_active_timeslot_rate(current_product)
+                    if active_rate is not None:
+                        _LOGGER.debug(
+                            "Fallback timeslot price: %.4f EUR/kWh for product %s",
+                            active_rate,
+                            product_code,
+                        )
+                        return active_rate
+
+            # For simple tariffs or fallback, use the gross rate
             try:
                 gross_rate_str = current_product.get("grossRate", "0")
                 gross_rate = float(gross_rate_str)
                 # Convert from cents to EUR without rounding
-                gross_rate_eur = gross_rate / 100.0
+                base_rate_eur = gross_rate / 100.0
 
                 _LOGGER.debug(
-                    "Using price: %s cents = %s EUR for product %s",
-                    gross_rate_str,
-                    gross_rate_eur,
-                    current_product.get("code", "Unknown"),
+                    "Price: %.4f EUR/kWh for product %s", base_rate_eur, product_code
                 )
-
-                return gross_rate_eur
+                return base_rate_eur
             except (ValueError, TypeError) as e:
                 _LOGGER.warning(
                     "Failed to convert price for product %s: %s - %s",
-                    current_product.get("code", "Unknown"),
+                    product_code,
                     current_product.get("grossRate", "Unknown"),
                     str(e),
                 )
@@ -482,6 +560,11 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
                 product_attributes["electricity_balance"] = (
                     f"{account_data['electricity_balance']:.2f} €"
                 )
+
+            # Add dynamic pricing information
+            is_time_of_use = current_product.get("isTimeOfUse", False)
+
+            product_attributes["is_dynamic_tariff"] = is_time_of_use
 
             self._attributes = product_attributes
         else:
