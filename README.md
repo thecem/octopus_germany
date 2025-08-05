@@ -165,6 +165,20 @@ The integration is configured via the Home Assistant UI:
 - **Entity ID**: `sensor.octopus_<account_number>_gas_contract_days_until_expiry`
 - **Description**: Contract expiration countdown in days
 
+#### Device Status Sensor
+
+- **Entity ID**: `sensor.octopus_<account_number>_device_status`
+- **Description**: Current status of your smart charging device (e.g., "PLUGGED_IN", "CHARGING", "FINISHED", etc.)
+- **Attributes**:
+  - `device_id`: Internal ID of the connected device
+  - `device_name`: Name of the device
+  - `device_model`: Vehicle model (if available)
+  - `device_provider`: Device provider
+  - `battery_size`: Battery capacity (if available)
+  - `is_suspended`: Whether smart charging is currently suspended
+  - `account_number`: Your Octopus Energy account number
+  - `last_updated`: Timestamp of the last update
+
 #### Intelligent Dispatching Binary Sensor
 
 - **Entity ID**: `binary_sensor.octopus_<account_number>_intelligent_dispatching`
