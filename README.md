@@ -20,6 +20,7 @@ If you find this useful and are planning on moving to Octopus Energy Germany, wh
   - Dynamic tariffs (with real-time pricing using unit rate forecasts)
   - Heat tariffs (for heat pumps)
 - Gas infrastructure monitoring (MALO/MELO numbers, meters, readings)
+- Latest Electricity meter reading
 - Gas contract tracking with expiry countdown
 - Device smart control (suspend/unsuspend charging)
 - Electric vehicle charging preferences management
@@ -83,6 +84,30 @@ The integration is configured via the Home Assistant UI:
   - `active_timeslot`: (For TimeOfUse tariffs) Currently active time slot name (e.g., "GO", "STANDARD")
   - `is_dynamic_tariff`: Boolean flag indicating whether this is a dynamic pricing tariff with real-time rates
 
+#### Electricity Latest Reading Sensor
+
+- **Entity ID**: `sensor.octopus_<account_number>_electricity_latest_reading`
+- **Description**: Latest electricity meter reading with timestamp and origin information
+- **Unit**: kWh
+- **Attributes**:
+  - `reading_value`: Reading value in kWh
+  - `reading_units`: Reading units (kWh)
+  - `reading_date`: Date of the reading (formatted)
+  - `reading_origin`: Origin of the reading (CUSTOMER, ESTIMATED, etc.)
+  - `reading_type`: Type of reading (ACTUAL, ESTIMATED, etc.)
+  - `register_obis_code`: OBIS code for the register
+  - `register_type`: Type of the register
+  - `meter_id`: ID of the electricity meter
+  - `read_at`: Raw timestamp from API
+  - `account_number`: Your Octopus Energy account number
+
+#### Electricity Balance Sensor
+
+- **Entity ID**: `sensor.octopus_<account_number>_electricity_balance`
+- **Description**: Shows the current electricity account balance in EUR
+- **Unit**: €
+- **Note**: Only available for accounts with electricity service (MALO number present)
+
 #### Gas Sensors
 
 ##### Gas Tariff Sensor
@@ -100,6 +125,8 @@ The integration is configured via the Home Assistant UI:
 ##### Gas Balance Sensor
 - **Entity ID**: `sensor.octopus_<account_number>_gas_balance`
 - **Description**: Shows the current gas account balance in EUR
+- **Unit**: €
+- **Note**: Only available for accounts with gas service (gas MALO number present)
 
 ##### Gas Infrastructure Sensors
 - **Entity ID**: `sensor.octopus_<account_number>_gas_malo_number`
@@ -146,6 +173,20 @@ The integration is configured via the Home Assistant UI:
 
 - **Entity ID**: `sensor.octopus_<account_number>_gas_contract_days_until_expiry`
 - **Description**: Contract expiration countdown in days
+
+#### Device Status Sensor
+
+- **Entity ID**: `sensor.octopus_<account_number>_device_status`
+- **Description**: Current status of your smart charging device (e.g., "PLUGGED_IN", "CHARGING", "FINISHED", etc.)
+- **Attributes**:
+  - `device_id`: Internal ID of the connected device
+  - `device_name`: Name of the device
+  - `device_model`: Vehicle model (if available)
+  - `device_provider`: Device provider
+  - `battery_size`: Battery capacity (if available)
+  - `is_suspended`: Whether smart charging is currently suspended
+  - `account_number`: Your Octopus Energy account number
+  - `last_updated`: Timestamp of the last update
 
 #### Intelligent Dispatching Binary Sensor
 

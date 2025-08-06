@@ -937,6 +937,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         result_data[account_number]["gas_latest_reading"] = gas_latest_reading
 
+        # Fetch latest electricity meter reading if electricity meter exists
+        electricity_latest_reading = None
+        if meter and meter.get("id"):
+            try:
+                electricity_meter_id = meter.get("id")
+                _LOGGER.debug(
+                    "Attempting to fetch electricity meter reading for account %s, meter %s",
+                    account_number,
+                    electricity_meter_id,
+                )
+                electricity_latest_reading = await api.fetch_electricity_meter_reading(
+                    account_number, electricity_meter_id
+                )
+
+                if electricity_latest_reading:
+                    _LOGGER.debug(
+                        "Successfully fetched electricity meter reading: %s at %s",
+                        electricity_latest_reading.get("value"),
+                        electricity_latest_reading.get("readAt"),
+                    )
+                else:
+                    _LOGGER.debug(
+                        "No electricity meter reading returned for meter %s", electricity_meter_id
+                    )
+
+            except Exception as e:
+                _LOGGER.warning(
+                    "Failed to fetch electricity meter reading for account %s, meter %s: %s",
+                    account_number,
+                    electricity_meter_id,
+                    str(e),
+                )
+
+        result_data[account_number]["electricity_latest_reading"] = electricity_latest_reading
+
         return result_data
 
     coordinator = DataUpdateCoordinator(
