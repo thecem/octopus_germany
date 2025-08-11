@@ -5,8 +5,6 @@ __pycache__
 */build/*
 */dist/*
 
-# Other integrations installed for testing
-custom_components/gardena_smart_system/
 
 # misc
 .coverage
