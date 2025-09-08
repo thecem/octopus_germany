@@ -191,6 +191,22 @@ query ComprehensiveDataQuery($accountNumber: String!) {
       }
       targetType
       unit
+      gridExport
+    }
+    preferenceSetting {
+      deviceType
+      id
+      mode
+      scheduleSettings {
+        id
+        max
+        min
+        step
+        timeFrom
+        timeStep
+        timeTo
+      }
+      unit
     }
     name
     integrationDeviceId
@@ -213,18 +229,6 @@ query ComprehensiveDataQuery($accountNumber: String!) {
         batterySize
       }
     }
-  }
-  plannedDispatches(accountNumber: $accountNumber) {
-    delta
-    deltaKwh
-    end
-    endDt
-    meta {
-      location
-      source
-    }
-    start
-    startDt
   }
 }
 """
@@ -261,6 +265,39 @@ query ElectricityMeterReadings($accountNumber: String!, $meterId: ID!) {
         meterId
         registerType
       }
+    }
+  }
+}
+"""
+
+# Query to get vehicle device details with preference settings
+VEHICLE_DETAILS_QUERY = """
+query Vehicle($accountNumber: String = "") {
+  devices(accountNumber: $accountNumber) {
+    deviceType
+    id
+    integrationDeviceId
+    name
+    preferenceSetting {
+      deviceType
+      id
+      mode
+      scheduleSettings {
+        id
+        max
+        min
+        step
+        timeFrom
+        timeStep
+        timeTo
+      }
+      unit
+    }
+    preferences {
+      gridExport
+      mode
+      targetType
+      unit
     }
   }
 }
@@ -720,12 +757,49 @@ class OctopusGermany:
                         else []
                     )
 
-                if "plannedDispatches" in data:
-                    result["plannedDispatches"] = (
-                        data["plannedDispatches"]
-                        if data["plannedDispatches"] is not None
-                        else []
-                    )
+                # Fetch flex planned dispatches for all devices with the new API
+                result["plannedDispatches"] = []
+                if result["devices"]:
+                    _LOGGER.debug("Fetching flex planned dispatches for %d devices", len(result["devices"]))
+                    for device in result["devices"]:
+                        device_id = device.get("id")
+                        device_name = device.get("name", "Unknown")
+                        if device_id:
+                            try:
+                                flex_dispatches = await self.fetch_flex_planned_dispatches(device_id)
+                                if flex_dispatches:
+                                    # Transform the new API format to match the old format for backward compatibility
+                                    for dispatch in flex_dispatches:
+                                        # Map new fields to old field names where possible
+                                        transformed_dispatch = {
+                                            "start": dispatch.get("start"),
+                                            "startDt": dispatch.get("start"),  # Same as start
+                                            "end": dispatch.get("end"),
+                                            "endDt": dispatch.get("end"),  # Same as end
+                                            "deltaKwh": dispatch.get("energyAddedKwh"),
+                                            "delta": dispatch.get("energyAddedKwh"),  # Same as deltaKwh
+                                            "type": dispatch.get("type", "UNKNOWN"),  # Add type as top-level attribute
+                                            "meta": {
+                                                "source": "flex_api",
+                                                "type": dispatch.get("type", "UNKNOWN"),
+                                                "deviceId": device_id
+                                            }
+                                        }
+                                        result["plannedDispatches"].append(transformed_dispatch)
+                                    _LOGGER.debug(
+                                        "Added %d flex planned dispatches from device %s (%s)",
+                                        len(flex_dispatches),
+                                        device_id,
+                                        device_name
+                                    )
+                            except Exception as e:
+                                _LOGGER.warning(
+                                    "Failed to fetch flex planned dispatches for device %s: %s",
+                                    device_id,
+                                    e
+                                )
+                else:
+                    _LOGGER.debug("No devices found, skipping flex planned dispatches fetch")
 
                 # Only log errors but don't fail the whole request if we got at least account data
                 if "errors" in response and result["account"]:
@@ -736,7 +810,7 @@ class OctopusGermany:
                         if (
                             error.get("path", [])
                             and error.get("path")[0]
-                            in ["completedDispatches", "plannedDispatches", "devices"]
+                            in ["completedDispatches", "devices"]
                             and error.get("extensions", {}).get("errorCode")
                             == "KT-CT-4301"
                         )
@@ -846,6 +920,294 @@ class OctopusGermany:
             _LOGGER.error("Error changing device suspension: %s", e)
             return None
 
+    async def set_device_preferences(
+        self,
+        device_id: str,
+        target_percentage: int,
+        target_time: str,
+    ) -> bool:
+        """Set device charging preferences using the new setDevicePreferences API.
+
+        Args:
+            device_id: The device ID to set preferences for
+            target_percentage: Target state of charge (20-100%)
+            target_time: Time in HH:MM format (04:00-17:00)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not await self.ensure_token():
+            _LOGGER.error(
+                "Failed to ensure valid token for set_device_preferences"
+            )
+            return False
+
+        # Validate percentage range (20-100% in 5% steps)
+        if not 20 <= target_percentage <= 100:
+            _LOGGER.error(
+                "Invalid target percentage: %s. Must be between 20 and 100.",
+                target_percentage,
+            )
+            return False
+
+        if target_percentage % 5 != 0:
+            _LOGGER.error(
+                "Invalid target percentage: %s. Must be in 5%% steps.",
+                target_percentage,
+            )
+            return False
+
+        # Format and validate the target time
+        try:
+            formatted_time = self._format_time_to_hh_mm(target_time)
+
+            # Validate time range (04:00-17:00)
+            hour = int(formatted_time.split(":")[0])
+            if not 4 <= hour <= 17:
+                _LOGGER.error(
+                    "Invalid target time: %s. Must be between 04:00 and 17:00.",
+                    formatted_time,
+                )
+                return False
+
+            _LOGGER.debug(
+                "Formatted time for API: %s",
+                formatted_time,
+            )
+        except ValueError as e:
+            _LOGGER.error("Time format validation error: %s", e)
+            return False
+
+        # Use the new setDevicePreferences mutation - based on the exact working example
+        # No variables, everything inline as shown in the working example
+        query = f"""
+        mutation setDevicePreferences {{
+          setDevicePreferences(
+            input: {{
+              deviceId: "{device_id}",
+              mode: CHARGE,
+              unit: PERCENTAGE,
+              schedules: [
+                {{ dayOfWeek: MONDAY, time: "{formatted_time}", max: {target_percentage} }},
+                {{ dayOfWeek: TUESDAY, time: "{formatted_time}", max: {target_percentage} }},
+                {{ dayOfWeek: WEDNESDAY, time: "{formatted_time}", max: {target_percentage} }},
+                {{ dayOfWeek: THURSDAY, time: "{formatted_time}", max: {target_percentage} }},
+                {{ dayOfWeek: FRIDAY, time: "{formatted_time}", max: {target_percentage} }},
+                {{ dayOfWeek: SATURDAY, time: "{formatted_time}", max: {target_percentage} }},
+                {{ dayOfWeek: SUNDAY, time: "{formatted_time}", max: {target_percentage} }}
+              ]
+            }}
+          ) {{
+            id
+          }}
+        }}
+        """
+
+        variables = {}
+
+        client = self._get_graphql_client()
+
+        _LOGGER.debug(
+            "Making set_device_preferences API request with device_id: %s, target: %s%%, time: %s",
+            device_id,
+            target_percentage,
+            formatted_time,
+        )
+
+        try:
+            response = await client.execute_async(query=query, variables=variables)
+            _LOGGER.debug("Set device preferences response: %s", response)
+
+            if "errors" in response:
+                error = response.get("errors", [{}])[0]
+                error_code = error.get("extensions", {}).get("errorCode")
+                error_message = error.get("message", "Unknown error")
+
+                _LOGGER.error(
+                    "API error setting device preferences: %s (code: %s)",
+                    error_message,
+                    error_code,
+                )
+
+                # Check if token expired error
+                if error_code == "KT-CT-1124":  # JWT expired
+                    _LOGGER.warning(
+                        "Token expired during setting device preferences, refreshing..."
+                    )
+                    self._token_manager.clear()
+                    success = await self.login()
+                    if success:
+                        # Retry with new token
+                        return await self.set_device_preferences(
+                            device_id,
+                            target_percentage,
+                            target_time,
+                        )
+
+                return False
+
+            return True
+        except Exception as e:
+            _LOGGER.error("Error setting device preferences: %s", e)
+            return False
+
+    async def get_vehicle_devices(self, account_number: str):
+        """Get vehicle device details with preference settings.
+
+        Args:
+            account_number: The account number
+
+        Returns:
+            List of vehicle devices with their settings or None if error
+        """
+        if not await self.ensure_token():
+            _LOGGER.error("Failed to ensure valid token for get_vehicle_devices")
+            return None
+
+        variables = {"accountNumber": account_number}
+        client = self._get_graphql_client()
+
+        try:
+            _LOGGER.debug(
+                "Fetching vehicle devices for account %s",
+                account_number,
+            )
+            response = await client.execute_async(
+                query=VEHICLE_DETAILS_QUERY, variables=variables
+            )
+
+            if response is None:
+                _LOGGER.error("API returned None response for vehicle devices")
+                return None
+
+            if "errors" in response:
+                error = response.get("errors", [{}])[0]
+                error_code = error.get("extensions", {}).get("errorCode")
+
+                # Check if token expired error
+                if error_code == "KT-CT-1124":  # JWT expired
+                    _LOGGER.warning("Token expired, refreshing...")
+                    self._token_manager.clear()
+                    success = await self.login()
+                    if success:
+                        # Retry with new token
+                        return await self.get_vehicle_devices(account_number)
+
+                _LOGGER.error(
+                    "GraphQL errors in vehicle devices response: %s",
+                    response["errors"],
+                )
+                return None
+
+            if "data" in response and "devices" in response["data"]:
+                devices = response["data"]["devices"]
+
+                # Filter for electric vehicle devices
+                vehicle_devices = [
+                    device for device in devices
+                    if device.get("deviceType") == "ELECTRIC_VEHICLES"
+                ]
+
+                _LOGGER.debug(
+                    "Found %d vehicle devices",
+                    len(vehicle_devices),
+                )
+                return vehicle_devices
+            else:
+                _LOGGER.error("Invalid response structure for vehicle devices")
+                return None
+
+        except Exception as e:
+            _LOGGER.error("Error fetching vehicle devices: %s", e)
+            return None
+
+    async def fetch_flex_planned_dispatches(self, device_id: str):
+        """Fetch planned dispatches for a specific device using the new flexPlannedDispatches API.
+
+        Args:
+            device_id: The device ID to fetch planned dispatches for
+
+        Returns:
+            List of planned dispatches for the device or None if error
+        """
+        if not await self.ensure_token():
+            _LOGGER.error("Failed to ensure valid token for fetch_flex_planned_dispatches")
+            return None
+
+        # Use inline query with device ID as shown in the working example
+        query = f"""
+        query flexPlannedDispatches {{
+          flexPlannedDispatches(deviceId: "{device_id}") {{
+            end
+            energyAddedKwh
+            start
+            type
+          }}
+        }}
+        """
+
+        client = self._get_graphql_client()
+
+        try:
+            _LOGGER.debug(
+                "Fetching flex planned dispatches for device %s",
+                device_id,
+            )
+            response = await client.execute_async(query=query, variables={})
+
+            if response is None:
+                _LOGGER.error("API returned None response for flex planned dispatches")
+                return None
+
+            if "errors" in response:
+                error = response.get("errors", [{}])[0]
+                error_code = error.get("extensions", {}).get("errorCode")
+                error_message = error.get("message", "Unknown error")
+
+                # Check if token expired error
+                if error_code == "KT-CT-1124":  # JWT expired
+                    _LOGGER.warning("Token expired, refreshing...")
+                    self._token_manager.clear()
+                    success = await self.login()
+                    if success:
+                        # Retry with new token
+                        return await self.fetch_flex_planned_dispatches(device_id)
+
+                # Log but don't fail for non-critical errors (device might not support flex dispatches)
+                if error_code == "KT-CT-4301":  # Resource not found
+                    _LOGGER.debug(
+                        "Device %s does not support flex planned dispatches: %s",
+                        device_id,
+                        error_message,
+                    )
+                    return []
+                else:
+                    _LOGGER.error(
+                        "GraphQL errors in flex planned dispatches response: %s",
+                        response["errors"],
+                    )
+                    return None
+
+            if "data" in response and "flexPlannedDispatches" in response["data"]:
+                dispatches = response["data"]["flexPlannedDispatches"]
+                if dispatches is None:
+                    dispatches = []
+
+                _LOGGER.debug(
+                    "Found %d flex planned dispatches for device %s",
+                    len(dispatches),
+                    device_id,
+                )
+                return dispatches
+            else:
+                _LOGGER.error("Invalid response structure for flex planned dispatches")
+                return None
+
+        except Exception as e:
+            _LOGGER.error("Error fetching flex planned dispatches: %s", e)
+            return None
+
+    # Keep old method for backward compatibility but mark as deprecated
     async def set_vehicle_charge_preferences(
         self,
         account_number: str,
@@ -854,97 +1216,42 @@ class OctopusGermany:
         weekday_target_time: str,
         weekend_target_time: str,
     ) -> bool:
-        """Set vehicle charging preferences with account number."""
-        if not await self.ensure_token():
-            _LOGGER.error(
-                "Failed to ensure valid token for set_vehicle_charge_preferences"
-            )
+        """Set vehicle charging preferences (DEPRECATED - use set_device_preferences instead).
+
+        This method is deprecated as the API has changed. It will attempt to find
+        the first electric vehicle device and set preferences for it.
+        """
+        _LOGGER.warning(
+            "set_vehicle_charge_preferences is deprecated. Use set_device_preferences instead."
+        )
+
+        # Get vehicle devices first
+        vehicle_devices = await self.get_vehicle_devices(account_number)
+        if not vehicle_devices:
+            _LOGGER.error("No vehicle devices found for account %s", account_number)
             return False
 
-        # Format and validate the input times
-        try:
-            # Format weekday time - ensure it's in HH:MM format
-            weekday_time = self._format_time_to_hh_mm(weekday_target_time)
+        # Use the first vehicle device
+        device_id = vehicle_devices[0]["id"]
+        _LOGGER.info(
+            "Using first vehicle device found: %s (%s)",
+            vehicle_devices[0].get("name", "Unknown"),
+            device_id,
+        )
 
-            # Format weekend time - ensure it's in HH:MM format
-            weekend_time = self._format_time_to_hh_mm(weekend_target_time)
-
-            _LOGGER.debug(
-                "Formatted times for API: weekday=%s, weekend=%s",
-                weekday_time,
-                weekend_time,
-            )
-        except ValueError as e:
-            _LOGGER.error("Time format validation error: %s", e)
-            return False
-
-        # Use the same GraphQL mutation format that has been confirmed to work
-        query = """
-        mutation setVehicleChargePreferences($accountNumber: String = "") {
-          setVehicleChargePreferences(
-            input: {accountNumber: $accountNumber, weekdayTargetSoc: %d, weekendTargetSoc: %d, weekdayTargetTime: "%s", weekendTargetTime: "%s"}
-          ) {
-            krakenflexDevice {
-              provider
-            }
-          }
-        }
-        """ % (
+        # For backward compatibility, we'll use the weekday settings for all days
+        # and ignore weekend settings for now
+        _LOGGER.warning(
+            "Note: New API sets same preferences for all days. Using weekday settings: %s%% at %s",
             weekday_target_soc,
-            weekend_target_soc,
-            weekday_time,
-            weekend_time,
+            weekday_target_time,
         )
 
-        variables = {"accountNumber": account_number}
-
-        # Create a fresh GraphQL client with explicit authorization headers
-        headers = {"Authorization": self._token}
-        client = GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers=headers)
-
-        _LOGGER.debug(
-            "Making set_vehicle_charge_preferences API request with account: %s",
-            account_number,
+        return await self.set_device_preferences(
+            device_id,
+            weekday_target_soc,
+            weekday_target_time,
         )
-
-        try:
-            response = await client.execute_async(query=query, variables=variables)
-            _LOGGER.debug("Set vehicle charge preferences response: %s", response)
-
-            if "errors" in response:
-                error = response.get("errors", [{}])[0]
-                error_code = error.get("extensions", {}).get("errorCode")
-                error_message = error.get("message", "Unknown error")
-
-                _LOGGER.error(
-                    "API error setting vehicle charge preferences: %s (code: %s)",
-                    error_message,
-                    error_code,
-                )
-
-                # Check if token expired error
-                if error_code == "KT-CT-1124":  # JWT expired
-                    _LOGGER.warning(
-                        "Token expired during setting vehicle charge preferences, refreshing..."
-                    )
-                    self._token_manager.clear()
-                    success = await self.login()
-                    if success:
-                        # Retry with new token
-                        return await self.set_vehicle_charge_preferences(
-                            account_number,
-                            weekday_target_soc,
-                            weekend_target_soc,
-                            weekday_target_time,
-                            weekend_target_time,
-                        )
-
-                return False
-
-            return True
-        except Exception as e:
-            _LOGGER.error("Error setting vehicle charge preferences: %s", e)
-            return False
 
     def _format_time_to_hh_mm(self, time_str: str) -> str:
         """Format time to HH:MM format required by the API.

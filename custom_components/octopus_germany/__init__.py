@@ -31,8 +31,13 @@ PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR, Platform.S
 API_URL = "https://api.octopus.energy/v1/graphql/"
 
 # Service schemas
-SERVICE_SET_VEHICLE_CHARGE_PREFERENCES = "set_vehicle_charge_preferences"
+SERVICE_SET_VEHICLE_CHARGE_PREFERENCES = "set_vehicle_charge_preferences"  # Deprecated
+SERVICE_SET_DEVICE_PREFERENCES = "set_device_preferences"
 ATTR_ACCOUNT_NUMBER = "account_number"
+ATTR_DEVICE_ID = "device_id"
+ATTR_TARGET_PERCENTAGE = "target_percentage"
+ATTR_TARGET_TIME = "target_time"
+# Legacy attributes for backward compatibility
 ATTR_WEEKDAY_TARGET_SOC = "weekday_target_soc"
 ATTR_WEEKEND_TARGET_SOC = "weekend_target_soc"
 ATTR_WEEKDAY_TARGET_TIME = "weekday_target_time"
@@ -1018,6 +1023,88 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(_async_update_options))
 
     # Register services
+    async def handle_set_device_preferences(call: ServiceCall):
+        """Handle the set_device_preferences service call."""
+        device_id = call.data.get(ATTR_DEVICE_ID)
+        target_percentage = call.data.get(ATTR_TARGET_PERCENTAGE)
+        target_time = call.data.get(ATTR_TARGET_TIME)
+
+        if not device_id:
+            _LOGGER.error("Device ID is required for set_device_preferences")
+            from homeassistant.exceptions import ServiceValidationError
+            raise ServiceValidationError(
+                "Device ID is required",
+                translation_domain=DOMAIN,
+            )
+
+        # Validate percentage (20-100% in 5% steps)
+        if not 20 <= target_percentage <= 100:
+            _LOGGER.error(
+                f"Invalid target percentage: {target_percentage}. Must be between 20 and 100"
+            )
+            from homeassistant.exceptions import ServiceValidationError
+            raise ServiceValidationError(
+                f"Invalid target percentage: {target_percentage}. Must be between 20 and 100",
+                translation_domain=DOMAIN,
+            )
+
+        if target_percentage % 5 != 0:
+            _LOGGER.error(
+                f"Invalid target percentage: {target_percentage}. Must be in 5% steps"
+            )
+            from homeassistant.exceptions import ServiceValidationError
+            raise ServiceValidationError(
+                f"Invalid target percentage: {target_percentage}. Must be in 5% steps",
+                translation_domain=DOMAIN,
+            )
+
+        # Validate time format
+        try:
+            api._format_time_to_hh_mm(target_time)
+        except ValueError as time_error:
+            _LOGGER.error("Time validation error: %s", time_error)
+            from homeassistant.exceptions import ServiceValidationError
+            raise ServiceValidationError(
+                f"Invalid time format: {str(time_error)}",
+                translation_domain=DOMAIN,
+            )
+
+        _LOGGER.debug(
+            "Service call set_device_preferences with device_id=%s, target_percentage=%s, target_time=%s",
+            device_id,
+            target_percentage,
+            target_time,
+        )
+
+        try:
+            success = await api.set_device_preferences(
+                device_id,
+                target_percentage,
+                target_time,
+            )
+
+            if success:
+                _LOGGER.info("Successfully set device preferences")
+                return {"success": True}
+            else:
+                _LOGGER.error("Failed to set device preferences")
+                from homeassistant.exceptions import ServiceValidationError
+                raise ServiceValidationError(
+                    "Failed to set device preferences. Check the log for details.",
+                    translation_domain=DOMAIN,
+                )
+        except ValueError as e:
+            _LOGGER.error("Validation error: %s", e)
+            from homeassistant.exceptions import ServiceValidationError
+            raise ServiceValidationError(
+                f"Invalid parameters: {e}",
+                translation_domain=DOMAIN,
+            )
+        except Exception as e:
+            _LOGGER.exception("Unexpected error setting device preferences: %s", e)
+            from homeassistant.exceptions import HomeAssistantError
+            raise HomeAssistantError(f"Error setting device preferences: {e}")
+
     async def handle_set_vehicle_charge_preferences(call: ServiceCall):
         """Handle the set_vehicle_charge_preferences service call."""
         # Use account number from service call or fall back to the primary one from config
@@ -1132,6 +1219,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             from homeassistant.exceptions import HomeAssistantError
 
             raise HomeAssistantError(f"Error setting vehicle charge preferences: {e}")
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_DEVICE_PREFERENCES,
+        handle_set_device_preferences,
+    )
 
     hass.services.async_register(
         DOMAIN,

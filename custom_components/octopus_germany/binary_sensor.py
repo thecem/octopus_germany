@@ -219,6 +219,10 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
                 "charge_kwh": float(dispatch.get("deltaKwh", 0)),
             }
 
+            # Add type if available (from new flex API)
+            if "type" in dispatch:
+                formatted["type"] = dispatch["type"]
+
             # Add source and location if available
             meta = dispatch.get("meta", {})
             if meta:
@@ -226,6 +230,9 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
                     formatted["source"] = meta["source"]
                 if "location" in meta:
                     formatted["location"] = meta["location"]
+                # Also check for type in meta for backward compatibility
+                if "type" in meta and "type" not in formatted:
+                    formatted["type"] = meta["type"]
 
             return formatted
         except (ValueError, TypeError) as e:

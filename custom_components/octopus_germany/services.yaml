@@ -1,49 +1,30 @@
-set_vehicle_charge_preferences:
-  name: Set vehicle charge preferences
-  description: Set the charging preferences for your electric vehicle
+set_device_preferences:
+  name: Set device preferences
+  description: Set charging preferences for an electric vehicle device using the new API
   fields:
-    account_number:
-      name: Account number
-      description: Your Octopus Energy account number (optional, uses account from configuration if not specified)
-      required: false
-      example: ""
+    device_id:
+      name: Device ID
+      description: The device ID of the electric vehicle (get from device list)
+      required: true
+      example: "00000000-0002-4000-803c-0000000021c7"
       selector:
         text:
-    weekday_target_soc:
-      name: Weekday target state of charge
-      description: Target state of charge (in %) for weekdays
+    target_percentage:
+      name: Target state of charge
+      description: Target state of charge (20-100% in 5% steps)
       required: true
-      default: 10
-      example: 10
+      default: 80
+      example: 80
       selector:
         number:
-          min: 0
+          min: 20
           max: 100
-          step: 1
-    weekend_target_soc:
-      name: Weekend target state of charge
-      description: Target state of charge (in %) for weekends
+          step: 5
+    target_time:
+      name: Target time
+      description: Target time for charging (04:00-17:00)
       required: true
-      default: 15
-      example: 15
-      selector:
-        number:
-          min: 0
-          max: 100
-          step: 1
-    weekday_target_time:
-      name: Weekday target time
-      description: Target time for weekday charging (HH:MM)
-      required: true
-      default: "05:01"
-      example: "05:01"
-      selector:
-        time:
-    weekend_target_time:
-      name: Weekend target time
-      description: Target time for weekend charging (HH:MM)
-      required: true
-      default: "05:01"
-      example: "05:01"
+      default: "06:00"
+      example: "06:00"
       selector:
         time:
