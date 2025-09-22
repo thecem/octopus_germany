@@ -112,28 +112,7 @@ The integration is configured via the Home Assistant UI:
 
 ## Services
 
-### Set Vehicle Charge Preferences
-
-- **Service ID**: `octopus_germany.set_vehicle_charge_preferences`
-- **Description**: Configure your vehicle's charging preferences
-- **Parameters**:
-  - `account_number` (optional): Your Octopus Energy account number (uses account from configuration if not specified)
-  - `weekday_target_soc` (required): Target state of charge (in %) for weekdays
-  - `weekend_target_soc` (required): Target state of charge (in %) for weekends
-  - `weekday_target_time` (required): Target time for weekday charging (HH:MM)
-  - `weekend_target_time` (required): Target time for weekend charging (HH:MM)
-
-**Example:**
-
-```yaml
-# Example automation to set vehicle charging preferences to 80% by 7:30 AM on weekdays and 90% by 9:00 AM on weekends
-service: octopus_germany.set_vehicle_charge_preferences
-data:
-  weekday_target_soc: 80
-  weekend_target_soc: 90
-  weekday_target_time: "07:30"
-  weekend_target_time: "09:00"
-```
+Services are available for configuring device preferences. See the Developer Tools > Services section in Home Assistant for available services and their parameters.
 
 ## Debugging
 

@@ -1207,52 +1207,6 @@ class OctopusGermany:
             _LOGGER.error("Error fetching flex planned dispatches: %s", e)
             return None
 
-    # Keep old method for backward compatibility but mark as deprecated
-    async def set_vehicle_charge_preferences(
-        self,
-        account_number: str,
-        weekday_target_soc: int,
-        weekend_target_soc: int,
-        weekday_target_time: str,
-        weekend_target_time: str,
-    ) -> bool:
-        """Set vehicle charging preferences (DEPRECATED - use set_device_preferences instead).
-
-        This method is deprecated as the API has changed. It will attempt to find
-        the first electric vehicle device and set preferences for it.
-        """
-        _LOGGER.warning(
-            "set_vehicle_charge_preferences is deprecated. Use set_device_preferences instead."
-        )
-
-        # Get vehicle devices first
-        vehicle_devices = await self.get_vehicle_devices(account_number)
-        if not vehicle_devices:
-            _LOGGER.error("No vehicle devices found for account %s", account_number)
-            return False
-
-        # Use the first vehicle device
-        device_id = vehicle_devices[0]["id"]
-        _LOGGER.info(
-            "Using first vehicle device found: %s (%s)",
-            vehicle_devices[0].get("name", "Unknown"),
-            device_id,
-        )
-
-        # For backward compatibility, we'll use the weekday settings for all days
-        # and ignore weekend settings for now
-        _LOGGER.warning(
-            "Note: New API sets same preferences for all days. Using weekday settings: %s%% at %s",
-            weekday_target_soc,
-            weekday_target_time,
-        )
-
-        return await self.set_device_preferences(
-            device_id,
-            weekday_target_soc,
-            weekday_target_time,
-        )
-
     def _format_time_to_hh_mm(self, time_str: str) -> str:
         """Format time to HH:MM format required by the API.
 

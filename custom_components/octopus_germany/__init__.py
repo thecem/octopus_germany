@@ -31,17 +31,11 @@ PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR, Platform.S
 API_URL = "https://api.octopus.energy/v1/graphql/"
 
 # Service schemas
-SERVICE_SET_VEHICLE_CHARGE_PREFERENCES = "set_vehicle_charge_preferences"  # Deprecated
 SERVICE_SET_DEVICE_PREFERENCES = "set_device_preferences"
 ATTR_ACCOUNT_NUMBER = "account_number"
 ATTR_DEVICE_ID = "device_id"
 ATTR_TARGET_PERCENTAGE = "target_percentage"
 ATTR_TARGET_TIME = "target_time"
-# Legacy attributes for backward compatibility
-ATTR_WEEKDAY_TARGET_SOC = "weekday_target_soc"
-ATTR_WEEKEND_TARGET_SOC = "weekend_target_soc"
-ATTR_WEEKDAY_TARGET_TIME = "weekday_target_time"
-ATTR_WEEKEND_TARGET_TIME = "weekend_target_time"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -1105,131 +1099,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             from homeassistant.exceptions import HomeAssistantError
             raise HomeAssistantError(f"Error setting device preferences: {e}")
 
-    async def handle_set_vehicle_charge_preferences(call: ServiceCall):
-        """Handle the set_vehicle_charge_preferences service call."""
-        # Use account number from service call or fall back to the primary one from config
-        call_account_number = call.data.get(ATTR_ACCOUNT_NUMBER)
-
-        # Use provided account number or default to the primary account
-        used_account_number = call_account_number or primary_account_number
-
-        # Validate that the account number is in our list of known accounts
-        if used_account_number not in account_numbers:
-            _LOGGER.error(
-                "Account number %s not found in configured accounts: %s",
-                used_account_number,
-                account_numbers,
-            )
-            from homeassistant.exceptions import ServiceValidationError
-
-            raise ServiceValidationError(
-                f"Account number {used_account_number} not found in configured accounts",
-                translation_domain=DOMAIN,
-            )
-
-        weekday_target_soc = call.data.get(ATTR_WEEKDAY_TARGET_SOC)
-        weekend_target_soc = call.data.get(ATTR_WEEKEND_TARGET_SOC)
-        weekday_target_time = call.data.get(ATTR_WEEKDAY_TARGET_TIME)
-        weekend_target_time = call.data.get(ATTR_WEEKEND_TARGET_TIME)
-
-        # Log the service call parameters for debugging
-        _LOGGER.debug(
-            "Service call set_vehicle_charge_preferences with account=%s, weekday_soc=%s, weekend_soc=%s, weekday_time=%s, weekend_time=%s",
-            used_account_number,
-            weekday_target_soc,
-            weekend_target_soc,
-            weekday_target_time,
-            weekend_target_time,
-        )
-
-        # Validate SOC values - must be 0-100
-        if not 0 <= weekday_target_soc <= 100:
-            _LOGGER.error(
-                f"Invalid weekday target SOC: {weekday_target_soc}. Must be between 0 and 100"
-            )
-            from homeassistant.exceptions import ServiceValidationError
-
-            raise ServiceValidationError(
-                f"Invalid weekday target state of charge: {weekday_target_soc}. Must be between 0 and 100",
-                translation_domain=DOMAIN,
-            )
-
-        if not 0 <= weekend_target_soc <= 100:
-            _LOGGER.error(
-                f"Invalid weekend target SOC: {weekend_target_soc}. Must be between 0 and 100"
-            )
-            from homeassistant.exceptions import ServiceValidationError
-
-            raise ServiceValidationError(
-                f"Invalid weekend target state of charge: {weekend_target_soc}. Must be between 0 and 100",
-                translation_domain=DOMAIN,
-            )
-
-        # Pre-validate time format before sending to API
-        try:
-            # Use the same time formatting function that's used in the API call
-            # This ensures we catch any format errors early with a user-friendly message
-            api._format_time_to_hh_mm(weekday_target_time)
-            api._format_time_to_hh_mm(weekend_target_time)
-        except ValueError as time_error:
-            _LOGGER.error("Time validation error: %s", time_error)
-            from homeassistant.exceptions import ServiceValidationError
-
-            raise ServiceValidationError(
-                f"Invalid time format: {str(time_error)}",
-                translation_domain=DOMAIN,
-            )
-
-        try:
-            # Call the method on the API class
-            success = await api.set_vehicle_charge_preferences(
-                used_account_number,
-                weekday_target_soc,
-                weekend_target_soc,
-                weekday_target_time,
-                weekend_target_time,
-            )
-
-            if success:
-                _LOGGER.info("Successfully set vehicle charge preferences")
-                return {"success": True}
-            else:
-                _LOGGER.error("Failed to set vehicle charge preferences")
-                # Raise ServiceValidationError to show an error in the UI
-                from homeassistant.exceptions import ServiceValidationError
-
-                raise ServiceValidationError(
-                    "Failed to set vehicle charge preferences. Check the log for details.",
-                    translation_domain=DOMAIN,
-                )
-        except ValueError as e:
-            # Handle specific validation errors like time format
-            _LOGGER.error("Validation error: %s", e)
-            from homeassistant.exceptions import ServiceValidationError
-
-            raise ServiceValidationError(
-                f"Invalid parameters: {e}",
-                translation_domain=DOMAIN,
-            )
-        except Exception as e:
-            # Handle any other exceptions
-            _LOGGER.exception(
-                "Unexpected error setting vehicle charge preferences: %s", e
-            )
-            from homeassistant.exceptions import HomeAssistantError
-
-            raise HomeAssistantError(f"Error setting vehicle charge preferences: {e}")
-
     hass.services.async_register(
         DOMAIN,
         SERVICE_SET_DEVICE_PREFERENCES,
         handle_set_device_preferences,
-    )
-
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_SET_VEHICLE_CHARGE_PREFERENCES,
-        handle_set_vehicle_charge_preferences,
     )
 
     return True
