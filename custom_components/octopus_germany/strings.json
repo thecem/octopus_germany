@@ -29,5 +29,17 @@
       "reconfigure_failed": "Reconfiguration failed",
       "reconfigure_successful": "Reconfiguration successful"
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Octopus Germany Options",
+        "description": "Configure Octopus Germany integration",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        }
+      }
+    }
   }
 }

@@ -6,7 +6,7 @@ electricity price information.
 """
 
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, Optional
 from datetime import datetime, time, timezone
 
 from homeassistant.components.sensor import (
@@ -15,6 +15,7 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -32,6 +33,7 @@ async def async_setup_entry(
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
     account_number = data["account_number"]
+    client = data["api"]  # The API client is stored as "api" in __init__.py
 
     # Wait for coordinator refresh if needed
     if coordinator.data is None:
@@ -1797,3 +1799,5 @@ class OctopusDeviceStatusSensor(CoordinatorEntity, SensorEntity):
             and self._account_number in self.coordinator.data
             and self.coordinator.data[self._account_number].get("devices")
         )
+
+# Datei bereinigt - nur normale Sensoren

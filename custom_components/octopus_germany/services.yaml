@@ -6,7 +6,7 @@ set_device_preferences:
       name: Device ID
       description: The device ID of the electric vehicle (get from device list)
       required: true
-      example: "00000000-0002-4000-803c-0000000021c7"
+      example: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
       selector:
         text:
     target_percentage:

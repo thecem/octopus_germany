@@ -1237,6 +1237,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN].pop(entry.entry_id)
 
@@ -1250,3 +1251,4 @@ async def _async_update_options(hass: HomeAssistant, config_entry: ConfigEntry) 
         config_entry, data={**config_entry.data, **config_entry.options}
     )
     await hass.config_entries.async_reload(config_entry.entry_id)
+
