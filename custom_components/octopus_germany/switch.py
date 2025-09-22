@@ -9,7 +9,7 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.const import STATE_ON, STATE_OFF, STATE_UNKNOWN
 
@@ -97,25 +97,25 @@ async def _setup_boost_charge_switches(
 ) -> None:
     """Set up boost charge switches."""
     try:
-        # Create coordinator for boost charge status monitoring
-        coordinator = BoostChargeCoordinator(
-            hass,
-            client,
-            account_number,
-            update_interval=timedelta(minutes=2),
-        )
+        # Use the existing main coordinator instead of creating a separate one
+        # This avoids token management issues
+        data = hass.data[DOMAIN][entry.entry_id]
+        coordinator = data["coordinator"]
 
-        # Initial fetch
-        await coordinator.async_config_entry_first_refresh()
+        # Get current data from main coordinator
+        account_data = coordinator.data.get(account_number, {}) if coordinator.data else {}
+        devices = account_data.get("devices", [])
 
         # Create switches for each electric vehicle/charge point
         switches = []
 
-        if coordinator.data:
-            for device_id, device_data in coordinator.data.items():
-                device_name = device_data.get("name", f"Device {device_id}")
+        for device in devices:
+            device_id = device.get("id")
+            device_type = device.get("deviceType")
+            device_name = device.get("name", f"Device {device_id}")
 
-                # Create boost charge switch
+            # Only create boost charge switches for electric vehicles and charge points
+            if device_type in ["ELECTRIC_VEHICLES", "CHARGE_POINTS"] and device_id:
                 switches.append(
                     BoostChargeSwitch(coordinator, client, device_id, device_name, account_number)
                 )
@@ -125,15 +125,13 @@ async def _setup_boost_charge_switches(
             _LOGGER.info(
                 "Set up %d boost charge switches for %d devices",
                 len(switches),
-                len(coordinator.data) if coordinator.data else 0
+                len([d for d in devices if d.get("deviceType") in ["ELECTRIC_VEHICLES", "CHARGE_POINTS"]])
             )
         else:
             _LOGGER.info("No electric vehicles or charge points found for boost charge switches")
 
     except Exception as err:
         _LOGGER.error("Failed to set up boost charge switches: %s", err)
-
-
 class OctopusSwitch(CoordinatorEntity, SwitchEntity):
     """Representation of an Octopus Switch entity."""
 
@@ -359,155 +357,13 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
         return coordinator_has_data and device_exists
 
 
-class BoostChargeCoordinator(DataUpdateCoordinator[Dict[str, Any]]):
-    """Coordinator to fetch boost charge status from Octopus Energy Germany API."""
-
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        client,
-        account_number: str,
-        update_interval: timedelta = timedelta(minutes=2),
-    ) -> None:
-        """Initialize the coordinator."""
-        super().__init__(
-            hass,
-            _LOGGER,
-            name=f"{DOMAIN}_boost_charge_status",
-            update_interval=update_interval,
-        )
-        self.client = client
-        self.account_number = account_number
-
-    async def _async_update_data(self) -> Dict[str, Any]:
-        """Fetch data from the API."""
-        try:
-            # Query to get device status including boost charge information
-            query = """
-            query getDeviceStatus($accountNumber: String!) {
-              devices(accountNumber: $accountNumber) {
-                id
-                name
-                deviceType
-                provider
-                integrationDeviceId
-                propertyId
-                status {
-                  current
-                  currentState
-                  isSuspended
-                }
-                alerts {
-                  message
-                }
-                preferences {
-                  mode
-                  unit
-                  schedules {
-                    dayOfWeek
-                    time
-                    min
-                    max
-                  }
-                }
-              }
-            }
-            """
-
-            variables = {"accountNumber": self.account_number}
-
-            # Use the OctopusGermany API client's method
-            client = self.client._get_graphql_client()
-
-            response = await client.execute_async(query=query, variables=variables)
-
-            if "errors" in response:
-                raise Exception(f"GraphQL errors: {response['errors']}")
-
-            devices_data = response.get("data", {}).get("devices", [])
-
-            # Process devices and extract boost charge relevant information
-            processed_data = {}
-
-            for device in devices_data:
-                device_id = device.get("id")
-                device_type = device.get("deviceType")
-
-                # Only process electric vehicles and charge points
-                if device_type in ["ELECTRIC_VEHICLES", "CHARGE_POINTS"]:
-                    status = device.get("status", {})
-                    preferences = device.get("preferences", {})
-
-                    processed_data[device_id] = {
-                        "id": device_id,
-                        "name": device.get("name"),
-                        "device_type": device_type,
-                        "provider": device.get("provider"),
-                        "integration_device_id": device.get("integrationDeviceId"),
-                        "property_id": device.get("propertyId"),
-                        "current_status": status.get("current"),
-                        "current_state": status.get("currentState"),
-                        "is_suspended": status.get("isSuspended", False),
-                        "alerts": [alert.get("message") for alert in device.get("alerts", [])],
-                        "preferences": preferences,
-                        "last_updated": datetime.now().isoformat(),
-                        # Boost charge information (derived from state/status)
-                        "boost_charge_active": self._is_boost_charging(status),
-                        "boost_charge_available": self._is_boost_available(status),
-                    }
-
-            return processed_data
-
-        except Exception as err:
-            raise Exception(f"Error communicating with API: {err}")
-
-    def _is_boost_charging(self, status: Dict[str, Any]) -> bool:
-        """Determine if device is currently boost charging."""
-        current_state = status.get("currentState", "")
-        return "BOOST" in current_state.upper() or "BOOST_CHARGING" in current_state.upper()
-
-    def _is_boost_available(self, status: Dict[str, Any]) -> bool:
-        """Determine if boost charging is available."""
-        current = status.get("current", "")
-        current_state = status.get("currentState", "")
-        is_suspended = status.get("isSuspended", False)
-
-        # Log device state for debugging
-        _LOGGER.debug(
-            "Checking boost availability - current: %s, currentState: %s, isSuspended: %s",
-            current, current_state, is_suspended
-        )
-
-        # Check each condition individually
-        is_live = current == "LIVE"
-        has_smart_control = "SMART_CONTROL_CAPABLE" in current_state
-        has_boost_state = "BOOST" in current_state.upper()
-        has_boost_charging = "BOOST_CHARGING" in current_state.upper()
-        not_suspended = not is_suspended
-
-        _LOGGER.debug(
-            "Availability conditions - is_live: %s, has_smart_control: %s, has_boost_state: %s, has_boost_charging: %s, not_suspended: %s",
-            is_live, has_smart_control, has_boost_state, has_boost_charging, not_suspended
-        )
-
-        # Available if device is online and either smart control capable OR already boost charging
-        # This prevents the switch from becoming unavailable when boost is active
-        is_available = (
-            is_live and
-            (has_smart_control or has_boost_state or has_boost_charging) and
-            not_suspended
-        )
-
-        _LOGGER.debug("Final boost charge available result: %s", is_available)
-        return is_available
-
 
 class BoostChargeSwitch(CoordinatorEntity, SwitchEntity):
     """Switch to control boost charging for a specific device."""
 
     def __init__(
         self,
-        coordinator: BoostChargeCoordinator,
+        coordinator,  # Now uses main coordinator
         client,
         device_id: str,
         device_name: str,
@@ -524,17 +380,34 @@ class BoostChargeSwitch(CoordinatorEntity, SwitchEntity):
         self._attr_name = f"Octopus {account_number} {device_name} Boost Charge"
         self._attr_icon = "mdi:lightning-bolt"
 
+    def _get_device_data(self) -> Dict[str, Any]:
+        """Get device data from main coordinator."""
+        if not self.coordinator.data:
+            return {}
+
+        account_data = self.coordinator.data.get(self.account_number, {})
+        devices = account_data.get("devices", [])
+
+        # Find our device in the devices list
+        for device in devices:
+            if device.get("id") == self.device_id:
+                return device
+
+        return {}
+
     @property
     def is_on(self) -> bool:
         """Return true if boost charging is active."""
-        if not self.coordinator.data:
-            return False
-
-        device_data = self.coordinator.data.get(self.device_id)
+        device_data = self._get_device_data()
         if not device_data:
             return False
 
-        return device_data.get("boost_charge_active", False)
+        # Check device status for boost charge indicators
+        status = device_data.get("status", {})
+        current_state = status.get("currentState", "")
+
+        # Consider boost charging active if state contains boost indicators
+        return "BOOST" in current_state.upper()
 
     @property
     def available(self) -> bool:
@@ -542,34 +415,51 @@ class BoostChargeSwitch(CoordinatorEntity, SwitchEntity):
         if not self.coordinator.last_update_success:
             return False
 
-        if not self.coordinator.data:
-            return False
-
-        device_data = self.coordinator.data.get(self.device_id)
+        device_data = self._get_device_data()
         if not device_data:
             return False
 
-        return device_data.get("boost_charge_available", False)
+        # Device is available if we have valid data and it's not suspended
+        status = device_data.get("status", {})
+        return not status.get("isSuspended", True)
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         """Return additional state attributes."""
-        if not self.coordinator.data:
-            return {}
-
-        device_data = self.coordinator.data.get(self.device_id)
+        device_data = self._get_device_data()
         if not device_data:
             return {}
 
+        status = device_data.get("status", {})
+
+        # Calculate boost charge states
+        current_state = status.get("currentState", "")
+        boost_charge_active = "BOOST" in current_state.upper()
+
+        # Calculate boost charge availability
+        current = status.get("current", "")
+        is_suspended = status.get("isSuspended", False)
+        is_live = current == "LIVE"
+        has_smart_control = "SMART_CONTROL_CAPABLE" in current_state
+        has_boost_state = "BOOST" in current_state.upper()
+        has_boost_charging = "BOOST_CHARGING" in current_state.upper()
+
+        boost_charge_available = (
+            is_live and
+            (has_smart_control or has_boost_state or has_boost_charging) and
+            not is_suspended
+        )
+
         return {
-            "device_type": device_data.get("device_type"),
+            "device_type": device_data.get("deviceType"),
             "provider": device_data.get("provider"),
-            "current_status": device_data.get("current_status"),
-            "current_state": device_data.get("current_state"),
-            "is_suspended": device_data.get("is_suspended"),
-            "boost_charge_active": device_data.get("boost_charge_active"),
-            "boost_charge_available": device_data.get("boost_charge_available"),
-            "last_updated": device_data.get("last_updated"),
+            "current_status": status.get("current"),
+            "current_state": status.get("currentState"),
+            "is_suspended": status.get("isSuspended"),
+            "device_id": self.device_id,
+            "account_number": self.account_number,
+            "boost_charge_active": boost_charge_active,
+            "boost_charge_available": boost_charge_available,
         }
 
     async def async_turn_on(self, **kwargs: Any) -> None:
