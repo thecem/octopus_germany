@@ -8,6 +8,8 @@ This custom component integrates Octopus Germany services with Home Assistant, p
 
 This integration is in no way affiliated with Octopus Energy.
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K71LPRM2)
+
 If you find this useful and are planning on moving to Octopus Energy Germany, why not use my [referral link](https://share.octopusenergy.de/free-cat-744)?
 
 ## Features
