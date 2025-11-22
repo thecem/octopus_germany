@@ -9,9 +9,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.util.dt import as_local, as_utc, parse_datetime, utcnow
 
 from .const import DOMAIN
+from .sensor import get_account_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -441,3 +443,8 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
             and isinstance(self.coordinator.data, dict)
             and self._account_number in self.coordinator.data
         )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)

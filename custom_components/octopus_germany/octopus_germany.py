@@ -270,6 +270,245 @@ query ElectricityMeterReadings($accountNumber: String!, $meterId: ID!) {
 }
 """
 
+# Query to get latest smart meter readings
+# Schema introspection query to explore available fields
+INTROSPECTION_QUERY = """
+query IntrospectionQuery {
+  __schema {
+    types {
+      name
+      kind
+      description
+      fields {
+        name
+        description
+        type {
+          name
+          kind
+          ofType {
+            name
+            kind
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+# Property schema query to see what's available on properties
+# Alternative queries to try different approaches for smart meter data
+ALTERNATIVE_METER_READINGS_QUERY_1 = """
+query getMeterReadings($accountNumber: String!, $propertyId: ID!) {
+  account(accountNumber: $accountNumber) {
+    property(id: $propertyId) {
+      electricityMeterPoints {
+        id
+        mpan
+        meterReadings(first: 24) {
+          edges {
+            node {
+              readAt
+              value
+              unit
+              readingSource
+            }
+          }
+        }
+        meters {
+          id
+          serialNumber
+          smartMeter
+        }
+      }
+    }
+  }
+}
+"""
+
+ALTERNATIVE_METER_READINGS_QUERY_2 = """
+query getPropertyMeasurements($accountNumber: String!, $propertyId: ID!) {
+  account(accountNumber: $accountNumber) {
+    property(id: $propertyId) {
+      id
+      address {
+        line1
+        postcode
+      }
+      electricityMeterPoints {
+        id
+        mpan
+        meters {
+          id
+          serialNumber
+          smartMeter
+          measurements(first: 24) {
+            edges {
+              node {
+                ... on IntervalMeasurementType {
+                  startAt
+                  endAt
+                  value
+                  unit
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+PROPERTY_SCHEMA_QUERY = """
+query PropertySchema($accountNumber: String!, $propertyId: ID!) {
+  account(accountNumber: $accountNumber) {
+    property(id: $propertyId) {
+      __typename
+      id
+      address {
+        line1
+        line2
+        postcode
+      }
+      electricityMeterPoints {
+        id
+        mpan
+        meterReadings(first: 5) {
+          edges {
+            node {
+              readAt
+              value
+              unit
+            }
+          }
+        }
+        meters {
+          id
+          serialNumber
+          smartMeter
+        }
+      }
+      gasMeterPoints {
+        id
+        mprn
+        meterReadings(first: 5) {
+          edges {
+            node {
+              readAt
+              value
+              unit
+            }
+          }
+        }
+        meters {
+          id
+          serialNumber
+          smartMeter
+        }
+      }
+    }
+  }
+}
+"""
+
+# Updated queries based on schema exploration
+ELECTRICITY_SMART_METER_READINGS_QUERY_V2 = """
+query getSmartMeterUsageV2($accountNumber: String!, $propertyId: ID!, $date: Date!) {
+  account(accountNumber: $accountNumber) {
+    property(id: $propertyId) {
+      electricityMalos {
+        meter {
+          id
+          number
+          meterType
+          shouldReceiveSmartMeterData
+        }
+        agreements {
+          product {
+            code
+          }
+        }
+      }
+      measurements(
+        utilityFilters: {electricityFilters: {readingFrequencyType: HOUR_INTERVAL, readingQuality: COMBINED}}
+        startOn: $date
+        first: 24
+      ) {
+        edges {
+          node {
+            ... on IntervalMeasurementType {
+              endAt
+              startAt
+              unit
+              value
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+# Query based on electricityMalos structure
+ELECTRICITY_MALO_READINGS_QUERY = """
+query getElectricityMaloReadings($accountNumber: String!, $propertyId: ID!) {
+  account(accountNumber: $accountNumber) {
+    property(id: $propertyId) {
+      electricityMalos {
+        meter {
+          id
+          number
+          meterType
+          shouldReceiveSmartMeterData
+          registers {
+            obisCode
+            registerType
+            readings(first: 24) {
+              edges {
+                node {
+                  value
+                  readAt
+                  typeOfRead
+                  origin
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+ELECTRICITY_SMART_METER_READINGS_QUERY = """
+query getSmartMeterUsage($accountNumber: String!, $propertyId: ID!, $date: Date!) {
+  account(accountNumber: $accountNumber) {
+    property(id: $propertyId) {
+      measurements(
+        utilityFilters: {electricityFilters: {readingFrequencyType: HOUR_INTERVAL, readingQuality: COMBINED}}
+        startOn: $date
+        first: 24
+      ) {
+        edges {
+          node {
+            ... on IntervalMeasurementType {
+              endAt
+              startAt
+              unit
+              value
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
 # Query to get vehicle device details with preference settings
 VEHICLE_DETAILS_QUERY = """
 query Vehicle($accountNumber: String = "") {
@@ -298,6 +537,67 @@ query Vehicle($accountNumber: String = "") {
       mode
       targetType
       unit
+    }
+  }
+}
+"""
+
+# Query to get charging sessions for smart charging rewards tracking
+CHARGING_SESSIONS_QUERY = """
+query ChargingSessions($accountNumber: String!) {
+  devices(accountNumber: $accountNumber) {
+    id
+    deviceType
+    name
+    ... on SmartFlexVehicle {
+      chargingSessions(first: 100) {
+        edges {
+          node {
+            start
+            end
+            energyAdded {
+              value
+              unit
+            }
+            cost {
+              amount
+              currency
+            }
+            ... on SmartFlexChargingSession {
+              type
+            }
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+    ... on SmartFlexChargePoint {
+      chargingSessions(first: 100) {
+        edges {
+          node {
+            start
+            end
+            energyAdded {
+              value
+              unit
+            }
+            cost {
+              amount
+              currency
+            }
+            ... on SmartFlexChargingSession {
+              type
+            }
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
     }
   }
 }
@@ -483,6 +783,11 @@ class OctopusGermany:
                 _LOGGER.debug("Token still valid after lock, skipping login")
                 return True
 
+            # Clear the current token before attempting login to avoid sending expired token
+            old_token = self._token_manager._token
+            self._token_manager._token = None
+            _LOGGER.debug("Cleared expired token for fresh login attempt")
+
             query = """
                 mutation krakenTokenAuthentication($email: String!, $password: String!) {
                   obtainKrakenToken(input: { email: $email, password: $password }) {
@@ -492,7 +797,8 @@ class OctopusGermany:
                 }
             """
             variables = {"email": self._email, "password": self._password}
-            client = self._get_graphql_client()
+            # Create client without any authorization headers for login
+            client = GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers={})
 
             retries = 5  # Reduced from 10 to 5 retries for simpler logic
             attempt = 0
@@ -604,10 +910,16 @@ class OctopusGermany:
 
                 except Exception as e:
                     _LOGGER.error("Error during login attempt %s: %s", attempt, e)
-                    await asyncio.sleep(delay)
-                    delay = min(delay * 2, max_delay)
+                    # If this is our last attempt, don't sleep
+                    if attempt < retries:
+                        await asyncio.sleep(delay)
+                        delay = min(delay * 2, max_delay)
 
             _LOGGER.error("All %s login attempts failed.", retries)
+            # Restore the previous token if login failed completely
+            if old_token:
+                self._token_manager._token = old_token
+                _LOGGER.debug("Restored previous token after failed login attempts")
             return False
 
     async def ensure_token(self):
@@ -760,46 +1072,61 @@ class OctopusGermany:
                 # Fetch flex planned dispatches for all devices with the new API
                 result["plannedDispatches"] = []
                 if result["devices"]:
-                    _LOGGER.debug("Fetching flex planned dispatches for %d devices", len(result["devices"]))
+                    _LOGGER.debug(
+                        "Fetching flex planned dispatches for %d devices",
+                        len(result["devices"]),
+                    )
                     for device in result["devices"]:
                         device_id = device.get("id")
                         device_name = device.get("name", "Unknown")
                         if device_id:
                             try:
-                                flex_dispatches = await self.fetch_flex_planned_dispatches(device_id)
+                                flex_dispatches = (
+                                    await self.fetch_flex_planned_dispatches(device_id)
+                                )
                                 if flex_dispatches:
                                     # Transform the new API format to match the old format for backward compatibility
                                     for dispatch in flex_dispatches:
                                         # Map new fields to old field names where possible
                                         transformed_dispatch = {
                                             "start": dispatch.get("start"),
-                                            "startDt": dispatch.get("start"),  # Same as start
+                                            "startDt": dispatch.get(
+                                                "start"
+                                            ),  # Same as start
                                             "end": dispatch.get("end"),
                                             "endDt": dispatch.get("end"),  # Same as end
                                             "deltaKwh": dispatch.get("energyAddedKwh"),
-                                            "delta": dispatch.get("energyAddedKwh"),  # Same as deltaKwh
-                                            "type": dispatch.get("type", "UNKNOWN"),  # Add type as top-level attribute
+                                            "delta": dispatch.get(
+                                                "energyAddedKwh"
+                                            ),  # Same as deltaKwh
+                                            "type": dispatch.get(
+                                                "type", "UNKNOWN"
+                                            ),  # Add type as top-level attribute
                                             "meta": {
                                                 "source": "flex_api",
                                                 "type": dispatch.get("type", "UNKNOWN"),
-                                                "deviceId": device_id
-                                            }
+                                                "deviceId": device_id,
+                                            },
                                         }
-                                        result["plannedDispatches"].append(transformed_dispatch)
+                                        result["plannedDispatches"].append(
+                                            transformed_dispatch
+                                        )
                                     _LOGGER.debug(
                                         "Added %d flex planned dispatches from device %s (%s)",
                                         len(flex_dispatches),
                                         device_id,
-                                        device_name
+                                        device_name,
                                     )
                             except Exception as e:
                                 _LOGGER.warning(
                                     "Failed to fetch flex planned dispatches for device %s: %s",
                                     device_id,
-                                    e
+                                    e,
                                 )
                 else:
-                    _LOGGER.debug("No devices found, skipping flex planned dispatches fetch")
+                    _LOGGER.debug(
+                        "No devices found, skipping flex planned dispatches fetch"
+                    )
 
                 # Only log errors but don't fail the whole request if we got at least account data
                 if "errors" in response and result["account"]:
@@ -843,6 +1170,166 @@ class OctopusGermany:
                                     # Retry with new token
                                     return await self.fetch_all_data(account_number)
 
+                # Fetch electricity smart meter readings if property data is available
+                try:
+                    if (
+                        result.get("account")
+                        and "allProperties" in result["account"]
+                        and result["account"]["allProperties"]
+                    ):
+                        # Try to get property ID from the first property
+                        property_data = result["account"]["allProperties"][0]
+                        property_id = property_data.get("id")
+
+                        if property_id:
+                            # First, explore the property schema to understand available data (only once)
+                            from .const import EXPLORE_SCHEMA_ONCE
+
+                            if EXPLORE_SCHEMA_ONCE and not hasattr(
+                                self, "_schema_explored"
+                            ):
+                                _LOGGER.info(
+                                    "Exploring property schema for debugging smart meter issues..."
+                                )
+                                await self.explore_property_schema(
+                                    account_number, property_id
+                                )
+
+                                # Test alternative queries to find smart meter data
+                                _LOGGER.info(
+                                    "Testing alternative queries for smart meter data..."
+                                )
+                                await self.test_alternative_meter_queries(
+                                    account_number, property_id
+                                )
+
+                                # Mark as explored to prevent repeated exploration
+                                self._schema_explored = True
+
+                            # Get multiple dates for testing: today, yesterday, day before yesterday
+                            from datetime import date, timedelta
+
+                            today = date.today()
+                            yesterday = today - timedelta(days=1)
+                            day_before_yesterday = today - timedelta(days=2)
+                            week_ago = today - timedelta(days=7)
+                            month_ago = today - timedelta(days=30)
+
+                            test_dates = [
+                                (today.isoformat(), "today"),
+                                (yesterday.isoformat(), "yesterday"),
+                                (
+                                    day_before_yesterday.isoformat(),
+                                    "day_before_yesterday",
+                                ),
+                                (week_ago.isoformat(), "week_ago"),
+                                (month_ago.isoformat(), "month_ago"),
+                            ]
+
+                            _LOGGER.info(
+                                "Testing smart meter readings for multiple dates: %s",
+                                [
+                                    f"{label} ({date_str})"
+                                    for date_str, label in test_dates
+                                ],
+                            )
+
+                            smart_meter_readings = None
+                            successful_date = None
+
+                            # Test each date until we find data
+                            for date_str, date_label in test_dates:
+                                _LOGGER.debug(
+                                    "Fetching electricity smart meter readings for property %s on %s (%s)",
+                                    property_id,
+                                    date_str,
+                                    date_label,
+                                )
+
+                                readings = (
+                                    await self.fetch_electricity_smart_meter_readings(
+                                        account_number, property_id, date_str
+                                    )
+                                )
+
+                                if readings:
+                                    smart_meter_readings = readings
+                                    successful_date = (date_str, date_label)
+                                    _LOGGER.info(
+                                        "Successfully fetched %d smart meter readings for %s (%s)",
+                                        len(readings),
+                                        date_label,
+                                        date_str,
+                                    )
+                                    break
+                                else:
+                                    _LOGGER.debug(
+                                        "No smart meter readings found for %s (%s)",
+                                        date_label,
+                                        date_str,
+                                    )
+
+                            if smart_meter_readings:
+                                result["electricity_smart_meter_readings"] = (
+                                    smart_meter_readings
+                                )
+                                result["electricity_smart_meter_readings_date"] = (
+                                    successful_date[0]
+                                )
+                                result["electricity_smart_meter_readings_label"] = (
+                                    successful_date[1]
+                                )
+                            else:
+                                _LOGGER.warning(
+                                    "No smart meter readings found for any tested date"
+                                )
+
+                                # Try V2 query with yesterday's date as fallback
+                                _LOGGER.info(
+                                    "Trying V2 query with yesterday's date as fallback"
+                                )
+                                smart_meter_readings_v2 = await self.fetch_electricity_smart_meter_readings_v2(
+                                    account_number, property_id, yesterday.isoformat()
+                                )
+
+                                if smart_meter_readings_v2:
+                                    result["electricity_smart_meter_readings"] = (
+                                        smart_meter_readings_v2
+                                    )
+                                    result["electricity_smart_meter_readings_date"] = (
+                                        yesterday.isoformat()
+                                    )
+                                    result["electricity_smart_meter_readings_label"] = (
+                                        "yesterday_v2"
+                                    )
+                                    _LOGGER.info(
+                                        "Successfully fetched %d smart meter readings with V2 query for yesterday",
+                                        len(smart_meter_readings_v2),
+                                    )
+                                else:
+                                    _LOGGER.warning(
+                                        "No smart meter readings available with any query or date - checking property structure"
+                                    )
+                                    # Log the entire property structure for debugging
+                                    _LOGGER.info(
+                                        "Property data structure: %s",
+                                        json.dumps(property_data, indent=2),
+                                    )
+                        else:
+                            _LOGGER.debug(
+                                "No property ID found for smart meter readings"
+                            )
+                    else:
+                        _LOGGER.debug(
+                            "No property data available for smart meter readings"
+                        )
+                except Exception as smart_meter_error:
+                    _LOGGER.warning(
+                        "Error fetching smart meter readings (non-critical): %s",
+                        smart_meter_error,
+                    )
+                    # Continue without smart meter readings as this is not critical
+
                 return result
             elif "errors" in response:
                 # Handle critical errors that prevent any data from being returned
@@ -869,6 +1356,67 @@ class OctopusGermany:
 
         except Exception as e:
             _LOGGER.error("Error fetching all data: %s", e)
+            return None
+
+    async def fetch_charging_sessions(self, account_number: str):
+        """Fetch charging sessions for smart charging rewards tracking."""
+        if not await self.ensure_token():
+            _LOGGER.error("Failed to ensure valid token for fetch_charging_sessions")
+            return None
+
+        client = self._get_graphql_client()
+        variables = {"accountNumber": account_number}
+
+        try:
+            response = await client.execute_async(
+                query=CHARGING_SESSIONS_QUERY, variables=variables
+            )
+
+            if "data" in response and response["data"]:
+                devices = response["data"].get("devices", [])
+                all_sessions = []
+
+                for device in devices:
+                    device_id = device.get("id")
+                    device_name = device.get("name", "Unknown Device")
+                    device_type = device.get("deviceType", "UNKNOWN")
+
+                    charging_sessions = device.get("chargingSessions", {})
+                    if charging_sessions:
+                        edges = charging_sessions.get("edges", [])
+                        for edge in edges:
+                            session = edge.get("node", {})
+                            if session:
+                                # Add device context to session
+                                session["device_id"] = device_id
+                                session["device_name"] = device_name
+                                session["device_type"] = device_type
+                                all_sessions.append(session)
+
+                return all_sessions
+            elif "errors" in response:
+                error = response.get("errors", [{}])[0]
+                error_code = error.get("extensions", {}).get("errorCode")
+
+                # Check if token expired error
+                if error_code == "KT-CT-1124":  # JWT expired
+                    _LOGGER.warning("Token expired, refreshing...")
+                    self._token_manager.clear()
+                    success = await self.login()
+                    if success:
+                        # Retry with new token
+                        return await self.fetch_charging_sessions(account_number)
+
+                _LOGGER.debug(
+                    "API returned errors for charging sessions (may not have devices): %s",
+                    response.get("errors"),
+                )
+                return []
+            else:
+                return []
+
+        except Exception as e:
+            _LOGGER.error("Error fetching charging sessions: %s", e)
             return None
 
     async def change_device_suspension(self, device_id: str, action: str):
@@ -937,9 +1485,7 @@ class OctopusGermany:
             True if successful, False otherwise
         """
         if not await self.ensure_token():
-            _LOGGER.error(
-                "Failed to ensure valid token for set_device_preferences"
-            )
+            _LOGGER.error("Failed to ensure valid token for set_device_preferences")
             return False
 
         # Validate percentage range (20-100% in 5% steps)
@@ -1104,7 +1650,8 @@ class OctopusGermany:
 
                 # Filter for electric vehicle devices
                 vehicle_devices = [
-                    device for device in devices
+                    device
+                    for device in devices
                     if device.get("deviceType") == "ELECTRIC_VEHICLES"
                 ]
 
@@ -1131,7 +1678,9 @@ class OctopusGermany:
             List of planned dispatches for the device or None if error
         """
         if not await self.ensure_token():
-            _LOGGER.error("Failed to ensure valid token for fetch_flex_planned_dispatches")
+            _LOGGER.error(
+                "Failed to ensure valid token for fetch_flex_planned_dispatches"
+            )
             return None
 
         # Use inline query with device ID as shown in the working example
@@ -1383,7 +1932,9 @@ class OctopusGermany:
             Dict containing the latest reading data or None if error
         """
         if not await self.ensure_token():
-            _LOGGER.error("Failed to ensure valid token for fetch_electricity_meter_reading")
+            _LOGGER.error(
+                "Failed to ensure valid token for fetch_electricity_meter_reading"
+            )
             return None
 
         variables = {"accountNumber": account_number, "meterId": meter_id}
@@ -1400,7 +1951,9 @@ class OctopusGermany:
             )
 
             if response is None:
-                _LOGGER.error("API returned None response for electricity meter reading")
+                _LOGGER.error(
+                    "API returned None response for electricity meter reading"
+                )
                 return None
 
             if "errors" in response:
@@ -1434,9 +1987,492 @@ class OctopusGermany:
                     )
                     return None
             else:
-                _LOGGER.error("Invalid response structure for electricity meter reading")
+                _LOGGER.error(
+                    "Invalid response structure for electricity meter reading"
+                )
                 return None
 
         except Exception as e:
             _LOGGER.error("Error fetching electricity meter reading: %s", e)
             return None
+
+    async def fetch_electricity_smart_meter_readings(
+        self, account_number: str, property_id: str, date: str
+    ):
+        """Fetch electricity smart meter readings for a specific date.
+
+        Args:
+            account_number: The account number
+            property_id: The property ID
+            date: Date in YYYY-MM-DD format
+
+        Returns:
+            Dict containing the hourly smart meter readings or None if error
+        """
+        if not await self.ensure_token():
+            _LOGGER.error(
+                "Failed to ensure valid token for fetch_electricity_smart_meter_readings"
+            )
+            return None
+
+        variables = {
+            "accountNumber": account_number,
+            "propertyId": property_id,
+            "date": date,
+        }
+
+        client = self._get_graphql_client()
+
+        try:
+            _LOGGER.debug(
+                "Fetching smart meter readings for account %s, property %s, date %s",
+                account_number,
+                property_id,
+                date,
+            )
+            response = await client.execute_async(
+                query=ELECTRICITY_SMART_METER_READINGS_QUERY, variables=variables
+            )
+
+            if response is None:
+                _LOGGER.error(
+                    "API returned None response for electricity smart meter readings"
+                )
+                return None
+
+            if "errors" in response:
+                _LOGGER.error(
+                    "GraphQL errors in electricity smart meter readings response: %s",
+                    response["errors"],
+                )
+                return None
+
+            if (
+                "data" in response
+                and "account" in response["data"]
+                and response["data"]["account"]
+                and "property" in response["data"]["account"]
+                and response["data"]["account"]["property"]
+                and "measurements" in response["data"]["account"]["property"]
+            ):
+                measurements = response["data"]["account"]["property"]["measurements"]
+
+                if measurements and "edges" in measurements and measurements["edges"]:
+                    readings = []
+                    for edge in measurements["edges"]:
+                        if "node" in edge and edge["node"]:
+                            reading = edge["node"]
+                            readings.append(
+                                {
+                                    "start_time": reading.get("startAt"),
+                                    "end_time": reading.get("endAt"),
+                                    "value": reading.get("value"),
+                                    "unit": reading.get("unit"),
+                                }
+                            )
+
+                    _LOGGER.debug(
+                        "Found %d smart meter readings for property %s on %s",
+                        len(readings),
+                        property_id,
+                        date,
+                    )
+                    return readings
+                else:
+                    _LOGGER.warning(
+                        "No smart meter readings found for property %s on %s",
+                        property_id,
+                        date,
+                    )
+                    return []
+            else:
+                _LOGGER.error(
+                    "Invalid response structure for electricity smart meter readings"
+                )
+                return None
+
+        except Exception as e:
+            _LOGGER.error("Error fetching electricity smart meter readings: %s", e)
+            return None
+
+    async def fetch_electricity_smart_meter_readings_v2(
+        self, account_number: str, property_id: str, date: str
+    ):
+        """Fetch electricity smart meter readings using the improved V2 query.
+
+        Args:
+            account_number: The account number
+            property_id: The property ID
+            date: The date in ISO format (YYYY-MM-DD)
+
+        Returns:
+            List of hourly readings with start_time, end_time, value, unit
+        """
+        if not await self.ensure_token():
+            _LOGGER.error("Failed to ensure valid token for smart meter readings V2")
+            return None
+
+        variables = {
+            "accountNumber": account_number,
+            "propertyId": property_id,
+            "date": date,
+        }
+
+        client = self._get_graphql_client()
+
+        try:
+            _LOGGER.debug(
+                "Fetching smart meter readings V2 for account %s, property %s, date %s",
+                account_number,
+                property_id,
+                date,
+            )
+            response = await client.execute_async(
+                query=ELECTRICITY_SMART_METER_READINGS_QUERY_V2, variables=variables
+            )
+
+            if "data" in response and response["data"]:
+                account_data = response["data"].get("account")
+                if (
+                    account_data
+                    and "property" in account_data
+                    and account_data["property"]
+                ):
+                    property_data = account_data["property"]
+
+                    # Log meter information from electricityMalos
+                    if "electricityMalos" in property_data:
+                        for malo in property_data["electricityMalos"]:
+                            meter = malo.get("meter", {})
+                            _LOGGER.info(
+                                "Meter info: id=%s, number=%s, type=%s, shouldReceiveSmartMeterData=%s",
+                                meter.get("id"),
+                                meter.get("number"),
+                                meter.get("meterType"),
+                                meter.get("shouldReceiveSmartMeterData"),
+                            )
+
+                    # Process measurements
+                    measurements = property_data.get("measurements", {})
+                    if measurements and "edges" in measurements:
+                        readings = []
+                        for edge in measurements["edges"]:
+                            node = edge.get("node", {})
+                            if node:
+                                readings.append(
+                                    {
+                                        "start_time": node.get("startAt"),
+                                        "end_time": node.get("endAt"),
+                                        "value": node.get("value"),
+                                        "unit": node.get("unit"),
+                                    }
+                                )
+
+                        if readings:
+                            _LOGGER.info(
+                                "Successfully fetched %d smart meter readings V2",
+                                len(readings),
+                            )
+                            return readings
+                        else:
+                            _LOGGER.warning(
+                                "No smart meter readings found in measurements for property %s on %s",
+                                property_id,
+                                date,
+                            )
+                            return []
+                    else:
+                        _LOGGER.warning(
+                            "No measurements data found for property %s on %s",
+                            property_id,
+                            date,
+                        )
+                        return []
+                else:
+                    _LOGGER.error(
+                        "Invalid response structure for electricity smart meter readings V2"
+                    )
+                    return None
+            else:
+                _LOGGER.error(
+                    "No data in response for electricity smart meter readings V2"
+                )
+                return None
+
+        except Exception as e:
+            _LOGGER.error("Error fetching electricity smart meter readings V2: %s", e)
+            return None
+
+    async def test_historical_smart_meter_data_range(
+        self, account_number: str, property_id: str
+    ):
+        """Test how far back smart meter data is available.
+
+        This function tests various historical dates to understand the data availability range.
+        """
+        if not await self.ensure_token():
+            _LOGGER.error("Failed to ensure valid token for historical data range test")
+            return None
+
+        from datetime import date, timedelta
+
+        today = date.today()
+
+        # Test various time periods
+        test_periods = [
+            (today - timedelta(days=1), "1_day_ago"),
+            (today - timedelta(days=2), "2_days_ago"),
+            (today - timedelta(days=3), "3_days_ago"),
+            (today - timedelta(days=7), "1_week_ago"),
+            (today - timedelta(days=14), "2_weeks_ago"),
+            (today - timedelta(days=30), "1_month_ago"),
+            (today - timedelta(days=60), "2_months_ago"),
+            (today - timedelta(days=90), "3_months_ago"),
+            (today - timedelta(days=180), "6_months_ago"),
+            (today - timedelta(days=365), "1_year_ago"),
+        ]
+
+        _LOGGER.info(
+            "Testing historical smart meter data range for property %s", property_id
+        )
+
+        available_dates = []
+
+        for test_date, label in test_periods:
+            date_str = test_date.isoformat()
+
+            try:
+                _LOGGER.debug(
+                    "Testing smart meter data availability for %s (%s)", label, date_str
+                )
+
+                readings = await self.fetch_electricity_smart_meter_readings(
+                    account_number, property_id, date_str
+                )
+
+                if readings and len(readings) > 0:
+                    available_dates.append(
+                        {
+                            "date": date_str,
+                            "label": label,
+                            "readings_count": len(readings),
+                            "first_reading": readings[0] if readings else None,
+                            "last_reading": readings[-1] if readings else None,
+                        }
+                    )
+                    _LOGGER.info(
+                        "✅ Smart meter data available for %s (%s): %d readings",
+                        label,
+                        date_str,
+                        len(readings),
+                    )
+                else:
+                    _LOGGER.debug("❌ No smart meter data for %s (%s)", label, date_str)
+
+            except Exception as e:
+                _LOGGER.warning("Error testing date %s (%s): %s", label, date_str, e)
+
+        if available_dates:
+            _LOGGER.info(
+                "📊 Smart meter data availability summary: Found data for %d out of %d tested dates",
+                len(available_dates),
+                len(test_periods),
+            )
+            _LOGGER.info(
+                "📅 Available dates: %s",
+                [f"{item['label']} ({item['date']})" for item in available_dates],
+            )
+
+            # Show the range
+            oldest_date = available_dates[-1] if available_dates else None
+            newest_date = available_dates[0] if available_dates else None
+
+            if oldest_date and newest_date:
+                _LOGGER.info(
+                    "📈 Data range: From %s (%s) to %s (%s)",
+                    oldest_date["date"],
+                    oldest_date["label"],
+                    newest_date["date"],
+                    newest_date["label"],
+                )
+        else:
+            _LOGGER.warning(
+                "⚠️ No historical smart meter data found for any tested date"
+            )
+
+        return available_dates
+
+    async def explore_property_schema(self, account_number: str, property_id: str):
+        """Explore the property schema to understand available fields and data structures.
+
+        This helps debug what data is actually available for smart meter readings.
+        """
+        if not await self.ensure_token():
+            _LOGGER.error(
+                "Failed to ensure valid token for property schema exploration"
+            )
+            return None
+
+        variables = {
+            "accountNumber": account_number,
+            "propertyId": property_id,
+        }
+
+        client = self._get_graphql_client()
+
+        try:
+            _LOGGER.info(
+                "Exploring property schema for account %s, property %s",
+                account_number,
+                property_id,
+            )
+            response = await client.execute_async(
+                query=PROPERTY_SCHEMA_QUERY, variables=variables
+            )
+
+            _LOGGER.info("Property schema response: %s", json.dumps(response, indent=2))
+
+            return response
+
+        except Exception as e:
+            _LOGGER.error("Error exploring property schema: %s", e)
+            return None
+
+    async def explore_graphql_schema(self):
+        """Explore the GraphQL schema to understand available types and fields.
+
+        This helps understand what data structures are available in the API.
+        """
+        if not await self.ensure_token():
+            _LOGGER.error("Failed to ensure valid token for schema exploration")
+            return None
+
+        client = self._get_graphql_client()
+
+        try:
+            _LOGGER.info("Exploring GraphQL schema...")
+            response = await client.execute_async(query=INTROSPECTION_QUERY)
+
+            # Filter for measurement-related types
+            if "data" in response and "__schema" in response["data"]:
+                schema = response["data"]["__schema"]
+                measurement_types = []
+
+                for type_def in schema.get("types", []):
+                    type_name = type_def.get("name", "")
+                    if any(
+                        keyword in type_name.lower()
+                        for keyword in [
+                            "measurement",
+                            "meter",
+                            "reading",
+                            "interval",
+                            "smart",
+                        ]
+                    ):
+                        measurement_types.append(
+                            {
+                                "name": type_name,
+                                "kind": type_def.get("kind"),
+                                "description": type_def.get("description"),
+                                "fields": [
+                                    {
+                                        "name": field.get("name"),
+                                        "description": field.get("description"),
+                                        "type": field.get("type", {}).get("name"),
+                                    }
+                                    for field in type_def.get("fields", [])
+                                ]
+                                if type_def.get("fields")
+                                else [],
+                            }
+                        )
+
+                _LOGGER.info(
+                    "Found %d measurement-related types: %s",
+                    len(measurement_types),
+                    json.dumps(measurement_types, indent=2),
+                )
+
+                return measurement_types
+
+            return response
+
+        except Exception as e:
+            _LOGGER.error("Error exploring GraphQL schema: %s", e)
+            return None
+
+    async def test_alternative_meter_queries(
+        self, account_number: str, property_id: str
+    ):
+        """Test alternative queries to find smart meter data."""
+        if not await self.ensure_token():
+            _LOGGER.error("Failed to ensure valid token for alternative queries")
+            return None
+
+        client = self._get_graphql_client()
+        variables = {
+            "accountNumber": account_number,
+            "propertyId": property_id,
+        }
+
+        # Test V2 query with meter info and measurements
+        try:
+            _LOGGER.info("Testing smart meter readings query V2...")
+            from datetime import date
+
+            today = date.today().isoformat()
+            variables_with_date = {**variables, "date": today}
+
+            response_v2 = await client.execute_async(
+                query=ELECTRICITY_SMART_METER_READINGS_QUERY_V2,
+                variables=variables_with_date,
+            )
+            _LOGGER.info(
+                "Smart meter query V2 response: %s", json.dumps(response_v2, indent=2)
+            )
+        except Exception as e:
+            _LOGGER.error("Smart meter query V2 failed: %s", e)
+
+        # Test electricityMalos readings
+        try:
+            _LOGGER.info("Testing electricityMalos readings query...")
+            response_malo = await client.execute_async(
+                query=ELECTRICITY_MALO_READINGS_QUERY, variables=variables
+            )
+            _LOGGER.info(
+                "ElectricityMalos query response: %s",
+                json.dumps(response_malo, indent=2),
+            )
+        except Exception as e:
+            _LOGGER.error("ElectricityMalos query failed: %s", e)
+
+        # Test alternative query 1: Direct meter readings (corrected)
+        corrected_query_1 = """
+        query getMeterReadingsCorrected($accountNumber: String!, $propertyId: ID!) {
+          account(accountNumber: $accountNumber) {
+            property(id: $propertyId) {
+              electricityMalos {
+                meter {
+                  id
+                  number
+                  meterType
+                  shouldReceiveSmartMeterData
+                }
+              }
+            }
+          }
+        }
+        """
+
+        try:
+            _LOGGER.info("Testing corrected meter structure query...")
+            response_corrected = await client.execute_async(
+                query=corrected_query_1, variables=variables
+            )
+            _LOGGER.info(
+                "Corrected meter structure response: %s",
+                json.dumps(response_corrected, indent=2),
+            )
+        except Exception as e:
+            _LOGGER.error("Corrected meter structure query failed: %s", e)

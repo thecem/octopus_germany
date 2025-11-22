@@ -32,10 +32,13 @@ API_URL = "https://api.octopus.energy/v1/graphql/"
 
 # Service schemas
 SERVICE_SET_DEVICE_PREFERENCES = "set_device_preferences"
+SERVICE_GET_SMART_METER_READINGS = "get_smart_meter_readings"
 ATTR_ACCOUNT_NUMBER = "account_number"
 ATTR_DEVICE_ID = "device_id"
 ATTR_TARGET_PERCENTAGE = "target_percentage"
 ATTR_TARGET_TIME = "target_time"
+ATTR_DATE = "date"
+ATTR_PROPERTY_ID = "property_id"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -431,6 +434,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         result_data[account_number]["current_end"] = current_end
         result_data[account_number]["next_start"] = next_start
         result_data[account_number]["next_end"] = next_end
+
+        # Fetch charging sessions for smart charging rewards tracking
+        try:
+            charging_sessions = await api.fetch_charging_sessions(account_number)
+            if charging_sessions:
+                _LOGGER.debug(
+                    "Found %d charging sessions for account %s",
+                    len(charging_sessions),
+                    account_number,
+                )
+                result_data[account_number]["charging_sessions"] = charging_sessions
+            else:
+                result_data[account_number]["charging_sessions"] = []
+        except Exception as e:
+            _LOGGER.debug(
+                "No charging sessions available for account %s (may not have SmartFlex devices): %s",
+                account_number,
+                e,
+            )
+            result_data[account_number]["charging_sessions"] = []
 
         # Extract products - ensure we always have product data
         products = []
@@ -958,7 +981,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     )
                 else:
                     _LOGGER.debug(
-                        "No electricity meter reading returned for meter %s", electricity_meter_id
+                        "No electricity meter reading returned for meter %s",
+                        electricity_meter_id,
                     )
 
             except Exception as e:
@@ -969,7 +993,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     str(e),
                 )
 
-        result_data[account_number]["electricity_latest_reading"] = electricity_latest_reading
+        result_data[account_number]["electricity_latest_reading"] = (
+            electricity_latest_reading
+        )
+
+        # Extract smart meter readings if available
+        electricity_smart_meter_readings = data.get(
+            "electricity_smart_meter_readings", []
+        )
+        result_data[account_number]["electricity_smart_meter_readings"] = (
+            electricity_smart_meter_readings
+        )
+
+        if electricity_smart_meter_readings:
+            _LOGGER.debug(
+                "Processed %d smart meter readings for account %s",
+                len(electricity_smart_meter_readings),
+                account_number,
+            )
 
         return result_data
 
@@ -1011,6 +1052,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "coordinator": coordinator,
     }
 
+    # Register account service devices before setting up platforms
+    from homeassistant.helpers import device_registry as dr
+    from .sensor import get_account_device_info
+
+    device_registry = dr.async_get(hass)
+    for account_number in account_numbers:
+        account_device_info = get_account_device_info(account_number)
+        device_registry.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            **account_device_info,
+        )
+        _LOGGER.debug("Registered account service device for %s", account_number)
+
     # Forward setup to platforms - no need to wait for another refresh
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -1026,6 +1080,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not device_id:
             _LOGGER.error("Device ID is required for set_device_preferences")
             from homeassistant.exceptions import ServiceValidationError
+
             raise ServiceValidationError(
                 "Device ID is required",
                 translation_domain=DOMAIN,
@@ -1037,6 +1092,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 f"Invalid target percentage: {target_percentage}. Must be between 20 and 100"
             )
             from homeassistant.exceptions import ServiceValidationError
+
             raise ServiceValidationError(
                 f"Invalid target percentage: {target_percentage}. Must be between 20 and 100",
                 translation_domain=DOMAIN,
@@ -1047,6 +1103,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 f"Invalid target percentage: {target_percentage}. Must be in 5% steps"
             )
             from homeassistant.exceptions import ServiceValidationError
+
             raise ServiceValidationError(
                 f"Invalid target percentage: {target_percentage}. Must be in 5% steps",
                 translation_domain=DOMAIN,
@@ -1058,6 +1115,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except ValueError as time_error:
             _LOGGER.error("Time validation error: %s", time_error)
             from homeassistant.exceptions import ServiceValidationError
+
             raise ServiceValidationError(
                 f"Invalid time format: {str(time_error)}",
                 translation_domain=DOMAIN,
@@ -1083,6 +1141,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             else:
                 _LOGGER.error("Failed to set device preferences")
                 from homeassistant.exceptions import ServiceValidationError
+
                 raise ServiceValidationError(
                     "Failed to set device preferences. Check the log for details.",
                     translation_domain=DOMAIN,
@@ -1090,6 +1149,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except ValueError as e:
             _LOGGER.error("Validation error: %s", e)
             from homeassistant.exceptions import ServiceValidationError
+
             raise ServiceValidationError(
                 f"Invalid parameters: {e}",
                 translation_domain=DOMAIN,
@@ -1097,12 +1157,147 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except Exception as e:
             _LOGGER.exception("Unexpected error setting device preferences: %s", e)
             from homeassistant.exceptions import HomeAssistantError
+
             raise HomeAssistantError(f"Error setting device preferences: {e}")
 
+    async def handle_get_smart_meter_readings(call: ServiceCall) -> dict:
+        """Handle the get_smart_meter_readings service call."""
+        account_number = call.data.get(ATTR_ACCOUNT_NUMBER)
+        date_str = call.data.get(ATTR_DATE)
+        property_id = call.data.get(ATTR_PROPERTY_ID)
+
+        # Validate inputs
+        if not account_number:
+            from homeassistant.exceptions import ServiceValidationError
+
+            raise ServiceValidationError(
+                "Account number is required",
+                translation_domain=DOMAIN,
+            )
+
+        if not date_str:
+            from homeassistant.exceptions import ServiceValidationError
+
+            raise ServiceValidationError(
+                "Date is required",
+                translation_domain=DOMAIN,
+            )
+
+        # Validate date format
+        try:
+            from datetime import datetime
+
+            parsed_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            from homeassistant.exceptions import ServiceValidationError
+
+            raise ServiceValidationError(
+                f"Invalid date format: {date_str}. Expected YYYY-MM-DD",
+                translation_domain=DOMAIN,
+            )
+
+        try:
+            # Get the coordinator for this account
+            coordinator = None
+            client = None
+            for entry_id, data in hass.data[DOMAIN].items():
+                if (
+                    data["coordinator"].data
+                    and account_number in data["coordinator"].data
+                ):
+                    coordinator = data["coordinator"]
+                    client = data.get("api") or data.get("client")  # Try both keys
+                    break
+
+            if not coordinator or not client:
+                from homeassistant.exceptions import ServiceValidationError
+
+                raise ServiceValidationError(
+                    f"Account {account_number} not found or not loaded",
+                    translation_domain=DOMAIN,
+                )
+
+            # Use property_id from service call or get first property from account
+            if not property_id:
+                account_data = coordinator.data[account_number]
+                property_ids = account_data.get("property_ids", [])
+                if not property_ids:
+                    from homeassistant.exceptions import ServiceValidationError
+
+                    raise ServiceValidationError(
+                        f"No properties found for account {account_number}",
+                        translation_domain=DOMAIN,
+                    )
+                property_id = property_ids[0]
+
+            _LOGGER.info(
+                "Fetching smart meter readings for account %s, property %s, date %s",
+                account_number,
+                property_id,
+                date_str,
+            )
+
+            # Fetch smart meter readings
+            readings = await client.fetch_electricity_smart_meter_readings_v2(
+                account_number, property_id, date_str
+            )
+
+            if readings:
+                result = {
+                    "success": True,
+                    "account_number": account_number,
+                    "property_id": property_id,
+                    "date": date_str,
+                    "total_readings": len(readings),
+                    "readings": readings,
+                    "total_consumption": sum(
+                        float(r.get("value", 0)) for r in readings
+                    ),
+                }
+                _LOGGER.info(
+                    "Successfully fetched %d smart meter readings for %s",
+                    len(readings),
+                    date_str,
+                )
+
+                # Log a sample of the readings for debugging
+                sample_readings = readings[:3] if len(readings) > 3 else readings
+                _LOGGER.info("Sample readings: %s", sample_readings)
+                _LOGGER.info("Total consumption: %.3f kWh", result["total_consumption"])
+            else:
+                result = {
+                    "success": False,
+                    "account_number": account_number,
+                    "property_id": property_id,
+                    "date": date_str,
+                    "total_readings": 0,
+                    "readings": [],
+                    "message": f"No smart meter readings found for {date_str}",
+                }
+                _LOGGER.warning("No smart meter readings found for %s", date_str)
+
+            # Fire an event with the results
+            hass.bus.async_fire(f"{DOMAIN}_smart_meter_readings_result", result)
+
+            return result
+
+        except Exception as e:
+            _LOGGER.exception("Error fetching smart meter readings: %s", e)
+            from homeassistant.exceptions import HomeAssistantError
+
+            raise HomeAssistantError(f"Error fetching smart meter readings: {e}")
+
+    # Register services
     hass.services.async_register(
         DOMAIN,
         SERVICE_SET_DEVICE_PREFERENCES,
         handle_set_device_preferences,
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GET_SMART_METER_READINGS,
+        handle_get_smart_meter_readings,
     )
 
     return True
@@ -1124,4 +1319,3 @@ async def _async_update_options(hass: HomeAssistant, config_entry: ConfigEntry) 
         config_entry, data={**config_entry.data, **config_entry.options}
     )
     await hass.config_entries.async_reload(config_entry.entry_id)
-

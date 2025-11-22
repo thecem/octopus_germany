@@ -28,3 +28,29 @@ set_device_preferences:
       example: "06:00"
       selector:
         time:
+
+get_smart_meter_readings:
+  name: Get Smart Meter Readings
+  description: Fetch smart meter readings for a specific date (historical data available)
+  fields:
+    account_number:
+      name: Account Number
+      description: The account number (usually starts with A-)
+      required: true
+      example: "A-66DF80AE"
+      selector:
+        text:
+    date:
+      name: Date
+      description: Date for readings (YYYY-MM-DD format, data available 2+ days ago)
+      required: true
+      example: "2025-10-08"
+      selector:
+        date:
+    property_id:
+      name: Property ID
+      description: Property ID (optional, will use first property if not specified)
+      required: false
+      example: "249906"
+      selector:
+        text:

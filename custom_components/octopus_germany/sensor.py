@@ -13,16 +13,127 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
     SensorDeviceClass,
+    RestoreEntity,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import STATE_UNKNOWN
+from homeassistant.const import (
+    STATE_UNKNOWN,
+    STATE_UNAVAILABLE,
+    UnitOfEnergy,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceEntryType
 
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def get_electricity_meter_device_info(
+    coordinator_data: dict, account_number: str
+) -> DeviceInfo:
+    """Get device info for electricity meter."""
+    if (
+        coordinator_data
+        and account_number in coordinator_data
+        and "meter" in coordinator_data[account_number]
+    ):
+        meter_info = coordinator_data[account_number]["meter"]
+        meter_number = meter_info.get("number", "unknown")
+        meter_type = meter_info.get("type", "Smart Meter")
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"electricity_meter_{account_number}")},
+            name=f"Electricity Meter ({meter_number})",
+            manufacturer="Octopus Energy Germany",
+            model=meter_type,
+            via_device=(DOMAIN, account_number),
+        )
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"electricity_meter_{account_number}")},
+        name=f"Electricity Meter ({account_number})",
+        manufacturer="Octopus Energy Germany",
+        model="Smart Meter",
+        via_device=(DOMAIN, account_number),
+    )
+
+
+def get_gas_meter_device_info(
+    coordinator_data: dict, account_number: str
+) -> DeviceInfo:
+    """Get device info for gas meter."""
+    if (
+        coordinator_data
+        and account_number in coordinator_data
+        and "gas_meter" in coordinator_data[account_number]
+    ):
+        gas_meter_info = coordinator_data[account_number]["gas_meter"]
+        gas_meter_number = gas_meter_info.get("number", "unknown")
+        gas_meter_type = gas_meter_info.get("type", "Gas Meter")
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"gas_meter_{account_number}")},
+            name=f"Gas Meter ({gas_meter_number})",
+            manufacturer="Octopus Energy Germany",
+            model=gas_meter_type,
+            via_device=(DOMAIN, account_number),
+        )
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"gas_meter_{account_number}")},
+        name=f"Gas Meter ({account_number})",
+        manufacturer="Octopus Energy Germany",
+        model="Gas Meter",
+        via_device=(DOMAIN, account_number),
+    )
+
+
+def get_account_device_info(account_number: str) -> DeviceInfo:
+    """Get device info for account service."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, account_number)},
+        name=f"Octopus Energy Germany ({account_number})",
+        manufacturer="Octopus Energy Germany",
+        configuration_url="https://my.octopusenergy.de/",
+        entry_type=DeviceEntryType.SERVICE,
+    )
+
+
+def get_device_specific_device_info(
+    coordinator_data: dict, account_number: str, device_id: str
+) -> DeviceInfo:
+    """Get device info for a specific device (e.g., Electric Vehicle, Charge Point)."""
+    if (
+        coordinator_data
+        and account_number in coordinator_data
+        and "devices" in coordinator_data[account_number]
+    ):
+        devices = coordinator_data[account_number]["devices"]
+        for device in devices:
+            if device.get("id") == device_id:
+                device_name = device.get("name", f"Device {device_id}")
+                device_type = device.get("deviceType", "Unknown Device")
+                device_model = device.get("vehicleVariant", {}).get(
+                    "model", "Unknown Model"
+                )
+                device_provider = device.get("provider", "Unknown Provider")
+
+                return DeviceInfo(
+                    identifiers={(DOMAIN, f"device_{device_id}")},
+                    name=f"{device_name} ({device_type})",
+                    manufacturer=device_provider,
+                    model=device_model,
+                    via_device=(DOMAIN, account_number),
+                )
+
+    # Fallback if device not found
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"device_{device_id}")},
+        name=f"Device ({device_id})",
+        manufacturer="Octopus Energy Germany",
+        model="Unknown Device",
+        via_device=(DOMAIN, account_number),
+    )
 
 
 async def async_setup_entry(
@@ -80,14 +191,24 @@ async def async_setup_entry(
                         OctopusElectricityLatestReadingSensor(acc_num, coordinator)
                     )
 
+                # Create electricity smart meter readings sensor if account has electricity service
+                if account_data.get("malo_number"):
+                    entities.append(
+                        OctopusElectricitySmartMeterReadingsSensor(acc_num, coordinator)
+                    )
+
             # Create electricity balance sensor if electricity ledger exists and account has electricity service
-            if "electricity_balance" in account_data and account_data.get("malo_number"):
+            if "electricity_balance" in account_data and account_data.get(
+                "malo_number"
+            ):
                 entities.append(OctopusElectricityBalanceSensor(acc_num, coordinator))
 
             # Create gas sensors if account has gas service
             if account_data.get("gas_malo_number"):
                 # Create gas balance sensor if gas ledger exists
-                if "gas_balance" in account_data and account_data.get("gas_malo_number"):
+                if "gas_balance" in account_data and account_data.get(
+                    "gas_malo_number"
+                ):
                     entities.append(OctopusGasBalanceSensor(acc_num, coordinator))
 
                 # Create gas tariff sensor if gas products exist
@@ -133,18 +254,38 @@ async def async_setup_entry(
                         OctopusGasContractExpiryDaysSensor(acc_num, coordinator)
                     )
 
-            # Create device status sensor if devices exist
+            # Create device status sensors for each device
             devices = account_data.get("devices", [])
             if devices:
                 _LOGGER.debug(
-                    "Creating device status sensor for account %s with %d devices",
+                    "Creating device status sensors for account %s with %d devices",
                     acc_num,
                     len(devices),
                 )
-                entities.append(OctopusDeviceStatusSensor(acc_num, coordinator))
+                for device in devices:
+                    device_id = device.get("id")
+                    if device_id:
+                        entities.append(
+                            OctopusDeviceStatusSensor(acc_num, coordinator, device_id)
+                        )
+
+            # Create smart charging sessions sensor if charging sessions exist
+            charging_sessions = account_data.get("charging_sessions", [])
+            if charging_sessions:
+                _LOGGER.debug(
+                    "Creating smart charging sessions sensor for account %s with %d sessions",
+                    acc_num,
+                    len(charging_sessions),
+                )
+                entities.append(
+                    OctopusSmartChargingSessionsSensor(acc_num, coordinator)
+                )
 
             # Create heat balance sensor if heat ledger exists and has non-zero balance
-            if "heat_balance" in account_data and account_data.get("heat_balance", 0) != 0:
+            if (
+                "heat_balance" in account_data
+                and account_data.get("heat_balance", 0) != 0
+            ):
                 entities.append(OctopusHeatBalanceSensor(acc_num, coordinator))
 
             # Create sensors for other ledgers
@@ -687,6 +828,11 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
             and self._account_number in self.coordinator.data
         )
 
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
+
 
 class OctopusGasBalanceSensor(CoordinatorEntity, SensorEntity):
     """Sensor for Octopus Germany gas balance."""
@@ -725,6 +871,11 @@ class OctopusGasBalanceSensor(CoordinatorEntity, SensorEntity):
             and isinstance(self.coordinator.data, dict)
             and self._account_number in self.coordinator.data
         )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
 
 
 class OctopusElectricityBalanceSensor(CoordinatorEntity, SensorEntity):
@@ -765,6 +916,11 @@ class OctopusElectricityBalanceSensor(CoordinatorEntity, SensorEntity):
             and self._account_number in self.coordinator.data
         )
 
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
+
 
 class OctopusHeatBalanceSensor(CoordinatorEntity, SensorEntity):
     """Sensor for Octopus Germany heat balance."""
@@ -803,6 +959,11 @@ class OctopusHeatBalanceSensor(CoordinatorEntity, SensorEntity):
             and isinstance(self.coordinator.data, dict)
             and self._account_number in self.coordinator.data
         )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
 
 
 class OctopusLedgerBalanceSensor(CoordinatorEntity, SensorEntity):
@@ -845,6 +1006,11 @@ class OctopusLedgerBalanceSensor(CoordinatorEntity, SensorEntity):
             and isinstance(self.coordinator.data, dict)
             and self._account_number in self.coordinator.data
         )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
 
 
 class OctopusGasTariffSensor(CoordinatorEntity, SensorEntity):
@@ -1019,6 +1185,11 @@ class OctopusGasTariffSensor(CoordinatorEntity, SensorEntity):
             and self._account_number in self.coordinator.data
         )
 
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
+
 
 class OctopusGasMaloSensor(CoordinatorEntity, SensorEntity):
     """Sensor for Octopus Germany gas MALO number."""
@@ -1057,6 +1228,11 @@ class OctopusGasMaloSensor(CoordinatorEntity, SensorEntity):
             and self.coordinator.data[self._account_number].get("gas_malo_number")
             is not None
         )
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
+
 
 
 class OctopusGasMeloSensor(CoordinatorEntity, SensorEntity):
@@ -1096,6 +1272,11 @@ class OctopusGasMeloSensor(CoordinatorEntity, SensorEntity):
             and self.coordinator.data[self._account_number].get("gas_melo_number")
             is not None
         )
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
+
 
 
 class OctopusGasMeterSensor(CoordinatorEntity, SensorEntity):
@@ -1188,6 +1369,11 @@ class OctopusGasMeterSensor(CoordinatorEntity, SensorEntity):
             and self._account_number in self.coordinator.data
             and self.coordinator.data[self._account_number].get("gas_meter") is not None
         )
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
+
 
 
 class OctopusGasLatestReadingSensor(CoordinatorEntity, SensorEntity):
@@ -1318,6 +1504,11 @@ class OctopusGasLatestReadingSensor(CoordinatorEntity, SensorEntity):
             and self.coordinator.data[self._account_number].get("gas_latest_reading")
             is not None
         )
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
+
 
 
 class OctopusElectricityLatestReadingSensor(CoordinatorEntity, SensorEntity):
@@ -1456,6 +1647,11 @@ class OctopusElectricityLatestReadingSensor(CoordinatorEntity, SensorEntity):
             )
             is not None
         )
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
+
 
 
 class OctopusGasPriceSensor(CoordinatorEntity, SensorEntity):
@@ -1496,6 +1692,11 @@ class OctopusGasPriceSensor(CoordinatorEntity, SensorEntity):
             and self._account_number in self.coordinator.data
             and self.coordinator.data[self._account_number].get("gas_price") is not None
         )
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
+
 
 
 class OctopusGasSmartReadingSensor(CoordinatorEntity, SensorEntity):
@@ -1544,6 +1745,11 @@ class OctopusGasSmartReadingSensor(CoordinatorEntity, SensorEntity):
             )
             is not None
         )
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
+
 
 
 class OctopusGasContractStartSensor(CoordinatorEntity, SensorEntity):
@@ -1598,6 +1804,11 @@ class OctopusGasContractStartSensor(CoordinatorEntity, SensorEntity):
             and self.coordinator.data[self._account_number].get("gas_contract_start")
             is not None
         )
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
+
 
 
 class OctopusGasContractEndSensor(CoordinatorEntity, SensorEntity):
@@ -1652,6 +1863,11 @@ class OctopusGasContractEndSensor(CoordinatorEntity, SensorEntity):
             and self.coordinator.data[self._account_number].get("gas_contract_end")
             is not None
         )
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
+
 
 
 class OctopusGasContractExpiryDaysSensor(CoordinatorEntity, SensorEntity):
@@ -1694,16 +1910,22 @@ class OctopusGasContractExpiryDaysSensor(CoordinatorEntity, SensorEntity):
             )
             is not None
         )
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
+
 
 
 class OctopusDeviceStatusSensor(CoordinatorEntity, SensorEntity):
     """Sensor for Octopus Germany device status."""
 
-    def __init__(self, account_number, coordinator) -> None:
+    def __init__(self, account_number, coordinator, device_id: str) -> None:
         """Initialize the device status sensor."""
         super().__init__(coordinator)
 
         self._account_number = account_number
+        self._device_id = device_id
         self._attr_name = f"Octopus {account_number} Device Status"
         self._attr_unique_id = f"octopus_{account_number}_device_status"
         self._attr_has_entity_name = False
@@ -1712,9 +1934,8 @@ class OctopusDeviceStatusSensor(CoordinatorEntity, SensorEntity):
         # Initialize attributes right after creation
         self._update_attributes()
 
-    @property
-    def native_value(self) -> str | None:
-        """Return the current device status."""
+    def _get_device_data(self) -> dict | None:
+        """Get device data for this specific device_id."""
         if (
             not self.coordinator.data
             or not isinstance(self.coordinator.data, dict)
@@ -1725,13 +1946,19 @@ class OctopusDeviceStatusSensor(CoordinatorEntity, SensorEntity):
         account_data = self.coordinator.data[self._account_number]
         devices = account_data.get("devices", [])
 
-        if not devices:
-            return None
+        for device in devices:
+            if device.get("id") == self._device_id:
+                return device
+        return None
 
-        # Get the first device's status (or could be modified to handle multiple devices)
-        device = devices[0]
-        status = device.get("status", {})
-        return status.get("currentState", "Unknown")
+    @property
+    def native_value(self) -> str | None:
+        """Return the current device status."""
+        device = self._get_device_data()
+        if device:
+            status = device.get("status", {})
+            return status.get("currentState", "Unknown")
+        return None
 
     def _update_attributes(self) -> None:
         """Update the internal attributes dictionary."""
@@ -1758,8 +1985,10 @@ class OctopusDeviceStatusSensor(CoordinatorEntity, SensorEntity):
             self._attributes = default_attributes
             return
 
-        # Get details from the first device
-        device = devices[0]
+        device = self._get_device_data()
+        if not device:
+            self._attributes = default_attributes
+            return
 
         self._attributes = {
             "device_id": device.get("id", "Unknown"),
@@ -1798,7 +2027,392 @@ class OctopusDeviceStatusSensor(CoordinatorEntity, SensorEntity):
             and self.coordinator.last_update_success
             and isinstance(self.coordinator.data, dict)
             and self._account_number in self.coordinator.data
-            and self.coordinator.data[self._account_number].get("devices")
+            and self._get_device_data() is not None
         )
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
+
+
+
+class OctopusElectricitySmartMeterReadingsSensor(
+    CoordinatorEntity, SensorEntity, RestoreEntity
+):
+    """Sensor for displaying smart meter readings (previous day accumulative consumption)."""
+
+    def __init__(self, account_number, coordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._account_number = account_number
+
+        # Use fallback values during initialization, will be updated when coordinator data is available
+        self._attr_name = (
+            f"Previous Accumulative Consumption Electricity ({account_number})"
+        )
+        self._attr_unique_id = f"octopus_germany_electricity_{account_number}_previous_accumulative_consumption"
+        self._attr_icon = "mdi:lightning-bolt"
+        self._attr_device_class = SensorDeviceClass.ENERGY
+        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+        self._attr_state_class = SensorStateClass.TOTAL
+
+        # Base attributes - will be updated when data is available
+        self._attributes = {
+            "account_number": account_number,
+            "is_smart_meter": True,
+        }
+
+        self._state = None
+        self._last_reset = None
+        self._meter_info_cached = None
+
+    def _get_meter_info(self) -> dict:
+        """Get meter information from coordinator data."""
+        if (
+            self.coordinator.data
+            and self._account_number in self.coordinator.data
+            and "meter" in self.coordinator.data[self._account_number]
+        ):
+            return self.coordinator.data[self._account_number]["meter"]
+        return {}
+
+    @property
+    def name(self) -> str:
+        """Return the name of the sensor."""
+        meter_info = self._get_meter_info()
+        if meter_info and meter_info.get("number"):
+            meter_number = meter_info["number"]
+            return f"Previous Accumulative Consumption Electricity ({meter_number}/{self._account_number})"
+        return f"Previous Accumulative Consumption Electricity ({self._account_number})"
+
+    @property
+    def entity_registry_enabled_default(self) -> bool:
+        """Return if the entity should be enabled when first added."""
+        # Always enable - data availability will be handled by the available property
+        return True
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the total consumption for the previous available day."""
+        if (
+            self.coordinator.data
+            and self._account_number in self.coordinator.data
+            and "electricity_smart_meter_readings"
+            in self.coordinator.data[self._account_number]
+        ):
+            readings = self.coordinator.data[self._account_number][
+                "electricity_smart_meter_readings"
+            ]
+            if readings and len(readings) > 0:
+                # Calculate total consumption for the day, converting values to float
+                total_consumption = 0.0
+                for reading in readings:
+                    value = reading.get("value", 0)
+                    try:
+                        # Convert string or numeric value to float
+                        if isinstance(value, str):
+                            total_consumption += float(value)
+                        else:
+                            total_consumption += float(value or 0)
+                    except (ValueError, TypeError):
+                        # Skip invalid values
+                        continue
+                return round(total_consumption, 3)
+        return None
+
+    @property
+    def last_reset(self) -> datetime | None:
+        """Return the time when the sensor was last reset."""
+        return self._last_reset
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return detailed attributes following Octopus Energy pattern."""
+        if (
+            self.coordinator.data
+            and self._account_number in self.coordinator.data
+            and "electricity_smart_meter_readings"
+            in self.coordinator.data[self._account_number]
+        ):
+            readings = self.coordinator.data[self._account_number][
+                "electricity_smart_meter_readings"
+            ]
+            if readings:
+                # Calculate totals and create detailed breakdown
+                total_consumption = 0.0
+                for reading in readings:
+                    value = reading.get("value", 0)
+                    try:
+                        # Convert string or numeric value to float
+                        if isinstance(value, str):
+                            total_consumption += float(value)
+                        else:
+                            total_consumption += float(value or 0)
+                    except (ValueError, TypeError):
+                        # Skip invalid values
+                        continue
+
+                # Create charges array similar to Octopus Energy
+                charges = []
+                for reading in readings:
+                    value = reading.get("value", 0)
+                    try:
+                        # Convert to float for consistency
+                        if isinstance(value, str):
+                            consumption_value = float(value)
+                        else:
+                            consumption_value = float(value or 0)
+                    except (ValueError, TypeError):
+                        consumption_value = 0.0
+
+                    charges.append(
+                        {
+                            "start": reading.get("start_time"),
+                            "end": reading.get("end_time"),
+                            "consumption": consumption_value,
+                        }
+                    )
+
+                # Get date information
+                date_info = self.coordinator.data[self._account_number].get(
+                    "electricity_smart_meter_readings_date"
+                )
+                date_label = self.coordinator.data[self._account_number].get(
+                    "electricity_smart_meter_readings_label", "previous day"
+                )
+
+                # Get meter info for attributes
+                meter_info = self._get_meter_info()
+
+                # Update base attributes with current data
+                self._attributes.update(
+                    {
+                        "meter_id": meter_info.get("id"),
+                        "meter_number": meter_info.get("number"),
+                        "meter_type": meter_info.get("type"),
+                        "total": round(
+                            total_consumption, 6
+                        ),  # More precision for total
+                        "total_readings": len(readings),
+                        "reading_date": date_info,
+                        "reading_period": date_label,
+                        "charges": charges,
+                        "data_last_retrieved": self.coordinator.data[
+                            self._account_number
+                        ].get("last_updated"),
+                    }
+                )
+
+                # Set last reset time to start of the day
+                if readings and readings[0].get("start_time"):
+                    try:
+                        first_reading_time = datetime.fromisoformat(
+                            readings[0]["start_time"].replace("Z", "+00:00")
+                        )
+                        self._last_reset = first_reading_time.replace(
+                            hour=0, minute=0, second=0, microsecond=0
+                        )
+                    except (ValueError, TypeError):
+                        pass
+
+                return self._attributes
+
+        return self._attributes
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return (
+            self.coordinator is not None
+            and self.coordinator.last_update_success
+            and isinstance(self.coordinator.data, dict)
+            and self._account_number in self.coordinator.data
+        )
+
+    async def async_added_to_hass(self) -> None:
+        """Call when entity about to be added to hass."""
+        await super().async_added_to_hass()
+
+        # Restore previous state if available
+        if (state := await self.async_get_last_state()) is not None:
+            if state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                try:
+                    self._state = float(state.state)
+                except (ValueError, TypeError):
+                    pass
+
+                # Restore attributes
+                if state.attributes:
+                    self._attributes.update(state.attributes)
+
+        _LOGGER.debug(f"Restored smart meter sensor state: {self._state}")
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
+
+
+
+class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for Octopus Germany smart charging sessions count and details."""
+
+    def __init__(self, account_number, coordinator) -> None:
+        """Initialize the smart charging sessions sensor."""
+        super().__init__(coordinator)
+
+        self._account_number = account_number
+        self._attr_name = f"Octopus {account_number} Smart Charging Sessions"
+        self._attr_unique_id = f"octopus_{account_number}_smart_charging_sessions"
+        self._attr_icon = "mdi:ev-station"
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        self._attr_has_entity_name = False
+
+    @property
+    def native_value(self) -> int:
+        """Return the count of smart charging sessions in the current month."""
+        if (
+            not self.coordinator.data
+            or not isinstance(self.coordinator.data, dict)
+            or self._account_number not in self.coordinator.data
+        ):
+            return 0
+
+        from datetime import datetime
+
+        account_data = self.coordinator.data[self._account_number]
+        charging_sessions = account_data.get("charging_sessions", [])
+
+        # Count only SMART type sessions in current month
+        current_month = datetime.now().strftime("%Y-%m")
+        smart_sessions_current_month = []
+
+        for session in charging_sessions:
+            if session.get("type") == "SMART":
+                start = session.get("start")
+                if start:
+                    try:
+                        dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
+                        if dt.strftime("%Y-%m") == current_month:
+                            smart_sessions_current_month.append(session)
+                    except:
+                        pass
+
+        return len(smart_sessions_current_month)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional state attributes."""
+        if (
+            not self.coordinator.data
+            or not isinstance(self.coordinator.data, dict)
+            or self._account_number not in self.coordinator.data
+        ):
+            return {}
+
+        from datetime import datetime
+        from collections import defaultdict
+
+        account_data = self.coordinator.data[self._account_number]
+        charging_sessions = account_data.get("charging_sessions", [])
+
+        # Filter and sort smart sessions
+        smart_sessions = [s for s in charging_sessions if s.get("type") == "SMART"]
+        boost_sessions = [s for s in charging_sessions if s.get("type") == "BOOST"]
+
+        # Sort by datetime (newest first)
+        def get_datetime(session):
+            start = session.get("start", "")
+            if start:
+                try:
+                    return datetime.fromisoformat(start.replace("Z", "+00:00"))
+                except:
+                    return datetime.min
+            return datetime.min
+
+        smart_sessions_sorted = sorted(smart_sessions, key=get_datetime, reverse=True)
+
+        # Group by month for rewards calculation
+        sessions_by_month = defaultdict(list)
+        for session in smart_sessions:
+            start = session.get("start")
+            if start:
+                try:
+                    dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
+                    month_key = dt.strftime("%Y-%m")
+                    sessions_by_month[month_key].append(session)
+                except:
+                    pass
+
+        # Calculate rewards (30€ per month if >= 5 smart charges)
+        DISPATCHES_PER_REWARD = 5
+        REWARD_PER_CYCLE = 30.0
+
+        qualified_months = [
+            month
+            for month, sessions in sessions_by_month.items()
+            if len(sessions) >= DISPATCHES_PER_REWARD
+        ]
+        total_earned = len(qualified_months) * REWARD_PER_CYCLE
+
+        # Current month progress
+        current_month = datetime.now().strftime("%Y-%m")
+        current_month_count = len(sessions_by_month.get(current_month, []))
+        current_qualified = current_month_count >= DISPATCHES_PER_REWARD
+        progress_percent = min((current_month_count / DISPATCHES_PER_REWARD) * 100, 100)
+
+        # Calculate total energy
+        total_energy = sum(
+            float(s.get("energyAdded", {}).get("value", 0) or 0) for s in smart_sessions
+        )
+
+        # Prepare session list for attributes (limit to last 20)
+        sessions_list = []
+        for session in smart_sessions_sorted[:20]:
+            energy = session.get("energyAdded", {}) or {}
+            cost = session.get("cost") or {}
+            sessions_list.append(
+                {
+                    "start": session.get("start"),
+                    "end": session.get("end"),
+                    "energy_kwh": energy.get("value", 0),
+                    "cost_eur": cost.get("amount", 0) if cost else 0,
+                    "device_name": session.get("device_name", "Unknown"),
+                    "type": session.get("type", "UNKNOWN"),
+                }
+            )
+
+        return {
+            "smart_sessions_count": len(smart_sessions),
+            "boost_sessions_count": len(boost_sessions),
+            "total_energy_kwh": round(total_energy, 2),
+            "qualified_months": len(qualified_months),
+            "qualified_month_list": sorted(qualified_months, reverse=True),
+            "total_rewards_earned_eur": total_earned,
+            "current_month": current_month,
+            "current_month_count": current_month_count,
+            "current_month_qualified": current_qualified,
+            "current_month_progress_percent": round(progress_percent, 1),
+            "sessions_until_reward": max(
+                0, DISPATCHES_PER_REWARD - current_month_count
+            ),
+            "recent_sessions": sessions_list,
+            "reward_info": f"30€ per month with ≥5 smart charges",
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return (
+            self.coordinator is not None
+            and self.coordinator.last_update_success
+            and isinstance(self.coordinator.data, dict)
+            and self._account_number in self.coordinator.data
+        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_account_device_info(self._account_number)
+
 
 # Datei bereinigt - nur normale Sensoren

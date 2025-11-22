@@ -6,7 +6,10 @@ CONF_EMAIL = "email"
 CONF_PASSWORD = "password"
 
 # Debug interval settings
-UPDATE_INTERVAL = 1  # Update interval in minutes
+UPDATE_INTERVAL = 1  # Update interval in minutes (set to 1 for faster testing)
+
+# Schema exploration (run once for debugging)
+EXPLORE_SCHEMA_ONCE = True  # Set to True to run schema exploration once
 
 # Token management
 TOKEN_REFRESH_MARGIN = (

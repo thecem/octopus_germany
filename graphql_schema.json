@@ -1,0 +1,1283 @@
+{
+  "data": {
+    "__schema": {
+      "queryType": {
+        "name": "Query",
+        "fields": [
+          {
+            "name": "estimateMeterReadings",
+            "description": "Estimated meter readings.",
+            "type": {
+              "name": "MeterReadingEstimationReadingConnection",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "isCustomerKnownToKraken",
+            "description": "Check whether a given customer is known to Kraken. The typical scenario to use this query in is to be able to tell whether an inbound cancellation market message concerns a Kraken account or not. Note: At the moment, this query only works for gas customers.\n\nThe possible errors that can be raised are:\n\n- KT-DE-4501: Invalid postcode and city format.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "Boolean",
+              "kind": "SCALAR"
+            }
+          },
+          {
+            "name": "epexDayAheadPrices",
+            "description": "Get EPEX Day Ahead electricity prices for Germany. Returns price data in 15-minute intervals for the specified time period. Prices are in EUR/MWh.",
+            "type": {
+              "name": "EpexDayAheadPriceConnectionTypeConnection",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "retentionQuote",
+            "description": "The quoted products already offered to the customer for retention.\n\nThe possible errors that can be raised are:\n\n- KT-CT-3823: Unauthorized.\n- KT-CT-4719: No supply point found for identifier provided.\n- KT-DE-4603: Required field missing from quote retention message.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "RetentionQuoteType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "electricitySuppliers",
+            "description": "Returns all the electricity suppliers directly from the getAG API.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "gasSuppliers",
+            "description": "Returns all the gas suppliers directly from the getAG API.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "defaultElectricitySuppliers",
+            "description": "Returns the default electricity suppliers and their tariffs for a given postcode from the getAG API.\n\nNote that there is usually only one default supplier for a given postcode, but there may be multiple default suppliers for some postcodes.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "activeTariffs",
+            "description": "Get products list.",
+            "type": {
+              "name": "TariffType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "agreement",
+            "description": "Get agreement by ID.",
+            "type": {
+              "name": "Agreement",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "cityByPostcode",
+            "description": "Returns the respective city of a given postcode. An invalid postcode will return an empty string.",
+            "type": {
+              "name": "String",
+              "kind": "SCALAR"
+            }
+          },
+          {
+            "name": "bankHolidays",
+            "description": "Returns all German bank holidays for a specified year that are observed in one or more states.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "electricityMeters",
+            "description": " Fetch electricity meters for a given account and MeLo. \n\n \n\nThis field is a connection type. Connections are used to implement [cursor based pagination](https://graphql.org/learn/pagination/#pagination-and-edges).\n\n \n\n \n\nThis field requires the `Authorization` header to be set. \n\n",
+            "type": {
+              "name": "ElectricityMeterConnectionTypeConnection",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "gasMeters",
+            "description": " Fetch gas meters for a given account and MeLo. \n\n \n\nThis field is a connection type. Connections are used to implement [cursor based pagination](https://graphql.org/learn/pagination/#pagination-and-edges).\n\n \n\n \n\nThis field requires the `Authorization` header to be set. \n\n",
+            "type": {
+              "name": "GasMeterConnectionTypeConnection",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "estimatedElectricityConsumption",
+            "description": "Fetch the estimated electricity consumption for a given MeLo at a given time period in kWh.\n\nThe possible errors that can be raised are:\n\n- KT-DE-4710: Estimated consumption calculation failed.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "Decimal",
+              "kind": "SCALAR"
+            }
+          },
+          {
+            "name": "estimatedGasConsumption",
+            "description": "Fetch the estimated gas consumption for a given MeLo at a given time period in kWh.",
+            "type": {
+              "name": "Decimal",
+              "kind": "SCALAR"
+            }
+          },
+          {
+            "name": "electricityMeterReadings",
+            "description": " Fetch electricity meter readings for a given account and meter. \n\n \n\nThis field is a connection type. Connections are used to implement [cursor based pagination](https://graphql.org/learn/pagination/#pagination-and-edges).\n\n \n\n \n\nThis field requires the `Authorization` header to be set. \n\n",
+            "type": {
+              "name": "ElectricityMeterReadingConnectionTypeConnection",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "gasMeterReadings",
+            "description": " Fetch gas meter readings for a given account and meter. \n\n \n\nThis field is a connection type. Connections are used to implement [cursor based pagination](https://graphql.org/learn/pagination/#pagination-and-edges).\n\n \n\n \n\nThis field requires the `Authorization` header to be set. \n\n",
+            "type": {
+              "name": "GasMeterReadingConnectionTypeConnection",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "electricityMeterReadingsByRegister",
+            "description": "Fetch electricity meter readings for a given account and meter, split up by register.\n\nThe possible errors that can be raised are:\n\n- KT-CT-6420: Unauthorized.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "ElectricityMeterForReadingType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "gasMeterReadingsByRegister",
+            "description": "Fetch gas meter readings for a given account and meter, split up by register.\n\nThe possible errors that can be raised are:\n\n- KT-CT-6421: Unauthorized.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "GasMeterForReadingType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "paymentInstructionByLedger",
+            "description": "Get the payment instruction for the account's supplementary ledger.\n\nThe possible errors that can be raised are:\n\n- KT-CT-3923: Unauthorized.\n- KT-DE-3910: Invalid data.\n- KT-DE-3911: Invalid/No payment instruction found for the given account.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "PaymentInstructionType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "bankTransferDetails",
+            "description": "Get the bank transfer details for customers to send monies.",
+            "type": {
+              "name": "BankTransferDetailsType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "quoteinputparams",
+            "description": "Returns the input parameters required to generate a quote.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "getQuoteByCode",
+            "description": "Returns the calculated quotes related to a quote request.\n\nThe possible errors that can be raised are:\n\n- KT-CT-4619: Quote with given code not found.\n- KT-CT-4627: No products are available for this quote.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "CreateQuoteOutput",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "getQuotedProductById",
+            "description": "Returns a quoted product by id.\n\nThe possible errors that can be raised are:\n\n- KT-DE-4601: No quoted product found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "QuotedProduct",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "paymentFingerprintChecks",
+            "description": "Check if a given payment fingerprint already exists and/or is risk-listed.",
+            "type": {
+              "name": "PaymentFingerPrintCheckType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "vouchersForAccount",
+            "description": "Query the voucher purchases for an account.",
+            "type": {
+              "name": "VoucherPurchaseConnectionTypeConnection",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "energyMixData",
+            "description": "The current energy generation mix.",
+            "type": {
+              "name": "EnergyMixDataType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "smartFlexOnboardingWizards",
+            "description": "A list of wizards for onboarding devices for an account and property.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "accountIoEligibility",
+            "description": "Determines whether an account is eligible to register devices with SmartFlex.",
+            "type": {
+              "name": "AccountIoEligibility",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "providerVirtualKeyDetails",
+            "description": "Virtual key details (e.g. certificate public key) for the provider (if available).",
+            "type": {
+              "name": "ProviderVirtualKeyDetailsType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "devices",
+            "description": "A list of devices registered to an account.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "eligibleDeviceTypes",
+            "description": "A list of device types that are eligible for registration.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "smartFlexDeviceSupplyPoint",
+            "description": "The supply point linked to the SmartFlex device.",
+            "type": {
+              "name": "SmartFlexDeviceSupplyPointType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "flexPlannedDispatches",
+            "description": "All planned device dispatches in time order.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "flexSupportedDevices",
+            "description": "Devices capable of being registered with SmartFlex.",
+            "type": {
+              "name": "FlexSupportedDevices",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "batteryVariants",
+            "description": "All supported batteries and their details.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "ocppDetails",
+            "description": "The user specific generated OCPP details.\n\nThe possible errors that can be raised are:\n\n- KT-CT-1111: Unauthorized.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "OCPPDetailsType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "ocppConnection",
+            "description": "To confirm whether a device is connected to OCPP.\n\nThe possible errors that can be raised are:\n\n- KT-CT-1111: Unauthorized.\n- KT-CT-4311: Unable to confirm OCPP connection.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "OCPPConnectionType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "completedDispatches",
+            "description": "All completed device dispatches 12 hours behind, in reverse time order.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "chargePointVariants",
+            "description": "All charge points variants.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "electricVehicles",
+            "description": "All electric vehicle types and their details.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "fanClubStatus",
+            "description": "Get current status, historic discounts and future projections for a Fan Club source.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "orderDetails",
+            "description": "Override Field to add additional attributes and extend description with possible_errors\n\nThe possible errors that can be raised are:\n\n- KT-CT-13101: Order not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "OrderDetailsType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "thirdPartyViewer",
+            "description": " The currently authenticated third party. \n\n \n\nThis field requires the `Authorization` header to be set. \n\n",
+            "type": {
+              "name": "ThirdPartyOrganizationType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "complaint",
+            "description": "Get a complaint.\n\nThe possible errors that can be raised are:\n\n- KT-CT-12301: Complaint not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "ComplaintType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "trigger",
+            "description": "Get the details of a published trigger with a given ID.\n\nThe possible errors that can be raised are:\n\n- KT-CT-9904: Trigger not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL"
+            }
+          },
+          {
+            "name": "call",
+            "description": "Get a call for a given ID.\n\nThe possible errors that can be raised are:\n\n- KT-CT-11802: Call not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL"
+            }
+          },
+          {
+            "name": "inboundCallAverageWaitTime",
+            "description": "Get the average wait time for an inbound call.",
+            "type": {
+              "name": "InboundCallAverageWaitTimeType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "workSchedule",
+            "description": "Get the work schedule with the given identifier.\n\nThe possible errors that can be raised are:\n\n- KT-CT-11804: Work schedule not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL"
+            }
+          },
+          {
+            "name": "voiceCampaign",
+            "description": "Get the voice campaign for a given ID.\n\nThe possible errors that can be raised are:\n\n- KT-CT-11501: Voice campaign not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL"
+            }
+          },
+          {
+            "name": "voiceCampaigns",
+            "description": "Get voice campaigns.",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL"
+            }
+          },
+          {
+            "name": "callTag",
+            "description": "Get the call tag for a given ID.\n\nThe possible errors that can be raised are:\n\n- KT-CT-11809: Call tag not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL"
+            }
+          },
+          {
+            "name": "callTags",
+            "description": "Get call tags.",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL"
+            }
+          },
+          {
+            "name": "availableProductSwitchDates",
+            "description": "Get available dates for product switch.\n\nThe possible errors that can be raised are:\n\n- KT-CT-1501: Agreement not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "krakenVersion",
+            "description": "The current version of kraken.",
+            "type": {
+              "name": "KrakenVersionType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "termsAndConditionsForProduct",
+            "description": "Get the active terms and conditions for a market supply product.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "taskResult",
+            "description": "Get the status of a background task.\n\nThe possible errors that can be raised are:\n\n- KT-CT-10401: Task not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "TaskResult",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "activeSalesChannels",
+            "description": "A list of active sales channels.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "siteworksRequests",
+            "description": "A query to get a subset of Requests.",
+            "type": {
+              "name": "CoreSiteworksRequestConnectionTypeConnection",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "getOnSiteJobsRequestById",
+            "description": "Get a specific request by ID.",
+            "type": {
+              "name": "OnSiteJobsRequestType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "getOnSiteJobsAppointmentById",
+            "description": "Get a specific appointment by Kraken ID.",
+            "type": {
+              "name": "OnSiteJobsAppointmentType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "getOnSiteJobsAppointmentByExternalReference",
+            "description": "Get appointment by external reference and agent.",
+            "type": {
+              "name": "OnSiteJobsAppointmentType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "getOnSiteJobsAppointmentSlots",
+            "description": "Get appointment slot results using appointment booking session ID.",
+            "type": {
+              "name": "OnSiteJobsAppointmentSlotResultsType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "getOnSiteJobsJobTypes",
+            "description": "Get available job types for an on-site jobs request.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "domesticSignupRewardScheme",
+            "description": "Return a signup referral reward scheme with the given code, if it's active.",
+            "type": {
+              "name": "ReferralSchemeType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "domesticJoiningRewardScheme",
+            "description": "Return a joining reward scheme with the given code, if it's active. A joining reward can be a signup reward or a promotional reward.",
+            "type": {
+              "name": "ReferralSchemeType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "domesticAccountReferralRewardScheme",
+            "description": "Return a domestic referral reward scheme for the given account referral code.",
+            "type": {
+              "name": "ReferralSchemeType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "businessAccountReferralRewardScheme",
+            "description": "Return a business referral reward scheme for the given account referral code.",
+            "type": {
+              "name": "ReferralSchemeType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "activeDomesticSignupRewardScheme",
+            "description": "Return the current active signup referral reward scheme with the given code, if any exists.",
+            "type": {
+              "name": "ReferralSchemeType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "validateReferralCode",
+            "description": "Validate referral claim code.",
+            "type": {
+              "name": "ReferralClaimCodeType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "rateLimitInfo",
+            "description": "Combined information about points-allowance rate limiting and request-specific rate limiting.",
+            "type": {
+              "name": "CombinedRateLimitInformation",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "offerForQuoting",
+            "description": "Override Field to add additional attributes and extend description with possible_errors",
+            "type": {
+              "name": "OfferType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "offerGroupForQuoting",
+            "description": "Override Field to add additional attributes and extend description with possible_errors",
+            "type": {
+              "name": "OfferGroupType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "quotingParamDefinitionsForProductOffering",
+            "description": "Override Field to add additional attributes and extend description with possible_errors\n\nThe possible errors that can be raised are:\n\n- KT-CT-12403: Product offering not found.\n- KT-CT-12404: Product offering has expired.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "QuotedOfferingParamsType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "queryComplexity",
+            "description": "Get the complexity of a query.",
+            "type": {
+              "name": "QueryComplexityOutputType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "possibleErrors",
+            "description": "Possible errors of the requested query/mutation.\n\nThe possible errors that can be raised are:\n\n- KT-CT-1606: Query/Mutation not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "PossibleErrorsOutputType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "property",
+            "description": "A property with the given ID. Usually associated with supply points.",
+            "type": {
+              "name": "PropertyType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "propertiesSearch",
+            "description": "Search for properties that are already in Kraken and match the search term.",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL"
+            }
+          },
+          {
+            "name": "offering",
+            "description": "Get details about a product offering.\n\nThe possible errors that can be raised are:\n\n- KT-CT-12001: Product catalogue offering with given identifier not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "OfferingType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "portfolio",
+            "description": "Get details about a portfolio, using its portfolio number.\n\nThe possible errors that can be raised are:\n\n- KT-CT-9403: Received an invalid portfolioId.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "PortfolioType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "portfolioByReference",
+            "description": "Get details about a portfolio, using its reference.\n\nThe possible errors that can be raised are:\n\n- KT-CT-9409: Invalid portfolio reference.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "PortfolioType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "depositAgreements",
+            "description": "Get deposit agreements for a given account.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "returnSchedule",
+            "description": "Get deposit agreement related return schedules for a given account.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "livePaymentAdequacyCalculation",
+            "description": "Get payment adequacy data with an up to date calculation.\n\nThe possible errors that can be raised are:\n\n- KT-CT-3963: Could not calculate live PA data.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "LivePaymentAdequacyCalculation",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "defaultPaymentInstruction",
+            "description": "Get the default payment instruction for the account's main ledger.",
+            "type": {
+              "name": "PaymentInstructionType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "paymentRequests",
+            "description": "Get all payment requests for the given ledger.",
+            "type": {
+              "name": "PaymentRequestsType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "bankDetailsValidation",
+            "description": "Override Field to add additional attributes and extend description with possible_errors",
+            "type": {
+              "name": "BankDetailsValidationResult",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "backendScreen",
+            "description": "Get mobile screen details to render.\n\nThe possible errors that can be raised are:\n\n- KT-CT-8001: No backend screen available.\n- KT-CT-8005: Backend screen does not support parameters.\n- KT-CT-8008: Incorrect or missing data necessary to build the screen.\n- KT-CT-8006: Error applying parameters to backend screen.\n- KT-CT-8009: Error translating screen content.\n- KT-CT-8010: Invalid step ID.\n- KT-CT-8011: Cannot rewind past a previous irreversible step.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "BackendScreenType",
+              "kind": "UNION"
+            }
+          },
+          {
+            "name": "dashboardScreen",
+            "description": "Get a dashboard screen to render in the form of a json list of sections containing cards or grouped cards each with an order attribute.\n\nThe possible errors that can be raised are:\n\n- KT-CT-3820: Received both ledger ID and number.\n- KT-CT-8001: No backend screen available.\n- KT-CT-8005: Backend screen does not support parameters.\n- KT-CT-8008: Incorrect or missing data necessary to build the screen.\n- KT-CT-8006: Error applying parameters to backend screen.\n- KT-CT-8009: Error translating screen content.\n- KT-CT-8010: Invalid step ID.\n- KT-CT-8011: Cannot rewind past a previous irreversible step.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "Dashboard",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "backendScreenIds",
+            "description": "Get all registered backend screen IDs.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "backendScreenEventIds",
+            "description": "Get all registered backend screen event IDs.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "metadata",
+            "description": "Metadata for a linked object.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "metadataForKey",
+            "description": "Metadata for a linked object with key.\n\nThe possible errors that can be raised are:\n\n- KT-CT-4123: Unauthorized.\n- KT-CT-4124: Unauthorized.\n- KT-CT-8411: Invalid data.\n- KT-CT-4179: No metadata found with given key.\n- KT-CT-4155: Invalid data.\n- KT-CT-4177: Unauthorized.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "Metadata",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "availableProducts",
+            "description": "Get available products for the given market.\n\nThe possible errors that can be raised are:\n\n- KT-CT-4930: Unsupported market.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "supplyPoints",
+            "description": "Get list of supply points.",
+            "type": {
+              "name": "SupplyPointConnectionTypeConnection",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "supplyPoint",
+            "description": "Get a supply point by its market specific id.",
+            "type": {
+              "name": "SupplyPointType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "loyaltyPointLedgers",
+            "description": "Get the Loyalty Point ledger entries for the passed user.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "loyaltyPointLedgerEntry",
+            "description": "Resolve a loyalty point ledger entry.\n\nThe possible errors that can be raised are:\n\n- KT-CT-9215: Loyalty points balance query disabled.\n- KT-CT-9223: Loyalty points ledger entry not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "LoyaltyPointLedgerEntryType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "loyaltyPointsBalance",
+            "description": "Get the loyalty points balance for an account.\n\nThe possible errors that can be raised are:\n\n- KT-CT-9218: Unauthorized.\n- KT-CT-9217: Unauthorized.\n- KT-CT-9215: Loyalty points balance query disabled.\n- KT-CT-9216: Unauthorized.\n- KT-CT-9222: Loyalty points balance query requires either accountNumber field (deprecated) or input object (preferred) with account number and optional account user id.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "AccountLoyaltyPointsType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "eligibilityToJoinLoyaltyPointsProgram",
+            "description": "Check if an account is eligible to join the loyalty points program.\n\nThe possible errors that can be raised are:\n\n- KT-CT-9202: Loyalty Points adapter not configured.\n- KT-CT-9218: Unauthorized.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "LoyaltyPointsProgramEligibilityType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "loyaltyCards",
+            "description": "Get all loyalty cards for the given account user.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "joinSupplierProcess",
+            "description": "Override Field to add additional attributes and extend description with possible_errors\n\nThe possible errors that can be raised are:\n\n- KT-CT-10332: Join supplier process not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "JoinSupplierProcessType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "leaveSupplierProcess",
+            "description": "Details associated with a LeaveSupplier process.\n\nThe possible errors that can be raised are:\n\n- KT-CT-10302: Invalid data.\n- KT-CT-10333: Missing either number of leave supplier process id.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "LeaveSupplierProcessType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "lifecycleProcesses",
+            "description": "Get all lifecycle processes associated with an account.\n\nThe possible errors that can be raised are:\n\n- KT-CT-4123: Unauthorized.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "LifecycleProcessesType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "inkConversation",
+            "description": "Get the Ink conversation for a given account.\n\nThe possible errors that can be raised are:\n\n- KT-CT-7612: The Ink conversation was not found.\n- KT-CT-4177: Unauthorized.\n- KT-CT-7610: No Ink conversation for account.\n- KT-CT-7617: Must supply account number or relay id to get a conversation.\n- KT-CT-7638: Invalid conversation ID.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL"
+            }
+          },
+          {
+            "name": "inkMessage",
+            "description": "Get the content for a given message.\n\nThe possible errors that can be raised are:\n\n- KT-CT-7611: The message was not found.\n- KT-CT-7638: Invalid conversation ID.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL"
+            }
+          },
+          {
+            "name": "inkMessageAttributes",
+            "description": "Get attributes of a message at time of query.\n\nThe possible errors that can be raised are:\n\n- KT-CT-7611: The message was not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL"
+            }
+          },
+          {
+            "name": "inkMessageTextContent",
+            "description": "Fetch the text content of a given message.\n\nThe possible errors that can be raised are:\n\n- KT-CT-7611: The message was not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL"
+            }
+          },
+          {
+            "name": "inkCommsTemplate",
+            "description": "Fetch the content of a given comms template name.\n\nThe possible errors that can be raised are:\n\n- KT-CT-7648: The comms template was not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL"
+            }
+          },
+          {
+            "name": "opportunityValueByKey",
+            "description": "Override Field to add additional attributes and extend description with possible_errors\n\nThe possible errors that can be raised are:\n\n- KT-CT-8903: Unable to update opportunity.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "String",
+              "kind": "SCALAR"
+            }
+          },
+          {
+            "name": "leadBlocklistValidations",
+            "description": "Override Field to add additional attributes and extend description with possible_errors",
+            "type": {
+              "name": "LeadBlockListValidationOutput",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "opportunityByNumber",
+            "description": "Override Field to add additional attributes and extend description with possible_errors\n\nThe possible errors that can be raised are:\n\n- KT-CT-8906: Opportunity not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "OpportunityOutput",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "leadByNumber",
+            "description": "Override Field to add additional attributes and extend description with possible_errors\n\nThe possible errors that can be raised are:\n\n- KT-CT-8907: Lead not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "LeadOutput",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "opportunityProductSummary",
+            "description": "Override Field to add additional attributes and extend description with possible_errors\n\nThe possible errors that can be raised are:\n\n- KT-CT-8906: Opportunity not found.\n- KT-CT-8923: The opportunity does not have a linked offer group.\n- KT-CT-8922: The opportunity does not have an accepted offer.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "OpportunityProductSummary",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "searchLead",
+            "description": "Override Field to add additional attributes and extend description with possible_errors\n\nThe possible errors that can be raised are:\n\n- KT-CT-8920: Search filters are invalid.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "LeadIdType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "goodsQuotes",
+            "description": "List quotes given an account number or retrieve a Goods quote given a quote code.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "goodsProducts",
+            "description": "List Goods products given a market.",
+            "type": {
+              "name": "GoodsProductConnectionTypeConnection",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "goodsPurchases",
+            "description": "List purchases for an account.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "verificationStatus",
+            "description": "Check the verification status of a given email address.",
+            "type": {
+              "name": "EmailVerificationStatus",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "fraudRiskLevel",
+            "description": "Check if a given ID and type have a financial risk level.",
+            "type": {
+              "name": "FinancialRiskLevelType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "fraudMeterPointChecks",
+            "description": "Check if a given meter point ID is in suspicious meter point IDs list.",
+            "type": {
+              "name": "FraudMeterPointCheckType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "embeddedNetwork",
+            "description": "Get details about an embedded network.",
+            "type": {
+              "name": "EmbeddedNetworkType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "collectionProcessDetails",
+            "description": "Collection process record details.\n\nThe possible errors that can be raised are:\n\n- KT-CT-1111: Unauthorized.\n- KT-CT-11201: No Collection Process Records associated with id.\n- KT-CT-11206: Unable to retrieve disconnection related data for collection process.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "CollectionProcessDetailsType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "question",
+            "description": "Get the customer feedback survey question.\n\nThe possible errors that can be raised are:\n\n- KT-CT-5513: Invalid data.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "String",
+              "kind": "SCALAR"
+            }
+          },
+          {
+            "name": "defaultRawScore",
+            "description": "Get default raw score for a customer feedback form.\n\nThe possible errors that can be raised are:\n\n- KT-CT-5513: Invalid data.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "Int",
+              "kind": "SCALAR"
+            }
+          },
+          {
+            "name": "customerFeedbackForms",
+            "description": "Returns all active customer feedback forms for the account's brand.",
+            "type": {
+              "name": "CustomerFeedbackFormConnectionTypeConnection",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "isCustomerEligibleToGiveFeedbackFollowingCall",
+            "description": "Check if customer is eligible to give feedback following a phone call.\n\nThe possible errors that can be raised are:\n\n- KT-CT-5519: Voice call not found.\n- KT-CT-5521: Eligibility configuration not found.\n- KT-CT-5522: Invalid eligibility configuration.\n- KT-CT-5523: Invalid account or account user.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "Boolean",
+              "kind": "SCALAR"
+            }
+          },
+          {
+            "name": "isCustomerEligibleToGiveFeedbackFollowingEmail",
+            "description": "Check if customer is eligible to give feedback following an email conversation.\n\nThe possible errors that can be raised are:\n\n- KT-CT-5520: Ink conversation not found.\n- KT-CT-5521: Eligibility configuration not found.\n- KT-CT-5522: Invalid eligibility configuration.\n- KT-CT-5523: Invalid account or account user.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "Boolean",
+              "kind": "SCALAR"
+            }
+          },
+          {
+            "name": "contributionSchemes",
+            "description": "Get contribution schemes.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "contractCreationJourney",
+            "description": "Get details about a contract creation journey.\n\nThe possible errors that can be raised are:\n\n- KT-CT-10017: The contract journey could not be found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "ContractCreationJourneyType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "accountContract",
+            "description": "Get details about an account contract.\n\nThe possible errors that can be raised are:\n\n- KT-CT-10003: Contract not found.\n- KT-CT-10005: Missing required parameter: either identifier or accountNumber must be provided.\n- KT-CT-10006: Account not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "Contract",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "businessContract",
+            "description": "Get details about an account contract.\n\nThe possible errors that can be raised are:\n\n- KT-CT-10003: Contract not found.\n- KT-CT-10005: Missing required parameter: either identifier or accountNumber must be provided.\n- KT-CT-10006: Account not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "Contract",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "consentTypes",
+            "description": "A list of the consent types available.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "printBatch",
+            "description": "Get print batch details, including messages in the batch.\n\nThe possible errors that can be raised are:\n\n- KT-CT-9013: Invalid data.\n- KT-CT-9012: Invalid data.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL"
+            }
+          },
+          {
+            "name": "business",
+            "description": "Get details about a business.\n\nThe possible errors that can be raised are:\n\n- KT-CT-11101: The viewer is not authorized to execute the query/mutation. Check the ownership/permissions of provided data.\n- KT-CT-11107: Unauthorized.\n- KT-CT-1605: Invalid input.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "BusinessType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "isPasswordResetTokenValid",
+            "description": "Check validity of a password reset token.",
+            "type": {
+              "name": "Boolean",
+              "kind": "SCALAR"
+            }
+          },
+          {
+            "name": "passwordValidatorHelpTexts",
+            "description": "The help text of all configured password validators as plain-text or html. Defaults to plain-text.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "mfaDevices",
+            "description": "Get all MFA devices for the current user.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "authorizedApplications",
+            "description": "Get all the confidential-client applications the current user has authorized.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "apiBrownouts",
+            "description": "Get brownouts by status.",
+            "type": {
+              "name": "APIBrownoutConnection",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "apiExceptions",
+            "description": "Get a connection containing API Exceptions.",
+            "type": {
+              "name": "APIExceptionConnectionTypeConnection",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "affiliateLink",
+            "description": "Link object for an affiliate organization.\n\nThe possible errors that can be raised are:\n\n- KT-CT-7713: Invalid data.\n- KT-CT-7718: Affiliate link is expired.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL"
+            }
+          },
+          {
+            "name": "affiliateLinks",
+            "description": "Links (urls) for the affiliate organizations.",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL"
+            }
+          },
+          {
+            "name": "affiliateOrganisation",
+            "description": "Return the details of a given affiliate organization, if any exists.\n\nThe possible errors that can be raised are:\n\n- KT-CT-7701: The affiliate organisation was not found.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "AffiliateOrganisationType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "activeAffiliateReferralScheme",
+            "description": "Return the current active referral reward scheme of a given affiliate organisation, if any exists.",
+            "type": {
+              "name": "ReferralSchemeType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "appSessions",
+            "description": "App sessions recorded at the specified address.",
+            "type": {
+              "name": null,
+              "kind": "NON_NULL"
+            }
+          },
+          {
+            "name": "viewer",
+            "description": " The currently authenticated user. \n\n \n\nThis field requires the `Authorization` header to be set. \n\n",
+            "type": {
+              "name": "AccountUserType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "accountReference",
+            "description": "List of matching account references.\n\nThe possible errors that can be raised are:\n\n- KT-CT-8310: Invalid data.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "accountCreditReasons",
+            "description": "Available reasons for use in account credit mutations.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "accountChargeReasons",
+            "description": "Available reasons for use in account charge mutations.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "campaigns",
+            "description": "The campaigns associated with this account.",
+            "type": {
+              "name": "AccountCampaignConnectionTypeConnection",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "account",
+            "description": "Get details about an account.\n\nThe possible errors that can be raised are:\n\n- KT-CT-4177: Unauthorized.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "AccountType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "accounts",
+            "description": "Get details about multiple accounts.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "accountsSearch",
+            "description": "Search for account that are already in Kraken and match the search terms.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "node",
+            "description": "Represents an individual object/resource in the API.",
+            "type": {
+              "name": "Node",
+              "kind": "INTERFACE"
+            }
+          },
+          {
+            "name": "termsandconditions",
+            "description": "Returns the terms and conditions based on the code and version. If a brand code is provided without version numbers, the latest terms and conditions are returned.",
+            "type": {
+              "name": "OEDETermsAndConditionsType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "termsandconditionsforproduct",
+            "description": "Returns a list of the active terms and conditions for a product.",
+            "type": {
+              "name": null,
+              "kind": "LIST"
+            }
+          },
+          {
+            "name": "personalWinterWorkout",
+            "description": "Statistics about an account's weekly and total gas savings during the Winter Workout.\n\nThe possible errors that can be raised are:\n\n- KT-CT-3823: Unauthorized.\n- KT-CT-3956: Temporary error occurred.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "WinterWorkoutType",
+              "kind": "OBJECT"
+            }
+          },
+          {
+            "name": "collectiveWinterWorkout",
+            "description": "Statistics about the combined weekly and total gas savings of all Winter Workout participants.\n\nNote that the `targetSavingsRatio` will always be zero for these combined values.\n\nThe possible errors that can be raised are:\n\n- KT-CT-3956: Temporary error occurred.\n- KT-CT-1113: Disabled GraphQL field requested.\n",
+            "type": {
+              "name": "WinterWorkoutType",
+              "kind": "OBJECT"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
