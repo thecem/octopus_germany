@@ -25,6 +25,9 @@ This custom component integrates Octopus Germany services with Home Assistant, p
 - **Device Control**: Smart charging control for electric vehicles and charge points
 - **Boost Charging**: Instant charge boost functionality (requires smart charging enabled)
 - **Intelligent Dispatching**: Real-time status of Octopus Intelligent charge scheduling
+- **Smart Charging Sessions**: Track smart charges for Octopus rewards (30€/month with ≥5 charges)
+- **Smart Meter Readings**: Previous day accumulative consumption with hourly breakdown
+- **Service Device Grouping**: All entities organized under single service device per account
 - **Multi-Account**: Support for multiple Octopus accounts under one integration
 - **Gas infrastructure monitoring** (MALO/MELO numbers, meters, readings)
 - **Latest Electricity meter reading**
@@ -209,6 +212,59 @@ The integration is configured via the Home Assistant UI:
   - `account_number`: Your Octopus Energy account number
   - `last_updated`: Timestamp of the last update
 
+#### Smart Charging Sessions Sensor
+
+- **Entity ID**: `sensor.octopus_<account_number>_smart_charging_sessions`
+- **Description**: Tracks smart charging sessions for Octopus SmartFlex rewards program (30€/month with ≥5 smart charges per calendar month)
+- **State**: Number of SMART charging sessions in current month
+- **Attributes**:
+  - `smart_sessions_count`: Total number of smart charging sessions
+  - `boost_sessions_count`: Total number of boost charging sessions
+  - `total_energy_kwh`: Total energy charged across all sessions
+  - `qualified_months`: Number of months with ≥5 smart charges (eligible for rewards)
+  - `qualified_month_list`: List of qualified months (e.g., ["2025-11", "2025-10"])
+  - `total_rewards_earned_eur`: Total rewards earned (30€ per qualified month)
+  - `current_month`: Current month in YYYY-MM format
+  - `current_month_count`: Number of smart charges in current month
+  - `current_month_qualified`: Whether current month is qualified for reward (true/false)
+  - `current_month_progress_percent`: Progress toward 5 charges requirement (0-100%)
+  - `sessions_until_reward`: Number of charges needed to qualify for current month's reward
+  - `recent_sessions`: List of recent charging sessions with details (start, end, energy, cost)
+  - `reward_info`: Information about the reward program
+  - `account_number`: Your Octopus Energy account number
+
+#### Smart Meter Readings Sensor
+
+- **Entity ID**: `sensor.octopus_<account_number>_previous_accumulative_consumption_electricity`
+- **Description**: Shows previous day's total electricity consumption from smart meter with hourly breakdown
+- **State**: Total consumption in kWh for the most recent available day (typically 2-3 days ago)
+- **Unit**: kWh
+- **Note**: Smart meter data has a delay of 2-3 days. The sensor shows the most recent available data.
+- **Attributes**:
+  - `meter_id`: Smart meter identifier
+  - `meter_number`: Smart meter number
+  - `meter_type`: Type of meter (e.g., "iMSys", "MME")
+  - `total`: Total consumption for the day (6 decimal places precision)
+  - `total_readings`: Number of hourly readings (typically 24)
+  - `reading_date`: Date of the readings (YYYY-MM-DD format)
+  - `reading_period`: Description of the period (e.g., "yesterday", "2_days_ago")
+  - `charges`: Array of hourly readings with start/end times and consumption values
+  - `data_last_retrieved`: Timestamp when data was last fetched from API
+  - `account_number`: Your Octopus Energy account number
+  - `is_smart_meter`: Always true for this sensor
+
+#### Intelligent Dispatching Binary Sensor
+
+- **Entity ID**: `binary_sensor.octopus_<account_number>_intelligent_dispatching`
+- **Description**: Shows whether intelligent dispatching (smart charging) is currently active
+- **State**: `on` when a dispatch is active, `off` otherwise
+- **Attributes**:
+  - `planned_dispatches`: List of upcoming charging sessions
+  - `completed_dispatches`: List of past charging sessions
+  - `devices`: List of connected devices
+  - `current_state`: Current state of your smart charging device
+  - `last_updated`: Timestamp of the last update
+
 ### Switches
 
 #### Smart Charging Control
@@ -270,6 +326,62 @@ data:
 ```
 
 **Note**: The old `set_vehicle_charge_preferences` service has been removed. Use `set_device_preferences` instead with specific device IDs.
+
+### get_smart_meter_readings
+- **Service ID**: `octopus_germany.get_smart_meter_readings`
+- **Description**: Fetch historical smart meter readings for a specific date. Data is typically available 2-3 days after the consumption date.
+- **Parameters**:
+  - `account_number` (required): Your Octopus Energy account number (format: A-xxxxxxxx)
+  - `date` (required): Date for readings in YYYY-MM-DD format (data available 2+ days ago)
+  - `property_id` (optional): Property ID (will use first property if not specified)
+
+**Example:**
+```yaml
+service: octopus_germany.get_smart_meter_readings
+data:
+  account_number: "A-66DF80AE"
+  date: "2025-10-08"
+  # property_id: "249906"  # Optional
+```
+
+**Result Event:**
+The service fires an event `octopus_germany_smart_meter_readings_result` with the following data:
+```yaml
+event_type: octopus_germany_smart_meter_readings_result
+data:
+  success: true
+  account_number: "A-66DF80AE"
+  property_id: "249906"
+  date: "2025-10-08"
+  total_readings: 24
+  total_consumption: 15.234
+  readings:
+    - start_time: "2025-10-08T00:00:00Z"
+      end_time: "2025-10-08T01:00:00Z"
+      value: 0.567
+      unit: "kWh"
+    # ... 23 more hourly readings
+```
+
+**Automation Example:**
+```yaml
+automation:
+  - alias: "Log Smart Meter Readings"
+    trigger:
+      - platform: event
+        event_type: octopus_germany_smart_meter_readings_result
+    condition:
+      - condition: template
+        value_template: "{{ trigger.event.data.success }}"
+    action:
+      - service: notify.mobile_app
+        data:
+          message: >
+            Smart meter data for {{ trigger.event.data.date }}:
+            Total consumption: {{ trigger.event.data.total_consumption }} kWh
+            ({{ trigger.event.data.total_readings }} readings)
+```
+
 ## Automation
 
 [Octopus Intelligent Go mit EVCC](https://github.com/ha-puzzles/homeassistant-puzzlepieces/blob/main/use-cases/stromtarife/octopus-intelligent-go/README.md)
