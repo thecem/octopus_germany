@@ -228,6 +228,54 @@ query ComprehensiveDataQuery($accountNumber: String!) {
         model
         batterySize
       }
+      chargingSessions(first: 100) {
+        edges {
+          node {
+            start
+            end
+            energyAdded {
+              value
+              unit
+            }
+            cost {
+              amount
+              currency
+            }
+            ... on SmartFlexChargingSession {
+              type
+            }
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+    ... on SmartFlexChargePoint {
+      chargingSessions(first: 100) {
+        edges {
+          node {
+            start
+            end
+            energyAdded {
+              value
+              unit
+            }
+            cost {
+              amount
+              currency
+            }
+            ... on SmartFlexChargingSession {
+              type
+            }
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
     }
   }
 }
@@ -1062,6 +1110,33 @@ class OctopusGermany:
                         data["devices"] if data["devices"] is not None else []
                     )
 
+                    # Extract charging sessions from devices (now included in COMPREHENSIVE_QUERY)
+                    charging_sessions = []
+                    for device in result["devices"]:
+                        device_id = device.get("id")
+                        device_name = device.get("name", "Unknown Device")
+                        device_type = device.get("deviceType", "UNKNOWN")
+
+                        sessions = device.get("chargingSessions", {})
+                        if sessions:
+                            edges = sessions.get("edges", [])
+                            for edge in edges:
+                                session = edge.get("node", {})
+                                if session:
+                                    # Add device context to session
+                                    session["device_id"] = device_id
+                                    session["device_name"] = device_name
+                                    session["device_type"] = device_type
+                                    charging_sessions.append(session)
+
+                    # Store charging sessions in result
+                    result["charging_sessions"] = charging_sessions
+                    if charging_sessions:
+                        _LOGGER.debug(
+                            "Extracted %d charging sessions from devices",
+                            len(charging_sessions),
+                        )
+
                 if "completedDispatches" in data:
                     result["completedDispatches"] = (
                         data["completedDispatches"]
@@ -1359,9 +1434,17 @@ class OctopusGermany:
             return None
 
     async def fetch_charging_sessions(self, account_number: str):
-        """Fetch charging sessions for smart charging rewards tracking."""
+        """Fetch charging sessions for smart charging rewards tracking.
+
+        Returns:
+            list: List of charging sessions, or empty list if no sessions/devices
+            None: Only on actual API errors (token issues, network problems, etc.)
+        """
         if not await self.ensure_token():
-            _LOGGER.error("Failed to ensure valid token for fetch_charging_sessions")
+            _LOGGER.warning(
+                "Failed to ensure valid token for fetch_charging_sessions (account: %s)",
+                account_number,
+            )
             return None
 
         client = self._get_graphql_client()
@@ -1407,17 +1490,23 @@ class OctopusGermany:
                         # Retry with new token
                         return await self.fetch_charging_sessions(account_number)
 
-                _LOGGER.debug(
-                    "API returned errors for charging sessions (may not have devices): %s",
+                _LOGGER.info(
+                    "No charging sessions available for account %s (may not have SmartFlex devices): %s",
+                    account_number,
                     response.get("errors"),
                 )
-                return []
+                return []  # Empty list is valid - means no devices/sessions
             else:
                 return []
 
         except Exception as e:
-            _LOGGER.error("Error fetching charging sessions: %s", e)
-            return None
+            _LOGGER.error(
+                "Error fetching charging sessions for account %s: %s",
+                account_number,
+                e,
+                exc_info=True,
+            )
+            return None  # None signals error - caller should use cached data
 
     async def change_device_suspension(self, device_id: str, action: str):
         """Change device suspension state."""
