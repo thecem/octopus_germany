@@ -269,17 +269,15 @@ async def async_setup_entry(
                             OctopusDeviceStatusSensor(acc_num, coordinator, device_id)
                         )
 
-            # Create smart charging sessions sensor if charging sessions exist
+            # Create smart charging sessions sensor (always, even if no sessions exist yet)
+            # This ensures the sensor is available when sessions start appearing
             charging_sessions = account_data.get("charging_sessions", [])
-            if charging_sessions:
-                _LOGGER.debug(
-                    "Creating smart charging sessions sensor for account %s with %d sessions",
-                    acc_num,
-                    len(charging_sessions),
-                )
-                entities.append(
-                    OctopusSmartChargingSessionsSensor(acc_num, coordinator)
-                )
+            _LOGGER.debug(
+                "Creating smart charging sessions sensor for account %s with %d sessions",
+                acc_num,
+                len(charging_sessions),
+            )
+            entities.append(OctopusSmartChargingSessionsSensor(acc_num, coordinator))
 
             # Create heat balance sensor if heat ledger exists and has non-zero balance
             if (
@@ -1228,11 +1226,11 @@ class OctopusGasMaloSensor(CoordinatorEntity, SensorEntity):
             and self.coordinator.data[self._account_number].get("gas_malo_number")
             is not None
         )
+
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return get_account_device_info(self._account_number)
-
 
 
 class OctopusGasMeloSensor(CoordinatorEntity, SensorEntity):
@@ -1272,11 +1270,11 @@ class OctopusGasMeloSensor(CoordinatorEntity, SensorEntity):
             and self.coordinator.data[self._account_number].get("gas_melo_number")
             is not None
         )
+
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return get_account_device_info(self._account_number)
-
 
 
 class OctopusGasMeterSensor(CoordinatorEntity, SensorEntity):
@@ -1369,11 +1367,11 @@ class OctopusGasMeterSensor(CoordinatorEntity, SensorEntity):
             and self._account_number in self.coordinator.data
             and self.coordinator.data[self._account_number].get("gas_meter") is not None
         )
+
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return get_account_device_info(self._account_number)
-
 
 
 class OctopusGasLatestReadingSensor(CoordinatorEntity, SensorEntity):
@@ -1504,11 +1502,11 @@ class OctopusGasLatestReadingSensor(CoordinatorEntity, SensorEntity):
             and self.coordinator.data[self._account_number].get("gas_latest_reading")
             is not None
         )
+
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return get_account_device_info(self._account_number)
-
 
 
 class OctopusElectricityLatestReadingSensor(CoordinatorEntity, SensorEntity):
@@ -1647,11 +1645,11 @@ class OctopusElectricityLatestReadingSensor(CoordinatorEntity, SensorEntity):
             )
             is not None
         )
+
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return get_account_device_info(self._account_number)
-
 
 
 class OctopusGasPriceSensor(CoordinatorEntity, SensorEntity):
@@ -1692,11 +1690,11 @@ class OctopusGasPriceSensor(CoordinatorEntity, SensorEntity):
             and self._account_number in self.coordinator.data
             and self.coordinator.data[self._account_number].get("gas_price") is not None
         )
+
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return get_account_device_info(self._account_number)
-
 
 
 class OctopusGasSmartReadingSensor(CoordinatorEntity, SensorEntity):
@@ -1745,11 +1743,11 @@ class OctopusGasSmartReadingSensor(CoordinatorEntity, SensorEntity):
             )
             is not None
         )
+
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return get_account_device_info(self._account_number)
-
 
 
 class OctopusGasContractStartSensor(CoordinatorEntity, SensorEntity):
@@ -1804,11 +1802,11 @@ class OctopusGasContractStartSensor(CoordinatorEntity, SensorEntity):
             and self.coordinator.data[self._account_number].get("gas_contract_start")
             is not None
         )
+
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return get_account_device_info(self._account_number)
-
 
 
 class OctopusGasContractEndSensor(CoordinatorEntity, SensorEntity):
@@ -1863,11 +1861,11 @@ class OctopusGasContractEndSensor(CoordinatorEntity, SensorEntity):
             and self.coordinator.data[self._account_number].get("gas_contract_end")
             is not None
         )
+
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return get_account_device_info(self._account_number)
-
 
 
 class OctopusGasContractExpiryDaysSensor(CoordinatorEntity, SensorEntity):
@@ -1910,11 +1908,11 @@ class OctopusGasContractExpiryDaysSensor(CoordinatorEntity, SensorEntity):
             )
             is not None
         )
+
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return get_account_device_info(self._account_number)
-
 
 
 class OctopusDeviceStatusSensor(CoordinatorEntity, SensorEntity):
@@ -2029,11 +2027,11 @@ class OctopusDeviceStatusSensor(CoordinatorEntity, SensorEntity):
             and self._account_number in self.coordinator.data
             and self._get_device_data() is not None
         )
+
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return get_account_device_info(self._account_number)
-
 
 
 class OctopusElectricitySmartMeterReadingsSensor(
@@ -2246,11 +2244,11 @@ class OctopusElectricitySmartMeterReadingsSensor(
                     self._attributes.update(state.attributes)
 
         _LOGGER.debug(f"Restored smart meter sensor state: {self._state}")
+
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return get_account_device_info(self._account_number)
-
 
 
 class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
