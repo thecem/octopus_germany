@@ -435,25 +435,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         result_data[account_number]["next_start"] = next_start
         result_data[account_number]["next_end"] = next_end
 
-        # Fetch charging sessions for smart charging rewards tracking
-        try:
-            charging_sessions = await api.fetch_charging_sessions(account_number)
-            if charging_sessions:
-                _LOGGER.debug(
-                    "Found %d charging sessions for account %s",
-                    len(charging_sessions),
-                    account_number,
-                )
-                result_data[account_number]["charging_sessions"] = charging_sessions
-            else:
-                result_data[account_number]["charging_sessions"] = []
-        except Exception as e:
+        # Extract charging sessions from comprehensive query data
+        # Sessions are now included in the devices query, no separate API call needed!
+        charging_sessions = data.get("charging_sessions", [])
+        if charging_sessions:
             _LOGGER.debug(
-                "No charging sessions available for account %s (may not have SmartFlex devices): %s",
+                "Found %d charging sessions for account %s from comprehensive query",
+                len(charging_sessions),
                 account_number,
-                e,
             )
-            result_data[account_number]["charging_sessions"] = []
+        result_data[account_number]["charging_sessions"] = charging_sessions
 
         # Extract products - ensure we always have product data
         products = []
