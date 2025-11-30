@@ -2600,3 +2600,29 @@ class OctopusGermany:
         # Test alternative query 1: Direct meter readings (corrected)
         corrected_query_1 = """
         query getMeterReadingsCorrected($accountNumber: String!, $propertyId: ID!) {
+          account(accountNumber: $accountNumber) {
+            property(id: $propertyId) {
+              electricityMalos {
+                meter {
+                  id
+                  number
+                  meterType
+                  shouldReceiveSmartMeterData
+                }
+              }
+            }
+          }
+        }
+        """
+
+        try:
+            _LOGGER.info("Testing corrected meter structure query...")
+            response_corrected = await client.execute_async(
+                query=corrected_query_1, variables=variables
+            )
+            _LOGGER.info(
+                "Corrected meter structure response: %s",
+                json.dumps(response_corrected, indent=2),
+            )
+        except Exception as e:
+            _LOGGER.error("Corrected meter structure query failed: %s", e)
