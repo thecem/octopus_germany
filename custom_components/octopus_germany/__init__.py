@@ -392,8 +392,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # Handle dispatch data if it exists
         planned_dispatches = data.get("plannedDispatches", [])
-        if planned_dispatches is None:  # Handle explicit None value (from API error)
-            planned_dispatches = []
+        if planned_dispatches is None:  # API error - keep previous cached data
+            # Preserve existing planned_dispatches from previous successful fetch
+            if (
+                account_number in self.data
+                and "planned_dispatches" in self.data[account_number]
+            ):
+                planned_dispatches = self.data[account_number]["planned_dispatches"]
+                _LOGGER.debug(
+                    "API error fetching planned dispatches for %s, using cached data (%d dispatches)",
+                    account_number,
+                    len(planned_dispatches),
+                )
+            else:
+                planned_dispatches = []  # No previous data available
         result_data[account_number]["planned_dispatches"] = planned_dispatches
 
         completed_dispatches = data.get("completedDispatches", [])
