@@ -391,9 +391,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
         # Handle dispatch data if it exists
-        planned_dispatches = data.get("plannedDispatches", [])
-        if planned_dispatches is None:  # API error - keep previous cached data
-            # Preserve existing planned_dispatches from previous successful fetch
+        # Check if key exists at all - if not, API had error and we should cache
+        if "plannedDispatches" not in data:
+            # API error - plannedDispatches was removed from result, use cached data
             if (
                 account_number in self.data
                 and "planned_dispatches" in self.data[account_number]
@@ -406,6 +406,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
             else:
                 planned_dispatches = []  # No previous data available
+        else:
+            planned_dispatches = data.get("plannedDispatches")
+            if planned_dispatches is None:  # Explicit None from API
+                planned_dispatches = []
         result_data[account_number]["planned_dispatches"] = planned_dispatches
 
         completed_dispatches = data.get("completedDispatches", [])
