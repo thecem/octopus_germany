@@ -271,11 +271,17 @@ async def async_setup_entry(
 
             # Create smart charging sessions sensor (always, even if no sessions exist yet)
             # This ensures the sensor is available when sessions start appearing
-            charging_sessions = account_data.get("charging_sessions", [])
+            charging_sessions = account_data.get("charging_sessions")
+            # Handle None (API error) vs [] (no sessions) vs [sessions]
+            session_count = (
+                "unknown (API error)"
+                if charging_sessions is None
+                else len(charging_sessions)
+            )
             _LOGGER.debug(
-                "Creating smart charging sessions sensor for account %s with %d sessions",
+                "Creating smart charging sessions sensor for account %s with %s sessions",
                 acc_num,
-                len(charging_sessions),
+                session_count,
             )
             entities.append(OctopusSmartChargingSessionsSensor(acc_num, coordinator))
 
