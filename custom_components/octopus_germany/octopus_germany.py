@@ -1185,6 +1185,7 @@ class OctopusGermany:
 
                 # Fetch flex planned dispatches for all devices with the new API
                 result["plannedDispatches"] = []
+                has_dispatch_fetch_error = False
                 if result["devices"]:
                     _LOGGER.debug(
                         "Fetching flex planned dispatches for %d devices",
@@ -1198,6 +1199,14 @@ class OctopusGermany:
                                 flex_dispatches = (
                                     await self.fetch_flex_planned_dispatches(device_id)
                                 )
+                                # If None returned, it means API error - keep old data
+                                if flex_dispatches is None:
+                                    has_dispatch_fetch_error = True
+                                    _LOGGER.debug(
+                                        "Skipping device %s due to API error (will use cached data)",
+                                        device_id,
+                                    )
+                                    continue
                                 if flex_dispatches:
                                     # Transform the new API format to match the old format for backward compatibility
                                     for dispatch in flex_dispatches:
@@ -1241,6 +1250,19 @@ class OctopusGermany:
                     _LOGGER.debug(
                         "No devices found, skipping flex planned dispatches fetch"
                     )
+
+                # If we had errors fetching dispatches, preserve old data by setting to None
+                if has_dispatch_fetch_error:
+                    _LOGGER.debug(
+                        "Planned dispatches fetch had errors, will preserve cached data"
+                    )
+                    # Don't update result["plannedDispatches"] - let coordinator keep old data
+                    # by removing it from result so coordinator knows to use cached value
+                    if (
+                        "plannedDispatches" in result
+                        and not result["plannedDispatches"]
+                    ):
+                        result.pop("plannedDispatches")
 
                 # Only log errors but don't fail the whole request if we got at least account data
                 if "errors" in response and result["account"]:
@@ -1866,11 +1888,11 @@ class OctopusGermany:
                     error_code == "KT-CT-4340"
                 ):  # Temporary API error - unable to fetch
                     _LOGGER.debug(
-                        "Temporary API error fetching dispatches for device %s: %s (will retry next update)",
+                        "Temporary API error fetching dispatches for device %s: %s (will use cached data)",
                         device_id,
                         error_message,
                     )
-                    return []  # Return empty list to keep old data in coordinator
+                    return None  # Return None to signal error - coordinator will keep old data
                 else:
                     _LOGGER.error(
                         "GraphQL errors in flex planned dispatches response: %s",
