@@ -1819,6 +1819,15 @@ class OctopusGermany:
                         error_message,
                     )
                     return []
+                elif (
+                    error_code == "KT-CT-4340"
+                ):  # Temporary API error - unable to fetch
+                    _LOGGER.debug(
+                        "Temporary API error fetching dispatches for device %s: %s (will retry next update)",
+                        device_id,
+                        error_message,
+                    )
+                    return []  # Return empty list to keep old data in coordinator
                 else:
                     _LOGGER.error(
                         "GraphQL errors in flex planned dispatches response: %s",
@@ -2168,8 +2177,9 @@ class OctopusGermany:
                     )
                     return readings
                 else:
-                    _LOGGER.warning(
-                        "No smart meter readings found for property %s on %s",
+                    _LOGGER.debug(
+                        "No smart meter readings for property %s on %s "
+                        "(data may not be available yet)",
                         property_id,
                         date,
                     )
