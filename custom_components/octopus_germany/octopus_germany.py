@@ -1110,36 +1110,61 @@ class OctopusGermany:
                         data["devices"] if data["devices"] is not None else []
                     )
 
-                    # Extract charging sessions from devices (now included in COMPREHENSIVE_QUERY)
-                    charging_sessions = []
-                    for device in result["devices"]:
-                        device_id = device.get("id")
-                        device_name = device.get("name", "Unknown Device")
-                        device_type = device.get("deviceType", "UNKNOWN")
+                    # Check if there are errors specifically for chargingSessions
+                    # If so, set to None to preserve cached sensor values
+                    has_charging_sessions_error = False
+                    if "errors" in response:
+                        for error in response["errors"]:
+                            error_path = error.get("path", [])
+                            # Check if error is in chargingSessions path
+                            if "chargingSessions" in error_path:
+                                has_charging_sessions_error = True
+                                error_code = error.get("extensions", {}).get(
+                                    "errorCode"
+                                )
+                                _LOGGER.debug(
+                                    "Error in chargingSessions path [%s], will use cached data",
+                                    error_code,
+                                )
+                                break
 
-                        sessions = device.get("chargingSessions", {})
-                        if sessions is None:
-                            # API returned null (temporary issue or authorization problem)
-                            _LOGGER.debug(
-                                "Device '%s' (%s): chargingSessions is NULL "
-                                "(temporary API issue - data will be available on next update)",
-                                device_name,
-                                device_id,
-                            )
-                        elif sessions:
-                            edges = sessions.get("edges", [])
-                            for edge in edges:
-                                session = edge.get("node", {})
-                                if session:
-                                    # Add device context to session
-                                    session["device_id"] = device_id
-                                    session["device_name"] = device_name
-                                    session["device_type"] = device_type
-                                    charging_sessions.append(session)
+                    # Extract charging sessions from devices (now included in COMPREHENSIVE_QUERY)
+                    charging_sessions = [] if not has_charging_sessions_error else None
+
+                    # Only process if there was no chargingSessions error
+                    if not has_charging_sessions_error:
+                        for device in result["devices"]:
+                            device_id = device.get("id")
+                            device_name = device.get("name", "Unknown Device")
+                            device_type = device.get("deviceType", "UNKNOWN")
+
+                            sessions = device.get("chargingSessions", {})
+                            if sessions is None:
+                                # API returned null (temporary issue or authorization problem)
+                                _LOGGER.debug(
+                                    "Device '%s' (%s): chargingSessions is NULL "
+                                    "(temporary API issue - data will be available on next update)",
+                                    device_name,
+                                    device_id,
+                                )
+                            elif sessions:
+                                edges = sessions.get("edges", [])
+                                for edge in edges:
+                                    session = edge.get("node", {})
+                                    if session:
+                                        # Add device context to session
+                                        session["device_id"] = device_id
+                                        session["device_name"] = device_name
+                                        session["device_type"] = device_type
+                                        charging_sessions.append(session)
 
                     # Store charging sessions in result
                     result["charging_sessions"] = charging_sessions
-                    if charging_sessions:
+                    if charging_sessions is None:
+                        _LOGGER.debug(
+                            "Charging sessions set to None due to API error (sensor will use cached data)"
+                        )
+                    elif charging_sessions:
                         _LOGGER.debug(
                             "Extracted %d charging sessions from %d devices",
                             len(charging_sessions),
@@ -1225,6 +1250,7 @@ class OctopusGermany:
                         "KT-CT-4301",  # Resource not found (expected when no data exists)
                         "KT-CT-4340",  # Unable to fetch flex planned dispatches (temporary)
                         "KT-CT-4382",  # Unable to fetch charging sessions (temporary)
+                        "KT-CT-7899",  # Internal server error (temporary API issue)
                         "KT-CT-1111",  # Unauthorized for specific query (permission issue)
                     ]
 
@@ -2574,29 +2600,3 @@ class OctopusGermany:
         # Test alternative query 1: Direct meter readings (corrected)
         corrected_query_1 = """
         query getMeterReadingsCorrected($accountNumber: String!, $propertyId: ID!) {
-          account(accountNumber: $accountNumber) {
-            property(id: $propertyId) {
-              electricityMalos {
-                meter {
-                  id
-                  number
-                  meterType
-                  shouldReceiveSmartMeterData
-                }
-              }
-            }
-          }
-        }
-        """
-
-        try:
-            _LOGGER.info("Testing corrected meter structure query...")
-            response_corrected = await client.execute_async(
-                query=corrected_query_1, variables=variables
-            )
-            _LOGGER.info(
-                "Corrected meter structure response: %s",
-                json.dumps(response_corrected, indent=2),
-            )
-        except Exception as e:
-            _LOGGER.error("Corrected meter structure query failed: %s", e)
