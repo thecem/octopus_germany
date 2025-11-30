@@ -1321,14 +1321,6 @@ class OctopusGermany:
                                     account_number, property_id
                                 )
 
-                                # Test alternative queries to find smart meter data
-                                _LOGGER.info(
-                                    "Testing alternative queries for smart meter data..."
-                                )
-                                await self.test_alternative_meter_queries(
-                                    account_number, property_id
-                                )
-
                                 # Mark as explored to prevent repeated exploration
                                 self._schema_explored = True
 
@@ -2551,78 +2543,3 @@ class OctopusGermany:
         except Exception as e:
             _LOGGER.error("Error exploring GraphQL schema: %s", e)
             return None
-
-    async def test_alternative_meter_queries(
-        self, account_number: str, property_id: str
-    ):
-        """Test alternative queries to find smart meter data."""
-        if not await self.ensure_token():
-            _LOGGER.error("Failed to ensure valid token for alternative queries")
-            return None
-
-        client = self._get_graphql_client()
-        variables = {
-            "accountNumber": account_number,
-            "propertyId": property_id,
-        }
-
-        # Test V2 query with meter info and measurements
-        try:
-            _LOGGER.info("Testing smart meter readings query V2...")
-            from datetime import date
-
-            today = date.today().isoformat()
-            variables_with_date = {**variables, "date": today}
-
-            response_v2 = await client.execute_async(
-                query=ELECTRICITY_SMART_METER_READINGS_QUERY_V2,
-                variables=variables_with_date,
-            )
-            _LOGGER.info(
-                "Smart meter query V2 response: %s", json.dumps(response_v2, indent=2)
-            )
-        except Exception as e:
-            _LOGGER.error("Smart meter query V2 failed: %s", e)
-
-        # Test electricityMalos readings
-        try:
-            _LOGGER.info("Testing electricityMalos readings query...")
-            response_malo = await client.execute_async(
-                query=ELECTRICITY_MALO_READINGS_QUERY, variables=variables
-            )
-            _LOGGER.info(
-                "ElectricityMalos query response: %s",
-                json.dumps(response_malo, indent=2),
-            )
-        except Exception as e:
-            _LOGGER.error("ElectricityMalos query failed: %s", e)
-
-        # Test alternative query 1: Direct meter readings (corrected)
-        corrected_query_1 = """
-        query getMeterReadingsCorrected($accountNumber: String!, $propertyId: ID!) {
-          account(accountNumber: $accountNumber) {
-            property(id: $propertyId) {
-              electricityMalos {
-                meter {
-                  id
-                  number
-                  meterType
-                  shouldReceiveSmartMeterData
-                }
-              }
-            }
-          }
-        }
-        """
-
-        try:
-            _LOGGER.info("Testing corrected meter structure query...")
-            response_corrected = await client.execute_async(
-                query=corrected_query_1, variables=variables
-            )
-            _LOGGER.info(
-                "Corrected meter structure response: %s",
-                json.dumps(response_corrected, indent=2),
-            )
-        except Exception as e:
-            _LOGGER.error("Corrected meter structure query failed: %s", e)
