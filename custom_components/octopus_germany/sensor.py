@@ -2262,7 +2262,7 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
         self._attr_name = f"Octopus {account_number} Smart Charging Sessions"
         self._attr_unique_id = f"octopus_{account_number}_smart_charging_sessions"
         self._attr_icon = "mdi:ev-station"
-        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_has_entity_name = False
 
     @property
