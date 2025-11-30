@@ -2265,6 +2265,10 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_has_entity_name = False
 
+        # Cache previous values to preserve during API errors
+        self._cached_value = 0
+        self._cached_attributes = {}
+
     @property
     def native_value(self) -> int:
         """Return the count of smart charging sessions in the current month."""
@@ -2273,12 +2277,20 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
             or not isinstance(self.coordinator.data, dict)
             or self._account_number not in self.coordinator.data
         ):
-            return 0
+            # No coordinator data - return cached value
+            return self._cached_value
 
         from datetime import datetime
 
         account_data = self.coordinator.data[self._account_number]
-        charging_sessions = account_data.get("charging_sessions", [])
+        charging_sessions = account_data.get("charging_sessions")
+
+        # If charging_sessions is None (API error), keep previous cached value
+        if charging_sessions is None:
+            return self._cached_value
+
+        # If charging_sessions is an empty list or has data, update cache
+        # (empty list = no sessions exist, which is valid data)
 
         # Count only SMART type sessions in current month
         current_month = datetime.now().strftime("%Y-%m")
@@ -2295,7 +2307,9 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
                     except:
                         pass
 
-        return len(smart_sessions_current_month)
+        # Update cache with new value
+        self._cached_value = len(smart_sessions_current_month)
+        return self._cached_value
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -2305,13 +2319,21 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
             or not isinstance(self.coordinator.data, dict)
             or self._account_number not in self.coordinator.data
         ):
-            return {}
+            # No coordinator data - return cached attributes
+            return self._cached_attributes
 
         from datetime import datetime
         from collections import defaultdict
 
         account_data = self.coordinator.data[self._account_number]
-        charging_sessions = account_data.get("charging_sessions", [])
+        charging_sessions = account_data.get("charging_sessions")
+
+        # If charging_sessions is None (API error), keep previous cached attributes
+        if charging_sessions is None:
+            return self._cached_attributes
+
+        # If charging_sessions is an empty list or has data, calculate new attributes
+        # (empty list = no sessions exist, which is valid data)
 
         # Filter and sort smart sessions
         smart_sessions = [s for s in charging_sessions if s.get("type") == "SMART"]
@@ -2379,7 +2401,8 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
                 }
             )
 
-        return {
+        # Calculate new attributes
+        attributes = {
             "smart_sessions_count": len(smart_sessions),
             "boost_sessions_count": len(boost_sessions),
             "total_energy_kwh": round(total_energy, 2),
@@ -2396,6 +2419,10 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
             "recent_sessions": sessions_list,
             "reward_info": f"30€ per month with ≥5 smart charges",
         }
+
+        # Update cache with new attributes
+        self._cached_attributes = attributes
+        return attributes
 
     @property
     def available(self) -> bool:
