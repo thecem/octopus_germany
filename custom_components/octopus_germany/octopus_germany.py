@@ -1118,7 +1118,15 @@ class OctopusGermany:
                         device_type = device.get("deviceType", "UNKNOWN")
 
                         sessions = device.get("chargingSessions", {})
-                        if sessions:
+                        if sessions is None:
+                            # API returned null (temporary issue or authorization problem)
+                            _LOGGER.debug(
+                                "Device '%s' (%s): chargingSessions is NULL "
+                                "(temporary API issue - data will be available on next update)",
+                                device_name,
+                                device_id,
+                            )
+                        elif sessions:
                             edges = sessions.get("edges", [])
                             for edge in edges:
                                 session = edge.get("node", {})
@@ -1133,8 +1141,14 @@ class OctopusGermany:
                     result["charging_sessions"] = charging_sessions
                     if charging_sessions:
                         _LOGGER.debug(
-                            "Extracted %d charging sessions from devices",
+                            "Extracted %d charging sessions from %d devices",
                             len(charging_sessions),
+                            len(result["devices"]),
+                        )
+                    else:
+                        _LOGGER.debug(
+                            "No charging sessions found in %d devices",
+                            len(result["devices"]),
                         )
 
                 if "completedDispatches" in data:
@@ -1205,17 +1219,21 @@ class OctopusGermany:
 
                 # Only log errors but don't fail the whole request if we got at least account data
                 if "errors" in response and result["account"]:
-                    # Filter only the errors that are about missing devices or dispatches
+                    # Define non-critical error codes that should not fail the request
+                    # These are temporary API issues or expected missing data scenarios
+                    NON_CRITICAL_ERROR_CODES = [
+                        "KT-CT-4301",  # Resource not found (expected when no data exists)
+                        "KT-CT-4340",  # Unable to fetch flex planned dispatches (temporary)
+                        "KT-CT-4382",  # Unable to fetch charging sessions (temporary)
+                        "KT-CT-1111",  # Unauthorized for specific query (permission issue)
+                    ]
+
+                    # Filter non-critical errors (missing resources, temporary API issues)
                     non_critical_errors = [
                         error
                         for error in response["errors"]
-                        if (
-                            error.get("path", [])
-                            and error.get("path")[0]
-                            in ["completedDispatches", "devices"]
-                            and error.get("extensions", {}).get("errorCode")
-                            == "KT-CT-4301"
-                        )
+                        if error.get("extensions", {}).get("errorCode")
+                        in NON_CRITICAL_ERROR_CODES
                     ]
 
                     # Handle other errors that might affect the account data
@@ -1226,10 +1244,17 @@ class OctopusGermany:
                     ]
 
                     if non_critical_errors:
-                        _LOGGER.warning(
-                            "API returned non-critical errors (expected for accounts without devices/dispatches): %s",
-                            non_critical_errors,
-                        )
+                        # Log non-critical errors at DEBUG level with clear context
+                        for error in non_critical_errors:
+                            error_code = error.get("extensions", {}).get("errorCode")
+                            error_path = ".".join(str(p) for p in error.get("path", []))
+                            error_msg = error.get("message", "No message")
+                            _LOGGER.debug(
+                                "Non-critical API error [%s] at path '%s': %s (using cached data)",
+                                error_code,
+                                error_path,
+                                error_msg,
+                            )
 
                     if other_errors:
                         _LOGGER.error("API returned critical errors: %s", other_errors)
