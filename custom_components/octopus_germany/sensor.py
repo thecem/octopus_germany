@@ -2437,7 +2437,7 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
                 energy_kwh = float(energy_value) if energy_value else 0.0
             except (ValueError, TypeError):
                 energy_kwh = 0.0
-            
+
             session_end = session.get("end")
             dispatches = session.get("dispatches", [])
 
