@@ -2391,21 +2391,113 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
             float(s.get("energyAdded", {}).get("value", 0) or 0) for s in smart_sessions
         )
 
+        # Count sessions with problems
+        sessions_with_errors = 0
+        sessions_with_truncation = 0
+
         # Prepare session list for attributes (limit to last 20)
         sessions_list = []
         for session in smart_sessions_sorted[:20]:
             energy = session.get("energyAdded", {}) or {}
             cost = session.get("cost") or {}
-            sessions_list.append(
-                {
-                    "start": session.get("start"),
-                    "end": session.get("end"),
-                    "energy_kwh": energy.get("value", 0),
-                    "cost_eur": cost.get("amount", 0) if cost else 0,
-                    "device_name": session.get("device_name", "Unknown"),
-                    "type": session.get("type", "UNKNOWN"),
-                }
+            problems = session.get("problems", []) or []
+
+            # Analyze problems
+            has_error = False
+            has_truncation = False
+            error_cause = None
+            truncation_cause = None
+            truncation_info = {}
+
+            for problem in problems:
+                if "cause" in problem:
+                    # SmartFlexChargingError
+                    has_error = True
+                    error_cause = problem.get("cause")
+                    sessions_with_errors += 1
+                elif "truncationCause" in problem:
+                    # SmartFlexChargingTruncation
+                    has_truncation = True
+                    truncation_cause = problem.get("truncationCause")
+                    truncation_info = {
+                        "original_achievable_soc": problem.get(
+                            "originalAchievableStateOfCharge"
+                        ),
+                        "achievable_soc": problem.get("achievableStateOfCharge"),
+                    }
+                    sessions_with_truncation += 1
+
+            # Session is successful if:
+            # 1. No problems in problems array
+            # 2. Energy was actually added (>0 kWh)
+            # 3. Session has ended (end time exists and is in the past)
+            energy_value = energy.get("value", 0)
+            # Convert to float if it's a string
+            try:
+                energy_kwh = float(energy_value) if energy_value else 0.0
+            except (ValueError, TypeError):
+                energy_kwh = 0.0
+            
+            session_end = session.get("end")
+            dispatches = session.get("dispatches", [])
+
+            # Check if session has ended
+            has_ended = session_end is not None
+
+            # Check if energy was added
+            has_energy = energy_kwh > 0
+
+            # Check if dispatches were utilized (if dispatches exist, energy should too)
+            dispatches_utilized = True
+            if len(dispatches) > 0 and energy_kwh == 0:
+                dispatches_utilized = False
+
+            # Session is successful if no problems AND energy added
+            # AND session ended
+            is_successful = (
+                len(problems) == 0 and has_energy and has_ended and dispatches_utilized
             )
+
+            session_data = {
+                "start": session.get("start"),
+                "end": session_end,
+                "energy_kwh": energy_kwh,
+                "cost_eur": cost.get("amount", 0) if cost else 0,
+                "device_name": session.get("device_name", "Unknown"),
+                "type": session.get("type", "UNKNOWN"),
+                "target_type": session.get("targetType"),
+                "soc_change": session.get("stateOfChargeChange"),
+                "soc_final": session.get("stateOfChargeFinal"),
+                "is_successful": is_successful,
+                "has_error": has_error,
+                "has_truncation": has_truncation,
+                "has_ended": has_ended,
+                "has_energy": has_energy,
+                "dispatches_utilized": dispatches_utilized,
+            }
+
+            # Add error/truncation details if present
+            if error_cause:
+                session_data["error_cause"] = error_cause
+            if truncation_cause:
+                session_data["truncation_cause"] = truncation_cause
+                session_data["truncation_info"] = truncation_info
+
+            # Add dispatch count
+            dispatches = session.get("dispatches", [])
+            if dispatches:
+                session_data["dispatch_count"] = len(dispatches)
+
+            sessions_list.append(session_data)
+
+        # Calculate success rate by counting successful sessions
+        total_sessions = len(smart_sessions)
+        successful_sessions = sum(
+            1 for s in sessions_list if s.get("is_successful", False)
+        )
+        success_rate = (
+            (successful_sessions / total_sessions * 100) if total_sessions > 0 else 0
+        )
 
         # Calculate new attributes
         attributes = {
@@ -2423,7 +2515,12 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
                 0, DISPATCHES_PER_REWARD - current_month_count
             ),
             "recent_sessions": sessions_list,
-            "reward_info": f"30€ per month with ≥5 smart charges",
+            "reward_info": "30€ per month with ≥5 smart charges",
+            # New: Session quality metrics
+            "sessions_with_errors": sessions_with_errors,
+            "sessions_with_truncation": sessions_with_truncation,
+            "successful_sessions": successful_sessions,
+            "success_rate_percent": round(success_rate, 1),
         }
 
         # Update cache with new attributes
