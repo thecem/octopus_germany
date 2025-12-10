@@ -2565,3 +2565,39 @@ class OctopusGermany:
                         for keyword in [
                             "measurement",
                             "meter",
+                            "reading",
+                            "interval",
+                            "smart",
+                        ]
+                    ):
+                        measurement_types.append(
+                            {
+                                "name": type_name,
+                                "kind": type_def.get("kind"),
+                                "description": type_def.get("description"),
+                                "fields": [
+                                    {
+                                        "name": field.get("name"),
+                                        "description": field.get("description"),
+                                        "type": field.get("type", {}).get("name"),
+                                    }
+                                    for field in type_def.get("fields", [])
+                                ]
+                                if type_def.get("fields")
+                                else [],
+                            }
+                        )
+
+                _LOGGER.info(
+                    "Found %d measurement-related types: %s",
+                    len(measurement_types),
+                    json.dumps(measurement_types, indent=2),
+                )
+
+                return measurement_types
+
+            return response
+
+        except Exception as e:
+            _LOGGER.error("Error exploring GraphQL schema: %s", e)
+            return None
