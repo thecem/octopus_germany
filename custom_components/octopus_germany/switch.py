@@ -201,7 +201,7 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
         ]:
             norm_name = norm_name.replace(ch, "_")
         self._attr_name = (
-            f"Octopus {self._account_number} Device Smart Control ({self._device_name})"
+            f"Octopus {self._account_number} {self._device_name} Smart Control"
         )
         self._attr_unique_id = (
             f"octopus_{self._account_number}_{norm_name}_smart_control"
@@ -464,9 +464,7 @@ class BoostChargeSwitch(CoordinatorEntity, SwitchEntity):
         ]:
             norm_name = norm_name.replace(ch, "_")
         self._attr_unique_id = f"{DOMAIN}_{account_number}_{norm_name}_boost_charge"
-        self._attr_name = (
-            f"Octopus {account_number} {device_name} Boost Charge ({device_id})"
-        )
+        self._attr_name = f"Octopus {account_number} {device_name} Boost Charge"
         self._attr_icon = "mdi:lightning-bolt"
 
     def _get_device_data(self) -> Dict[str, Any]:
