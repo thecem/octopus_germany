@@ -269,21 +269,27 @@ async def async_setup_entry(
                             OctopusDeviceStatusSensor(acc_num, coordinator, device_id)
                         )
 
-            # Create smart charging sessions sensor (always, even if no sessions exist yet)
-            # This ensures the sensor is available when sessions start appearing
+            # Erzeuge für jedes Gerät eine eigene Smart Charging Sessions Entität
             charging_sessions = account_data.get("charging_sessions")
-            # Handle None (API error) vs [] (no sessions) vs [sessions]
-            session_count = (
-                "unknown (API error)"
-                if charging_sessions is None
-                else len(charging_sessions)
-            )
-            _LOGGER.debug(
-                "Creating smart charging sessions sensor for account %s with %s sessions",
-                acc_num,
-                session_count,
-            )
-            entities.append(OctopusSmartChargingSessionsSensor(acc_num, coordinator))
+            device_sessions = {}
+            if charging_sessions:
+                for session in charging_sessions:
+                    device_name = session.get("device_name")
+                    if not device_name:
+                        continue
+                    if device_name not in device_sessions:
+                        device_sessions[device_name] = []
+                    device_sessions[device_name].append(session)
+            # Für jedes bekannte device eine Entität anlegen
+            for device in devices:
+                device_name = device.get("name", f"Device_{device.get('id')}")
+                device_id = device.get("id")
+                sessions = device_sessions.get(device_name, [])
+                entities.append(
+                    OctopusSmartChargingSessionsSensor(
+                        acc_num, coordinator, device_name, device_id, sessions
+                    )
+                )
 
             # Create heat balance sensor if heat ledger exists and has non-zero balance
             if (
@@ -1930,8 +1936,53 @@ class OctopusDeviceStatusSensor(CoordinatorEntity, SensorEntity):
 
         self._account_number = account_number
         self._device_id = device_id
-        self._attr_name = f"Octopus {account_number} Device Status"
-        self._attr_unique_id = f"octopus_{account_number}_device_status"
+        # Device name ermitteln
+        device_name = None
+        if (
+            coordinator.data
+            and isinstance(coordinator.data, dict)
+            and account_number in coordinator.data
+        ):
+            account_data = coordinator.data[account_number]
+            devices = account_data.get("devices", [])
+            for device in devices:
+                if device.get("id") == device_id:
+                    device_name = device.get("name", f"Device_{device_id}")
+                    break
+        if not device_name:
+            device_name = f"Device_{device_id}"
+        norm_name = device_name.lower().replace(" ", "_")
+        for ch in [
+            "/",
+            "\\",
+            ",",
+            ".",
+            ":",
+            ";",
+            "|",
+            "[",
+            "]",
+            "{",
+            "}",
+            "(",
+            ")",
+            "'",
+            '"',
+            "#",
+            "?",
+            "!",
+            "@",
+            "=",
+            "+",
+            "*",
+            "%",
+            "&",
+            "<",
+            ">",
+        ]:
+            norm_name = norm_name.replace(ch, "_")
+        self._attr_name = f"Octopus {account_number} {device_name} Status"
+        self._attr_unique_id = f"octopus_{account_number}_{norm_name}_status"
         self._attr_has_entity_name = False
         self._attributes = {}
 
@@ -2258,142 +2309,248 @@ class OctopusElectricitySmartMeterReadingsSensor(
 
 
 class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
-    """Sensor for Octopus Germany smart charging sessions count and details."""
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Return the attributes for the smart charging sessions sensor."""
+        # Use cached attributes if available, otherwise recompute
+        if self._cached_attributes:
+            return self._cached_attributes
+        # Fallback: recompute attributes (should rarely happen)
+        from datetime import datetime, timedelta, timezone
 
-    def __init__(self, account_number, coordinator) -> None:
-        """Initialize the smart charging sessions sensor."""
+        current_month = datetime.now().strftime("%Y-%m")
+        smart_sessions_sorted = sorted(
+            self._sessions,
+            key=lambda s: s.get("start") or "",
+            reverse=True,
+        )
+        now = datetime.now(timezone.utc)
+        min_date = now - timedelta(days=730)
+        sessions_list = []
+        sessions_by_month = {}
+        total_energy = 0.0
+        for session in smart_sessions_sorted:
+            start_str = session.get("start")
+            try:
+                start_dt = (
+                    datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                    if start_str
+                    else None
+                )
+                if start_dt and start_dt.tzinfo is None:
+                    from homeassistant.util.dt import as_utc
+
+                    start_dt = as_utc(start_dt)
+            except Exception:
+                start_dt = None
+            if start_dt and start_dt < min_date:
+                continue
+            energy = session.get("energyAdded", {}) or {}
+            energy_kwh = float(energy.get("value", 0) or 0)
+            if energy_kwh == 0.0:
+                continue
+            cost = session.get("cost") or {}
+            sessions_list.append(
+                {
+                    "start": session.get("start"),
+                    "end": session.get("end"),
+                    "energy_kwh": energy_kwh,
+                    "cost_eur": cost.get("amount", 0) if cost else 0,
+                    "device_name": session.get("device_name", "Unknown"),
+                    "type": session.get("type", "UNKNOWN"),
+                    "is_successful": session.get("is_successful", True),
+                    "has_error": session.get("has_error", False),
+                    "has_truncation": session.get("has_truncation", False),
+                    "has_ended": session.get("has_ended", True),
+                    "has_energy": session.get("has_energy", False),
+                    "dispatches_utilized": session.get("dispatches_utilized", True),
+                    "soc_final": session.get("soc_final"),
+                    "error_cause": session.get("error_cause"),
+                    "truncation_cause": session.get("truncation_cause"),
+                }
+            )
+            # For monthly stats
+            if start_dt:
+                month_key = start_dt.strftime("%Y-%m")
+                if month_key not in sessions_by_month:
+                    sessions_by_month[month_key] = []
+                sessions_by_month[month_key].append(session)
+            total_energy += energy_kwh
+        # Determine the full range of months from the earliest session to now
+        if sessions_list:
+            from datetime import datetime
+
+            # Find the earliest session start
+            session_months = [
+                (
+                    datetime.fromisoformat(s["start"].replace("Z", "+00:00")).strftime(
+                        "%Y-%m"
+                    )
+                    if s["start"]
+                    else None
+                )
+                for s in sessions_list
+            ]
+            session_months = [m for m in session_months if m]
+            if session_months:
+                first_month = min(session_months)
+                last_month = max(session_months)
+                from dateutil.relativedelta import relativedelta
+
+                months = []
+                current = datetime.strptime(first_month, "%Y-%m")
+                end = datetime.strptime(last_month, "%Y-%m")
+                while current <= end:
+                    months.append(current.strftime("%Y-%m"))
+                    current += relativedelta(months=1)
+                qualified_months = [
+                    m
+                    for m in months
+                    if m in sessions_by_month and len(sessions_by_month[m]) >= 5
+                ]
+                qualified_month_list = months
+            else:
+                qualified_month_list = []
+                qualified_months = []
+        else:
+            qualified_month_list = []
+            qualified_months = []
+        current_month_count = len(sessions_by_month.get(current_month, []))
+        current_month_qualified = current_month_count >= 5
+        attributes = {
+            "smart_sessions_count": len(sessions_list),
+            "total_energy_kwh": round(total_energy, 2),
+            "current_month_count": current_month_count,
+            "current_month_qualified": current_month_qualified,
+            "recent_sessions": sessions_list,
+        }
+        self._cached_attributes = attributes
+        return attributes
+
+    def __init__(
+        self, account_number, coordinator, device_name, device_id, sessions
+    ) -> None:
+        """Initialize the smart charging sessions sensor for a specific device."""
         super().__init__(coordinator)
 
         self._account_number = account_number
-        self._attr_name = f"Octopus {account_number} Smart Charging Sessions"
-        self._attr_unique_id = f"octopus_{account_number}_smart_charging_sessions"
+        self._device_name = device_name
+        self._device_id = device_id
+        norm_name = device_name.lower().replace(" ", "_")
+        for ch in [
+            "/",
+            "\\",
+            ",",
+            ".",
+            ":",
+            ";",
+            "|",
+            "[",
+            "]",
+            "{",
+            "}",
+            "(",
+            ")",
+            "'",
+            '"',
+            "#",
+            "?",
+            "!",
+            "@",
+            "=",
+            "+",
+            "*",
+            "%",
+            "&",
+            "<",
+            ">",
+        ]:
+            norm_name = norm_name.replace(ch, "_")
+        self._attr_name = (
+            f"Octopus {account_number} {device_name} Smart Charging Sessions"
+        )
+        self._attr_unique_id = (
+            f"octopus_{account_number}_{norm_name}_smart_charging_sessions"
+        )
         self._attr_icon = "mdi:ev-station"
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_has_entity_name = False
 
-        # Cache previous values to preserve during API errors
+        # Sessions für dieses Device
+        self._sessions = sessions or []
         self._cached_value = 0
         self._cached_attributes = {}
 
     @property
     def native_value(self) -> int:
-        """Return the count of smart charging sessions in the current month."""
-        if (
-            not self.coordinator.data
-            or not isinstance(self.coordinator.data, dict)
-            or self._account_number not in self.coordinator.data
-        ):
-            # No coordinator data - return cached value
-            return self._cached_value
-
+        """Return the count of smart charging sessions in the current month for this device."""
         from datetime import datetime
 
-        account_data = self.coordinator.data[self._account_number]
-        charging_sessions = account_data.get("charging_sessions")
-
-        # If charging_sessions is None (API error), keep previous cached value
-        if charging_sessions is None:
-            return self._cached_value
-
-        # If charging_sessions is an empty list or has data, update cache
-        # (empty list = no sessions exist, which is valid data)
-
-        # Count only SMART type sessions in current month
         current_month = datetime.now().strftime("%Y-%m")
+        # Sort sessions by start date descending (most recent first)
+        smart_sessions_sorted = sorted(
+            self._sessions,
+            key=lambda s: s.get("start") or "",
+            reverse=True,
+        )
         smart_sessions_current_month = []
+        for session in smart_sessions_sorted:
+            start_str = session.get("start")
+            try:
+                start_dt = (
+                    datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                    if start_str
+                    else None
+                )
+                # Stelle sicher, dass start_dt offset-aware ist
+                if start_dt and start_dt.tzinfo is None:
+                    from homeassistant.util.dt import as_utc
 
-        for session in charging_sessions:
-            if session.get("type") == "SMART":
-                start = session.get("start")
-                if start:
-                    try:
-                        dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
-                        if dt.strftime("%Y-%m") == current_month:
-                            smart_sessions_current_month.append(session)
-                    except:
-                        pass
+                    start_dt = as_utc(start_dt)
+            except Exception:
+                start_dt = None
+            # min_date is defined later in the attributes property, but not here; skip this filter in native_value
+            energy = session.get("energyAdded", {}) or {}
+            energy_kwh = float(energy.get("value", 0) or 0)
+            if energy_kwh == 0.0:
+                continue
+            # Only count sessions in the current month
+            if start_dt and start_dt.strftime("%Y-%m") == current_month:
+                smart_sessions_current_month.append(session)
+        return len(smart_sessions_current_month)
 
-        # Update cache with new value
-        self._cached_value = len(smart_sessions_current_month)
-        return self._cached_value
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return additional state attributes."""
-        if (
-            not self.coordinator.data
-            or not isinstance(self.coordinator.data, dict)
-            or self._account_number not in self.coordinator.data
-        ):
-            # No coordinator data - return cached attributes
-            return self._cached_attributes
-
-        from datetime import datetime
-        from collections import defaultdict
-
-        account_data = self.coordinator.data[self._account_number]
-        charging_sessions = account_data.get("charging_sessions")
-
-        # If charging_sessions is None (API error), keep previous cached attributes
-        if charging_sessions is None:
-            return self._cached_attributes
-
-        # If charging_sessions is an empty list or has data, calculate new attributes
-        # (empty list = no sessions exist, which is valid data)
-
-        # Filter and sort smart sessions
-        smart_sessions = [s for s in charging_sessions if s.get("type") == "SMART"]
-        boost_sessions = [s for s in charging_sessions if s.get("type") == "BOOST"]
-
-        # Sort by datetime (newest first)
-        def get_datetime(session):
-            start = session.get("start", "")
-            if start:
-                try:
-                    return datetime.fromisoformat(start.replace("Z", "+00:00"))
-                except:
-                    return datetime.min
-            return datetime.min
-
-        smart_sessions_sorted = sorted(smart_sessions, key=get_datetime, reverse=True)
-
-        # Group by month for rewards calculation
-        sessions_by_month = defaultdict(list)
-        for session in smart_sessions:
-            start = session.get("start")
-            if start:
-                try:
-                    dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
-                    month_key = dt.strftime("%Y-%m")
-                    sessions_by_month[month_key].append(session)
-                except:
-                    pass
-
-        # Calculate rewards (30€ per month if >= 5 smart charges)
-        DISPATCHES_PER_REWARD = 5
-        REWARD_PER_CYCLE = 30.0
-
-        qualified_months = [
-            month
-            for month, sessions in sessions_by_month.items()
-            if len(sessions) >= DISPATCHES_PER_REWARD
-        ]
-        total_earned = len(qualified_months) * REWARD_PER_CYCLE
-
-        # Current month progress
         current_month = datetime.now().strftime("%Y-%m")
         current_month_count = len(sessions_by_month.get(current_month, []))
-        current_qualified = current_month_count >= DISPATCHES_PER_REWARD
-        progress_percent = min((current_month_count / DISPATCHES_PER_REWARD) * 100, 100)
-
-        # Calculate total energy
+        current_month_qualified = current_month_count >= 5
         total_energy = sum(
             float(s.get("energyAdded", {}).get("value", 0) or 0) for s in smart_sessions
         )
 
-        # Prepare session list for attributes (limit to last 20)
+        # Sessions der letzten 2 Jahre (24 Monate)
+        from datetime import timedelta
+
+        from datetime import timezone
+
+        now = datetime.now(timezone.utc)
+        min_date = now - timedelta(days=730)
         sessions_list = []
-        for session in smart_sessions_sorted[:20]:
+        for session in smart_sessions_sorted:
+            start_str = session.get("start")
+            try:
+                start_dt = (
+                    datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                    if start_str
+                    else None
+                )
+                # Stelle sicher, dass start_dt offset-aware ist
+                if start_dt and start_dt.tzinfo is None:
+                    from homeassistant.util.dt import as_utc
+
+                    start_dt = as_utc(start_dt)
+            except Exception:
+                start_dt = None
+            if start_dt and start_dt < min_date:
+                continue
             energy = session.get("energyAdded", {}) or {}
             cost = session.get("cost") or {}
             sessions_list.append(
@@ -2404,29 +2561,31 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
                     "cost_eur": cost.get("amount", 0) if cost else 0,
                     "device_name": session.get("device_name", "Unknown"),
                     "type": session.get("type", "UNKNOWN"),
+                    "is_successful": session.get("is_successful", True),
+                    "has_error": session.get("has_error", False),
+                    "has_truncation": session.get("has_truncation", False),
+                    "has_ended": session.get("has_ended", True),
+                    "has_energy": session.get("has_energy", False),
+                    "dispatches_utilized": session.get("dispatches_utilized", True),
+                    "soc_final": session.get("soc_final"),
+                    "error_cause": session.get("error_cause"),
+                    "truncation_cause": session.get("truncation_cause"),
                 }
             )
 
-        # Calculate new attributes
+        qualified_month_list = sorted(
+            [m for m, v in sessions_by_month.items() if len(v) >= 5], reverse=True
+        )
         attributes = {
             "smart_sessions_count": len(smart_sessions),
-            "boost_sessions_count": len(boost_sessions),
             "total_energy_kwh": round(total_energy, 2),
-            "qualified_months": len(qualified_months),
-            "qualified_month_list": sorted(qualified_months, reverse=True),
-            "total_rewards_earned_eur": total_earned,
+            "qualified_months": len(qualified_month_list),
+            "qualified_month_list": qualified_month_list,
             "current_month": current_month,
             "current_month_count": current_month_count,
-            "current_month_qualified": current_qualified,
-            "current_month_progress_percent": round(progress_percent, 1),
-            "sessions_until_reward": max(
-                0, DISPATCHES_PER_REWARD - current_month_count
-            ),
+            "current_month_qualified": current_month_qualified,
             "recent_sessions": sessions_list,
-            "reward_info": f"30€ per month with ≥5 smart charges",
         }
-
-        # Update cache with new attributes
         self._cached_attributes = attributes
         return attributes
 

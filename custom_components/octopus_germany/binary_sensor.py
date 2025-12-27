@@ -39,30 +39,28 @@ async def async_setup_entry(
 
     entities = []
 
-    # Create binary sensors for each account with devices
+    # Create device-specific binary sensors for Intelligent Dispatching
     for acc_num in account_numbers:
         if (
             coordinator.data
             and acc_num in coordinator.data
             and coordinator.data[acc_num].get("devices")
         ):
-            entities.append(
-                OctopusIntelligentDispatchingBinarySensor(acc_num, coordinator)
-            )
-            _LOGGER.info(
-                "Added intelligent dispatching binary sensor for account %s", acc_num
-            )
-
-            # Log out the keys in coordinator data for debugging
-            _LOGGER.info(
-                "Available keys in coordinator for %s: %s",
-                acc_num,
-                list(coordinator.data[acc_num].keys()),
-            )
-            if "plannedDispatches" in coordinator.data[acc_num]:
+            devices = coordinator.data[acc_num]["devices"]
+            for device in devices:
+                device_id = device.get("id")
+                device_name = device.get("name", f"Device_{device_id}")
+                if not device_id:
+                    continue
+                entities.append(
+                    OctopusIntelligentDispatchingBinarySensor(
+                        acc_num, coordinator, device_id, device_name
+                    )
+                )
                 _LOGGER.info(
-                    "Found %d planned dispatches in coordinator data",
-                    len(coordinator.data[acc_num]["plannedDispatches"]),
+                    "Added intelligent dispatching binary sensor for account %s, device %s",
+                    acc_num,
+                    device_name,
                 )
         else:
             _LOGGER.info(
@@ -77,29 +75,58 @@ async def async_setup_entry(
 
 
 class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorEntity):
-    """Binary sensor for Octopus Intelligent Dispatching."""
+    """Device-specific binary sensor for Octopus Intelligent Dispatching."""
 
-    def __init__(self, account_number, coordinator) -> None:
-        """Initialize the binary sensor for intelligent dispatching."""
+    def __init__(self, account_number, coordinator, device_id, device_name) -> None:
+        """Initialize the device-specific binary sensor for intelligent dispatching."""
         super().__init__(coordinator)
-
         self._account_number = account_number
-        self._attr_name = f"Octopus {account_number} Intelligent Dispatching"
-        self._attr_unique_id = f"octopus_{account_number}_intelligent_dispatching"
+        self._device_id = device_id
+        self._device_name = device_name
+        norm_name = device_name.lower().replace(" ", "_")
+        for ch in [
+            "/",
+            "\\",
+            ",",
+            ".",
+            ":",
+            ";",
+            "|",
+            "[",
+            "]",
+            "{",
+            "}",
+            "(",
+            ")",
+            "'",
+            '"',
+            "#",
+            "?",
+            "!",
+            "@",
+            "=",
+            "+",
+            "*",
+            "%",
+            "&",
+            "<",
+            ">",
+        ]:
+            norm_name = norm_name.replace(ch, "_")
+        self._attr_name = (
+            f"Octopus {account_number} {device_name} Intelligent Dispatching"
+        )
+        self._attr_unique_id = (
+            f"octopus_{account_number}_{norm_name}_{device_id}_intelligent_dispatching"
+        )
         self._attr_device_class = None
         self._attr_has_entity_name = False
         self._attributes = {}
-
-        # Initialize attributes right after creation
         self._update_attributes()
 
     @property
     def is_on(self) -> bool:
-        """Determine if the binary sensor is currently active.
-
-        The sensor is 'on' (true) when at least one planned dispatch
-        exists that encompasses the current time.
-        """
+        """Return True if a planned dispatch for this device is currently active."""
         if (
             not self.coordinator.data
             or not isinstance(self.coordinator.data, dict)
@@ -109,8 +136,6 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
             return False
 
         account_data = self.coordinator.data[self._account_number]
-
-        # Check for both camelCase and snake_case keys
         planned_dispatches = account_data.get("plannedDispatches", [])
         if not planned_dispatches:
             planned_dispatches = account_data.get("planned_dispatches", [])
@@ -119,76 +144,35 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
             _LOGGER.debug("No planned dispatches found")
             return False
 
-        _LOGGER.debug(
-            "Checking %d planned dispatches for active status", len(planned_dispatches)
-        )
+        # Only consider dispatches for this device
+        device_dispatches = [
+            d for d in planned_dispatches if d.get("deviceId") == self._device_id
+        ]
+        if not device_dispatches:
+            _LOGGER.debug(f"No planned dispatches for device {self._device_id}")
+            return False
 
-        # Get current time in UTC
         now = utcnow()
-        _LOGGER.debug("Current time (UTC): %s", now.isoformat())
-
-        # Check all planned dispatches to see if one is currently active
-        for dispatch in planned_dispatches:
+        for dispatch in device_dispatches:
             try:
-                # Extract start and end time
                 start_str = dispatch.get("start")
                 end_str = dispatch.get("end")
-
                 if not start_str or not end_str:
-                    _LOGGER.debug("Dispatch missing start or end time: %s", dispatch)
                     continue
-
-                # Convert strings to datetime objects and ensure they are timezone-aware UTC
                 start = as_utc(parse_datetime(start_str))
                 end = as_utc(parse_datetime(end_str))
-
                 if not start or not end:
-                    _LOGGER.debug(
-                        "Failed to parse start or end time for dispatch: %s", dispatch
-                    )
                     continue
-
-                _LOGGER.debug(
-                    "Checking dispatch: start=%s, end=%s, current=%s",
-                    start.isoformat(),
-                    end.isoformat(),
-                    now.isoformat(),
-                )
-
-                # If current time is between start and end, the dispatch is active
                 if start <= now <= end:
                     _LOGGER.info(
-                        "Active dispatch found! From %s to %s (current: %s)",
-                        start.isoformat(),
-                        end.isoformat(),
-                        now.isoformat(),
+                        f"Active dispatch found for device {self._device_id}! From {start.isoformat()} to {end.isoformat()} (current: {now.isoformat()})"
                     )
                     return True
-                else:
-                    time_to_start = (
-                        (start - now).total_seconds() if start > now else None
-                    )
-                    time_since_end = (now - end).total_seconds() if now > end else None
-
-                    if time_to_start is not None:
-                        _LOGGER.debug(
-                            "Dispatch not yet active - starts in %d seconds (%s)",
-                            int(time_to_start),
-                            start.isoformat(),
-                        )
-                    elif time_since_end is not None:
-                        _LOGGER.debug(
-                            "Dispatch already ended - ended %d seconds ago (%s)",
-                            int(time_since_end),
-                            end.isoformat(),
-                        )
-
-            except (ValueError, TypeError) as e:
-                _LOGGER.error("Error parsing dispatch data: %s - %s", dispatch, str(e))
+            except Exception as e:
+                _LOGGER.error(
+                    f"Error parsing dispatch data for device {self._device_id}: {dispatch} - {e}"
+                )
                 continue
-
-        # If no active dispatch was found, the sensor is 'off'
-        _LOGGER.debug("No active dispatches found, sensor is OFF")
         return False
 
     def _format_dispatch(self, dispatch):
@@ -446,5 +430,7 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Return device information."""
+        """Return device information for the Octopus account (service device)."""
+        from .sensor import get_account_device_info
+
         return get_account_device_info(self._account_number)
