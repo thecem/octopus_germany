@@ -169,8 +169,8 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
         self._pending_until = None
 
         # Updated name format to include "Device Smart Control"
-        self._attr_name = f"Octopus {self._account_number} Device Smart Control"
-        self._attr_unique_id = f"octopus_{self._account_number}_device_smart_control"
+        self._attr_name = f"Octopus {self._account_number} Device Smart Control ({self._device_id})"
+        self._attr_unique_id = f"octopus_{self._account_number}_{self._device_id}_device_smart_control"
         self._update_attributes()
 
     def _update_attributes(self):
@@ -398,8 +398,8 @@ class BoostChargeSwitch(CoordinatorEntity, SwitchEntity):
         self.device_id = device_id
         self.device_name = device_name
         self.account_number = account_number
-        self._attr_unique_id = f"{DOMAIN}_{account_number}_{device_name.lower().replace(' ', '_')}_boost_charge"
-        self._attr_name = f"Octopus {account_number} {device_name} Boost Charge"
+        self._attr_unique_id = f"{DOMAIN}_{account_number}_{device_id}_boost_charge"
+        self._attr_name = f"Octopus {account_number} {device_name} Boost Charge ({device_id})"
         self._attr_icon = "mdi:lightning-bolt"
 
     def _get_device_data(self) -> Dict[str, Any]:
