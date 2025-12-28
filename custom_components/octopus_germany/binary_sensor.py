@@ -152,12 +152,12 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
         """Return True if a planned dispatch for this device is currently active."""
         active_dispatch = self._get_active_dispatch(debug=True)
         if active_dispatch:
-            _LOGGER.info(
+            _LOGGER.debug(
                 f"[DISPATCH SENSOR] Sensor ON for device_id={self._device_id} at {as_local(utcnow()).strftime('%Y-%m-%d %H:%M:%S %Z')} (dispatch: {active_dispatch})"
             )
             return True
         else:
-            _LOGGER.info(
+            _LOGGER.debug(
                 f"[DISPATCH SENSOR] Sensor OFF for device_id={self._device_id} at {as_local(utcnow()).strftime('%Y-%m-%d %H:%M:%S %Z')}"
             )
             return False
@@ -203,12 +203,12 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
             or (d.get("deviceId") is None and d.get("meta", {}).get("deviceId") is None)
         ]
         if debug:
-            _LOGGER.info(
+            _LOGGER.debug(
                 f"[DISPATCH SENSOR] device_id={self._device_id}, found {len(device_dispatches)} dispatches for this device. All dispatches: {device_dispatches}"
             )
         if not device_dispatches:
             if debug:
-                _LOGGER.warning(
+                _LOGGER.debug(
                     f"[DISPATCH SENSOR] No dispatches match device_id={self._device_id}. Available deviceIds: {[d.get('deviceId') for d in planned_dispatches]}"
                 )
             return None
@@ -219,7 +219,7 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
                 start_str = dispatch.get("start")
                 end_str = dispatch.get("end")
                 if debug:
-                    _LOGGER.info(
+                    _LOGGER.debug(
                         f"[DISPATCH SENSOR] Checking dispatch window: start={as_local(parse_datetime(start_str)).strftime('%Y-%m-%d %H:%M:%S %Z') if start_str else 'None'}, end={as_local(parse_datetime(end_str)).strftime('%Y-%m-%d %H:%M:%S %Z') if end_str else 'None'}, now={as_local(now).strftime('%Y-%m-%d %H:%M:%S %Z')}"
                     )
                 if not start_str or not end_str:
@@ -230,7 +230,7 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
                     continue
                 if start <= now <= end:
                     if debug:
-                        _LOGGER.info(
+                        _LOGGER.debug(
                             f"[DISPATCH SENSOR] Active dispatch found for device_id={self._device_id}: {dispatch}"
                         )
                     return dispatch
@@ -265,7 +265,7 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
                 if next_end and isinstance(next_end, str)
                 else "None"
             )
-            _LOGGER.info(
+            _LOGGER.debug(
                 f"[DISPATCH SENSOR] Next dispatch times: current_start={current_start_str}, current_end={current_end_str}, next_start={next_start_str}, next_end={next_end_str}"
             )
         return None
