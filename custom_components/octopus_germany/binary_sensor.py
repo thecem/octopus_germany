@@ -52,7 +52,7 @@ async def async_setup_entry(
                 device_name = device.get("name", f"Device_{device_id}")
                 if not device_id:
                     continue
-                _LOGGER.warning(
+                _LOGGER.debug(
                     f"[DISPATCH SENSOR INIT] Creating sensor for account={acc_num}, device_id={device_id}, device_name={device_name}"
                 )
                 entities.append(
@@ -61,19 +61,17 @@ async def async_setup_entry(
                     )
                 )
         else:
-            _LOGGER.warning(
+            _LOGGER.debug(
                 f"[DISPATCH SENSOR INIT] No devices data for account={acc_num}"
             )
 
     if entities:
-        _LOGGER.warning(
+        _LOGGER.debug(
             f"[DISPATCH SENSOR INIT] Adding {len(entities)} binary sensors to Home Assistant"
         )
         async_add_entities(entities)
     else:
-        _LOGGER.warning(
-            "[DISPATCH SENSOR INIT] No binary sensors to add for any account"
-        )
+        _LOGGER.debug("[DISPATCH SENSOR INIT] No binary sensors to add for any account")
 
 
 class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorEntity):
@@ -143,7 +141,7 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
         self._attr_has_entity_name = False
         self._attributes = {}
         self._update_attributes()
-        _LOGGER.warning(
+        _LOGGER.debug(
             f"[DISPATCH SENSOR INIT] __init__ called for device_id={device_id}, device_name={device_name}"
         )
 
@@ -179,7 +177,7 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
             or self._account_number not in self.coordinator.data
         ):
             if debug:
-                _LOGGER.warning(
+                _LOGGER.debug(
                     f"[DISPATCH SENSOR] No valid coordinator data for device_id={self._device_id}"
                 )
             return None
@@ -190,7 +188,7 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
             planned_dispatches = account_data.get("planned_dispatches", [])
         if not planned_dispatches:
             if debug:
-                _LOGGER.warning(
+                _LOGGER.debug(
                     f"[DISPATCH SENSOR] No planned dispatches for device_id={self._device_id}"
                 )
             return None
