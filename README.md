@@ -29,6 +29,7 @@ This custom component integrates Octopus Germany services with Home Assistant, p
 - **Smart Meter Readings**: Previous day accumulative consumption with hourly breakdown
 - **Service Device Grouping**: All entities organized under single service device per account
 - **Multi-Account**: Support for multiple Octopus accounts under one integration
+- **Multi-Device**: Support for multiple Devices (EV, charger, heatpumps) under multiple accounts
 - **Gas infrastructure monitoring** (MALO/MELO numbers, meters, readings)
 - **Latest Electricity meter reading**
 - **Gas contract tracking** with expiry countdown
@@ -60,27 +61,6 @@ The integration is configured via the Home Assistant UI:
 4. The integration will automatically fetch your account number and set up the entities
 
 ## Entities
-
-### Binary Sensors
-
-#### Intelligent Dispatching
-- **Entity ID**: `binary_sensor.octopus_<account_number>_intelligent_dispatching`
-- **Description**: Shows whether Octopus Intelligent is currently dispatching (active charging schedule)
-- **State**: `on` when dispatching is active, `off` when inactive
-- **Attributes**:
-  - `account_number`: Your Octopus Energy account number
-  - `electricity_balance`: Current account balance in EUR
-  - `planned_dispatches`: List of upcoming charging sessions
-  - `completed_dispatches`: List of completed charging sessions
-  - `devices`: Information about connected smart devices
-  - `provider`: Energy provider information
-  - `vehicle_battery_size_in_kwh`: Vehicle battery capacity (if available)
-  - `current_start`: Start time of current dispatch
-  - `current_end`: End time of current dispatch
-  - `products`: Energy product details
-  - `malo_number`: Electricity meter point number
-  - `melo_number`: Electricity meter number
-  - `meter`: Meter information
 
 ### Sensors
 
@@ -200,7 +180,7 @@ The integration is configured via the Home Assistant UI:
 
 #### Device Status Sensor
 
-- **Entity ID**: `sensor.octopus_<account_number>_device_status`
+- **Entity ID**: `sensor.octopus_<account_number>_<device_name>_status`
 - **Description**: Current status of your smart charging device (e.g., "PLUGGED_IN", "CHARGING", "FINISHED", etc.)
 - **Attributes**:
   - `device_id`: Internal ID of the connected device
@@ -214,7 +194,7 @@ The integration is configured via the Home Assistant UI:
 
 #### Smart Charging Sessions Sensor
 
-- **Entity ID**: `sensor.octopus_<account_number>_smart_charging_sessions`
+- **Entity ID**: `sensor.octopus_<account_number>_<device_name>_smart_charging_sessions`
 - **Description**: Tracks smart charging sessions for Octopus SmartFlex rewards program (30€/month with ≥5 smart charges per calendar month)
 - **State**: Number of SMART charging sessions in current month
 - **Attributes**:
@@ -255,7 +235,7 @@ The integration is configured via the Home Assistant UI:
 
 #### Intelligent Dispatching Binary Sensor
 
-- **Entity ID**: `binary_sensor.octopus_<account_number>_intelligent_dispatching`
+- **Entity ID**: `binary_sensor.octopus_<account_number>_<device_name>_intelligent_dispatching`
 - **Description**: Shows whether intelligent dispatching (smart charging) is currently active
 - **State**: `on` when a dispatch is active, `off` otherwise
 - **Attributes**:
@@ -268,7 +248,7 @@ The integration is configured via the Home Assistant UI:
 ### Switches
 
 #### Smart Charging Control
-- **Entity ID**: `switch.octopus_<account_number>_device_smart_control`
+- **Entity ID**: `switch.octopus_<account_number>_<device_name>_smart_control`
 - **Description**: Controls smart charging functionality for electric vehicles/charge points
 - **Requirements**: Device must be connected and capable of smart control
 - **Actions**:
