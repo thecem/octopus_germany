@@ -37,7 +37,7 @@ get_smart_meter_readings:
       name: Account Number
       description: The account number (usually starts with A-)
       required: true
-      example: "A-66DF80AE"
+      example: "A-12345678"
       selector:
         text:
     date:
@@ -51,7 +51,7 @@ get_smart_meter_readings:
       name: Property ID
       description: Property ID (optional, will use first property if not specified)
       required: false
-      example: "249906"
+      example: "123456"
       selector:
         text:
 
@@ -63,14 +63,14 @@ export_smart_meter_csv:
       name: Account Number
       description: The account number (usually starts with A-)
       required: true
-      example: "A-66DF80AE"
+      example: "A-12345678"
       selector:
         text:
     property_id:
       name: Property ID
       description: Property ID (optional, will use first property if not specified)
       required: false
-      example: "249906"
+      example: "123456"
       selector:
         text:
     period:
