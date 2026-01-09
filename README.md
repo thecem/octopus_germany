@@ -362,6 +362,97 @@ automation:
             ({{ trigger.event.data.total_readings }} readings)
 ```
 
+### export_smart_meter_csv
+- **Service ID**: `octopus_germany.export_smart_meter_csv`
+- **Description**: Export smart meter data for a month or year to CSV file (table layout with days as columns and 15-minute rows)
+- **Parameters**:
+  - `account_number` (required): Your Octopus Energy account number (format: A-xxxxxxxx)
+  - `period` (required): Export period - `"month"` or `"year"`
+  - `year` (required): Year for the export (YYYY format, e.g., 2025)
+  - `month` (optional): Month for the export (1-12, required for monthly export)
+  - `property_id` (optional): Property ID (will use first property if not specified)
+  - `filename` (optional): Output filename without extension (saved in /config directory)
+  - `layout` (optional): `"wide"` (days as columns, 15-min rows) or `"tall"` (days as rows)
+  - `summary` (optional): Add per-day summary section
+  - `go_window_start`/`go_window_end` (optional): HH:MM window to split summary into GO vs Standard kWh
+
+**CSV Format:**
+The generated CSV matches the Octopus Germany portal format with:
+- First column: 15-minute time intervals (00:00, 00:15, 00:30, 00:45, etc.)
+- Other columns: Days in DD.MM format
+- Values: Electricity consumption in kWh with 3 decimal places
+
+**Example - Monthly Export:**
+```yaml
+service: octopus_germany.export_smart_meter_csv
+data:
+  account_number: "A-66DF80AE"
+  period: "month"
+  year: 2025
+  month: 1
+  filename: "januar_2025"
+```
+
+**Example - Yearly Export:**
+```yaml
+service: octopus_germany.export_smart_meter_csv
+data:
+  account_number: "A-66DF80AE"
+  period: "year"
+  year: 2025
+  filename: "stromverbrauch_2025"
+```
+
+**Result Event:**
+The service fires an event `octopus_germany_csv_export_result` with the following data:
+```yaml
+event_type: octopus_germany_csv_export_result
+data:
+  success: true
+  account_number: "A-66DF80AE"
+  property_id: "249906"
+  period: "month"
+  start_date: "2025-01-01"
+  end_date: "2025-01-31"
+  total_days: 31
+  days_with_data: 29
+  output_file: "/config/januar_2025.csv"
+```
+
+**Automation Example - Monthly Export:**
+```yaml
+automation:
+  - alias: "Monthly Electricity Export"
+    description: "Export previous month's data on the 5th of each month"
+    trigger:
+      - platform: time
+        at: "02:00:00"
+    condition:
+      - condition: template
+        value_template: "{{ now().day == 5 }}"
+    action:
+      - service: octopus_germany.export_smart_meter_csv
+        data:
+          account_number: "A-66DF80AE"
+          period: "month"
+          year: "{{ now().year if now().month > 1 else now().year - 1 }}"
+          month: "{{ (now().month - 1) if now().month > 1 else 12 }}"
+          filename: "export_{{ now().year if now().month > 1 else now().year - 1 }}_{{ '%02d' | format((now().month - 1) if now().month > 1 else 12) }}"
+      - service: notify.mobile_app
+        data:
+          title: "CSV Export Complete"
+          message: "Monthly electricity data exported successfully"
+```
+
+**Notes:**
+- Smart meter data is typically available 2-3 days after the consumption date
+- The CSV file is saved to the Home Assistant `/config` directory
+- **Default filename format**:
+  - Monthly: `octopus_A-66DF80AE_2025_01.csv` (octopus_ACCOUNT_YEAR_MONTH.csv)
+  - Yearly: `octopus_A-66DF80AE_2025.csv` (octopus_ACCOUNT_YEAR.csv)
+- File operations are performed asynchronously to prevent blocking
+- For comprehensive documentation and more automation examples, see [CSV_EXPORT_SERVICE.md](CSV_EXPORT_SERVICE.md)
+
 ## Automation
 
 [Octopus Intelligent Go mit EVCC](https://github.com/ha-puzzles/homeassistant-puzzlepieces/blob/main/use-cases/stromtarife/octopus-intelligent-go/README.md)

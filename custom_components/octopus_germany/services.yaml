@@ -31,7 +31,7 @@ set_device_preferences:
 
 get_smart_meter_readings:
   name: Get Smart Meter Readings
-  description: Fetch smart meter readings for a specific date (historical data available)
+  description: Fetch smart meter readings for a specific date (historical). Results are returned in the service response and as event `octopus_germany_smart_meter_readings_result` (subscribe via Developer Tools → Events).
   fields:
     account_number:
       name: Account Number
@@ -54,3 +54,91 @@ get_smart_meter_readings:
       example: "249906"
       selector:
         text:
+
+export_smart_meter_csv:
+  name: Export Smart Meter Data to CSV
+  description: Export smart meter data for a month or year to CSV file (table layout with days as columns and 15-minute rows)
+  fields:
+    account_number:
+      name: Account Number
+      description: The account number (usually starts with A-)
+      required: true
+      example: "A-66DF80AE"
+      selector:
+        text:
+    property_id:
+      name: Property ID
+      description: Property ID (optional, will use first property if not specified)
+      required: false
+      example: "249906"
+      selector:
+        text:
+    period:
+      name: Period
+      description: Export monthly or yearly data
+      required: true
+      default: "month"
+      example: "month"
+      selector:
+        select:
+          options:
+            - "month"
+            - "year"
+    year:
+      name: Year
+      description: Year for the export (YYYY format)
+      required: true
+      example: 2025
+      selector:
+        number:
+          min: 2020
+          max: 2030
+          mode: box
+    month:
+      name: Month
+      description: Month for the export (1-12, only for monthly period)
+      required: false
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 12
+          mode: box
+    filename:
+      name: Filename
+      description: Output filename (without extension, saved in /config; leave empty to auto-generate octopus_<account>_<year>[_<month>].csv)
+      required: false
+      example: "octopus_export"
+      selector:
+        text:
+    layout:
+      name: Layout
+      description: "Table layout: wide (days as columns) or tall (days as rows)"
+      required: false
+      default: "wide"
+      selector:
+        select:
+          options:
+            - "wide"
+            - "tall"
+    summary:
+      name: Add Summary
+      description: "Add a per-day summary section (total kWh and optional GO/Standard split)"
+      required: false
+      default: false
+      selector:
+        boolean:
+    go_window_start:
+      name: GO Window Start
+      description: Optional start time for GO window (HH:MM, used for summary split)
+      required: false
+      example: "00:30"
+      selector:
+        time:
+    go_window_end:
+      name: GO Window End
+      description: Optional end time for GO window (HH:MM, used for summary split)
+      required: false
+      example: "04:30"
+      selector:
+        time:

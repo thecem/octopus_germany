@@ -33,12 +33,21 @@ API_URL = "https://api.octopus.energy/v1/graphql/"
 # Service schemas
 SERVICE_SET_DEVICE_PREFERENCES = "set_device_preferences"
 SERVICE_GET_SMART_METER_READINGS = "get_smart_meter_readings"
+SERVICE_EXPORT_SMART_METER_CSV = "export_smart_meter_csv"
 ATTR_ACCOUNT_NUMBER = "account_number"
 ATTR_DEVICE_ID = "device_id"
 ATTR_TARGET_PERCENTAGE = "target_percentage"
 ATTR_TARGET_TIME = "target_time"
 ATTR_DATE = "date"
 ATTR_PROPERTY_ID = "property_id"
+ATTR_PERIOD = "period"
+ATTR_YEAR = "year"
+ATTR_MONTH = "month"
+ATTR_FILENAME = "filename"
+ATTR_LAYOUT = "layout"
+ATTR_SUMMARY = "summary"
+ATTR_GO_WINDOW_START = "go_window_start"
+ATTR_GO_WINDOW_END = "go_window_end"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -391,30 +400,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
         # Handle dispatch data if it exists
-        # Check if key exists at all - if not, API had error and we should cache
+        # Try to fall back to cached data from coordinator if API omits the field
+        cached_account = {}
+        try:
+            cached_coordinator = (
+                hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("coordinator")
+            )
+            if cached_coordinator and cached_coordinator.data:
+                cached_account = cached_coordinator.data.get(account_number, {}) or {}
+        except Exception:
+            cached_account = {}
+
         if "plannedDispatches" not in data:
-            # API error - plannedDispatches was removed from result, use cached data
-            if (
-                account_number in self.data
-                and "planned_dispatches" in self.data[account_number]
-            ):
-                planned_dispatches = self.data[account_number]["planned_dispatches"]
+            planned_dispatches = cached_account.get("planned_dispatches", [])
+            if planned_dispatches:
                 _LOGGER.debug(
-                    "API error fetching planned dispatches for %s, using cached data (%d dispatches)",
+                    "API missing plannedDispatches for %s, using cached data (%d dispatches)",
                     account_number,
                     len(planned_dispatches),
                 )
             else:
                 planned_dispatches = []  # No previous data available
         else:
-            planned_dispatches = data.get("plannedDispatches")
-            if planned_dispatches is None:  # Explicit None from API
-                planned_dispatches = []
+            planned_dispatches = data.get("plannedDispatches") or []
         result_data[account_number]["planned_dispatches"] = planned_dispatches
 
-        completed_dispatches = data.get("completedDispatches", [])
-        if completed_dispatches is None:  # Handle explicit None value (from API error)
-            completed_dispatches = []
+        completed_dispatches = data.get("completedDispatches")
+        if completed_dispatches is None:
+            completed_dispatches = cached_account.get("completed_dispatches", [])
         result_data[account_number]["completed_dispatches"] = completed_dispatches
 
         # Calculate current and next dispatches
@@ -1294,6 +1307,344 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
             raise HomeAssistantError(f"Error fetching smart meter readings: {e}")
 
+    async def handle_export_smart_meter_csv(call: ServiceCall) -> dict:
+        """Handle the export_smart_meter_csv service call."""
+        import csv
+        import os
+        from calendar import monthrange
+
+        account_number = call.data.get(ATTR_ACCOUNT_NUMBER)
+        property_id = call.data.get(ATTR_PROPERTY_ID)
+        period = call.data.get(ATTR_PERIOD, "month")
+        year = call.data.get(ATTR_YEAR)
+        month = call.data.get(ATTR_MONTH)
+        filename = call.data.get(ATTR_FILENAME)
+        layout = call.data.get(ATTR_LAYOUT, "wide")
+        add_summary = call.data.get(ATTR_SUMMARY, False)
+        go_window_start = call.data.get(ATTR_GO_WINDOW_START)
+        go_window_end = call.data.get(ATTR_GO_WINDOW_END)
+
+        # Validate inputs
+        if not account_number:
+            from homeassistant.exceptions import ServiceValidationError
+
+            raise ServiceValidationError(
+                "Account number is required",
+                translation_domain=DOMAIN,
+            )
+
+        if not year:
+            from homeassistant.exceptions import ServiceValidationError
+
+            raise ServiceValidationError(
+                "Year is required",
+                translation_domain=DOMAIN,
+            )
+
+        if period == "month" and not month:
+            from homeassistant.exceptions import ServiceValidationError
+
+            raise ServiceValidationError(
+                "Month is required for monthly export",
+                translation_domain=DOMAIN,
+            )
+
+        # Validate month
+        if month and (month < 1 or month > 12):
+            from homeassistant.exceptions import ServiceValidationError
+
+            raise ServiceValidationError(
+                f"Invalid month: {month}. Must be between 1 and 12",
+                translation_domain=DOMAIN,
+            )
+
+        try:
+            # Get the coordinator for this account
+            coordinator = None
+            client = None
+            for entry_id, data in hass.data[DOMAIN].items():
+                if (
+                    data["coordinator"].data
+                    and account_number in data["coordinator"].data
+                ):
+                    coordinator = data["coordinator"]
+                    client = data.get("api") or data.get("client")
+                    break
+
+            if not coordinator or not client:
+                from homeassistant.exceptions import ServiceValidationError
+
+                raise ServiceValidationError(
+                    f"Account {account_number} not found or not loaded",
+                    translation_domain=DOMAIN,
+                )
+
+            # Get property_id if not provided
+            if not property_id:
+                account_data = coordinator.data[account_number]
+                property_ids = account_data.get("property_ids", [])
+                if not property_ids:
+                    from homeassistant.exceptions import ServiceValidationError
+
+                    raise ServiceValidationError(
+                        f"No properties found for account {account_number}",
+                        translation_domain=DOMAIN,
+                    )
+                property_id = property_ids[0]
+
+            # Determine date range
+            if period == "month":
+                start_date = datetime(year, month, 1)
+                _, last_day = monthrange(year, month)
+                end_date = datetime(year, month, last_day)
+                period_label = f"{year}-{month:02d}"
+            else:  # year
+                start_date = datetime(year, 1, 1)
+                end_date = datetime(year, 12, 31)
+                period_label = f"{year}"
+                month = None  # Reset month for yearly export
+
+            _LOGGER.info(
+                "Exporting smart meter data for account %s, property %s, period %s to %s",
+                account_number,
+                property_id,
+                start_date.strftime("%Y-%m-%d"),
+                end_date.strftime("%Y-%m-%d"),
+            )
+
+            # Collect all readings for the period
+            all_readings = {}
+            current_date = start_date
+            total_days = (end_date - start_date).days + 1
+
+            while current_date <= end_date:
+                date_str = current_date.strftime("%Y-%m-%d")
+                try:
+                    readings = await client.fetch_electricity_smart_meter_readings_v2(
+                        account_number, property_id, date_str
+                    )
+                    if readings:
+                        all_readings[date_str] = readings
+                        _LOGGER.debug(
+                            "Fetched %d readings for %s", len(readings), date_str
+                        )
+                except Exception as e:
+                    _LOGGER.warning("Failed to fetch readings for %s: %s", date_str, e)
+
+                current_date += timedelta(days=1)
+
+            if not all_readings:
+                from homeassistant.exceptions import ServiceValidationError
+
+                raise ServiceValidationError(
+                    f"No smart meter readings found for the specified period",
+                    translation_domain=DOMAIN,
+                )
+
+            # Generate filename with improved default naming
+            if not filename:
+                if period == "month":
+                    # Format: octopus_A-66DF80AE_2025_01.csv
+                    filename = f"octopus_{account_number}_{year}_{month:02d}"
+                else:  # year
+                    # Format: octopus_A-66DF80AE_2025.csv
+                    filename = f"octopus_{account_number}_{year}"
+
+            # Ensure filename ends with .csv
+            if not filename.endswith(".csv"):
+                filename = f"{filename}.csv"
+
+            # Save to /config directory
+            output_path = os.path.join(hass.config.path(), filename)
+
+            # Create CSV writing function to run in executor
+            def write_csv():
+                """Write CSV file (to be run in executor to avoid blocking)."""
+                with open(output_path, "w", newline="", encoding="utf-8") as csvfile:
+                    writer = csv.writer(csvfile, delimiter=";")
+
+                    # Create time slots (15-minute intervals)
+                    time_slots = []
+                    for hour in range(24):
+                        for minute in [0, 15, 30, 45]:
+                            time_slots.append(f"{hour:02d}:{minute:02d}")
+
+                    # Prepare data structures
+                    readings_by_time = {time_slot: {} for time_slot in time_slots}
+                    readings_by_day = {}
+                    daily_totals = {}
+
+                    # Optional GO window parsing
+                    go_start = None
+                    go_end = None
+                    if go_window_start and go_window_end:
+                        try:
+                            go_start = datetime.strptime(
+                                go_window_start, "%H:%M"
+                            ).time()
+                            go_end = datetime.strptime(go_window_end, "%H:%M").time()
+                        except Exception:
+                            _LOGGER.warning(
+                                "Invalid GO window times provided: %s - %s",
+                                go_window_start,
+                                go_window_end,
+                            )
+
+                    for date_str, readings in all_readings.items():
+                        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+                        day_key = f"{date_obj.day:02d}.{date_obj.month:02d}"
+                        readings_by_day.setdefault(day_key, {})
+                        day_total = 0.0
+                        day_go = 0.0
+
+                        for reading in readings:
+                            # Handle both V1 (startAt) and V2 (start_time) keys
+                            start_at = (
+                                reading.get("start_time")
+                                or reading.get("startAt")
+                                or reading.get("start_at")
+                                or ""
+                            )
+                            if start_at:
+                                try:
+                                    reading_time = datetime.fromisoformat(
+                                        start_at.replace("Z", "+00:00")
+                                    )
+                                    time_key = reading_time.strftime("%H:%M")
+                                    minute = reading_time.minute
+                                    rounded_minute = (minute // 15) * 15
+                                    time_key = (
+                                        f"{reading_time.hour:02d}:{rounded_minute:02d}"
+                                    )
+
+                                    value = float(reading.get("value", 0))
+                                    day_total += value
+
+                                    # GO/Standard split if window provided
+                                    if go_start and go_end:
+                                        t = reading_time.time()
+                                        if go_start <= go_end:
+                                            in_go = go_start <= t < go_end
+                                        else:
+                                            # window crosses midnight
+                                            in_go = t >= go_start or t < go_end
+                                        if in_go:
+                                            day_go += value
+
+                                    if time_key in readings_by_time:
+                                        readings_by_time[time_key][day_key] = (
+                                            f"{value:.3f}".replace(".", ",")
+                                        )
+                                    readings_by_day[day_key][time_key] = (
+                                        f"{value:.3f}".replace(".", ",")
+                                    )
+                                except Exception as e:
+                                    _LOGGER.warning(
+                                        "Failed to parse reading time %s: %s",
+                                        start_at,
+                                        e,
+                                    )
+
+                        daily_totals[day_key] = {
+                            "total_kwh": round(day_total, 3),
+                            "go_kwh": round(day_go, 3) if go_start and go_end else None,
+                        }
+
+                    if layout == "wide":
+                        # Header with dates as columns
+                        if period == "month":
+                            _, last_day = monthrange(year, month)
+                            header = ["Zeit"] + [
+                                f"{day:02d}.{month:02d}"
+                                for day in range(1, last_day + 1)
+                            ]
+                        else:  # year
+                            header = ["Zeit"]
+                            for m in range(1, 13):
+                                _, last_day = monthrange(year, m)
+                                for day in range(1, last_day + 1):
+                                    header.append(f"{day:02d}.{m:02d}")
+
+                        writer.writerow(header)
+                        for time_slot in time_slots:
+                            row = [time_slot]
+                            for col in header[1:]:
+                                value = readings_by_time[time_slot].get(col, "")
+                                row.append(value)
+                            writer.writerow(row)
+                    else:
+                        # Tall layout: dates as rows, times as columns
+                        header = ["Datum"] + time_slots
+                        writer.writerow(header)
+                        for day_key in sorted(
+                            readings_by_day.keys(),
+                            key=lambda d: datetime.strptime(d, "%d.%m"),
+                        ):
+                            row = [day_key]
+                            for ts in time_slots:
+                                row.append(readings_by_day[day_key].get(ts, ""))
+                            writer.writerow(row)
+
+                    if add_summary:
+                        writer.writerow([])
+                        writer.writerow(["Summary"])
+                        summary_header = ["Datum", "Total kWh"]
+                        include_go = any(
+                            v.get("go_kwh") is not None for v in daily_totals.values()
+                        )
+                        if include_go:
+                            summary_header += ["GO kWh", "Standard kWh"]
+                        writer.writerow(summary_header)
+                        for day_key, totals in sorted(
+                            daily_totals.items(),
+                            key=lambda item: datetime.strptime(item[0], "%d.%m"),
+                        ):
+                            row = [
+                                day_key,
+                                f"{totals['total_kwh']:.3f}".replace(".", ","),
+                            ]
+                            if include_go:
+                                go_val = totals.get("go_kwh") or 0.0
+                                std_val = totals["total_kwh"] - go_val
+                                row += [
+                                    f"{go_val:.3f}".replace(".", ","),
+                                    f"{std_val:.3f}".replace(".", ","),
+                                ]
+                            writer.writerow(row)
+
+            # Run file writing in executor to avoid blocking the event loop
+            await hass.async_add_executor_job(write_csv)
+
+            result = {
+                "success": True,
+                "account_number": account_number,
+                "property_id": property_id,
+                "period": period,
+                "start_date": start_date.strftime("%Y-%m-%d"),
+                "end_date": end_date.strftime("%Y-%m-%d"),
+                "total_days": total_days,
+                "days_with_data": len(all_readings),
+                "output_file": output_path,
+            }
+
+            _LOGGER.info(
+                "Successfully exported smart meter data to %s (%d days with data out of %d total days)",
+                output_path,
+                len(all_readings),
+                total_days,
+            )
+
+            # Fire an event with the results
+            hass.bus.async_fire(f"{DOMAIN}_csv_export_result", result)
+
+            return result
+
+        except Exception as e:
+            _LOGGER.exception("Error exporting smart meter data to CSV: %s", e)
+            from homeassistant.exceptions import HomeAssistantError
+
+            raise HomeAssistantError(f"Error exporting smart meter data: {e}")
+
     # Register services
     hass.services.async_register(
         DOMAIN,
@@ -1305,6 +1656,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         DOMAIN,
         SERVICE_GET_SMART_METER_READINGS,
         handle_get_smart_meter_readings,
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_EXPORT_SMART_METER_CSV,
+        handle_export_smart_meter_csv,
     )
 
     return True
