@@ -319,9 +319,9 @@ data:
 ```yaml
 service: octopus_germany.get_smart_meter_readings
 data:
-  account_number: "A-66DF80AE"
+  account_number: "A-12345678"
   date: "2025-10-08"
-  # property_id: "249906"  # Optional
+  # property_id: "123456"  # Optional
 ```
 
 **Result Event:**
@@ -330,8 +330,8 @@ The service fires an event `octopus_germany_smart_meter_readings_result` with th
 event_type: octopus_germany_smart_meter_readings_result
 data:
   success: true
-  account_number: "A-66DF80AE"
-  property_id: "249906"
+  account_number: "A-12345678"
+  property_id: "123456"
   date: "2025-10-08"
   total_readings: 24
   total_consumption: 15.234
@@ -386,7 +386,7 @@ The generated CSV matches the Octopus Germany portal format with:
 ```yaml
 service: octopus_germany.export_smart_meter_csv
 data:
-  account_number: "A-66DF80AE"
+  account_number: "A-12345678"
   period: "month"
   year: 2025
   month: 1
@@ -397,7 +397,7 @@ data:
 ```yaml
 service: octopus_germany.export_smart_meter_csv
 data:
-  account_number: "A-66DF80AE"
+  account_number: "A-12345678"
   period: "year"
   year: 2025
   filename: "stromverbrauch_2025"
@@ -409,8 +409,8 @@ The service fires an event `octopus_germany_csv_export_result` with the followin
 event_type: octopus_germany_csv_export_result
 data:
   success: true
-  account_number: "A-66DF80AE"
-  property_id: "249906"
+  account_number: "A-12345678"
+  property_id: "123456"
   period: "month"
   start_date: "2025-01-01"
   end_date: "2025-01-31"
@@ -433,7 +433,7 @@ automation:
     action:
       - service: octopus_germany.export_smart_meter_csv
         data:
-          account_number: "A-66DF80AE"
+          account_number: "A-12345678"
           period: "month"
           year: "{{ now().year if now().month > 1 else now().year - 1 }}"
           month: "{{ (now().month - 1) if now().month > 1 else 12 }}"
@@ -448,8 +448,8 @@ automation:
 - Smart meter data is typically available 2-3 days after the consumption date
 - The CSV file is saved to the Home Assistant `/config` directory
 - **Default filename format**:
-  - Monthly: `octopus_A-66DF80AE_2025_01.csv` (octopus_ACCOUNT_YEAR_MONTH.csv)
-  - Yearly: `octopus_A-66DF80AE_2025.csv` (octopus_ACCOUNT_YEAR.csv)
+  - Monthly: `octopus_A-12345678_2025_01.csv` (octopus_ACCOUNT_YEAR_MONTH.csv)
+  - Yearly: `octopus_A-12345678_2025.csv` (octopus_ACCOUNT_YEAR.csv)
 - File operations are performed asynchronously to prevent blocking
 - For comprehensive documentation and more automation examples, see [CSV_EXPORT_SERVICE.md](CSV_EXPORT_SERVICE.md)
 
