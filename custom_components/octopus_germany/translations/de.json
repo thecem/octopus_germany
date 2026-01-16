@@ -1,0 +1,46 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "Ger\u00e4t ist bereits konfiguriert",
+      "reconfigure_failed": "Neukonfiguration fehlgeschlagen",
+      "reconfigure_successful": "Neukonfiguration erfolgreich"
+    },
+    "error": {
+      "invalid_auth": "E-Mail oder Passwort sind ung\u00fcltig.",
+      "no_accounts": "Keine Konten f\u00fcr diesen Benutzer gefunden",
+      "unknown": "Ein unerwarteter Fehler ist aufgetreten"
+    },
+    "step": {
+      "user": {
+        "title": "Octopus Energy Germany",
+        "description": "Geben Sie Ihre Octopus Energy Germany Zugangsdaten ein",
+        "data": {
+          "email": "E-Mail",
+          "password": "Passwort"
+        }
+      },
+      "reconfigure": {
+        "title": "Octopus Germany neu konfigurieren",
+        "description": "Aktualisieren Sie Ihre Octopus Energy Germany Zugangsdaten. Aktuelle E-Mail: {current_email}",
+        "data": {
+          "email": "E-Mail",
+          "password": "Passwort"
+        }
+      }
+    }
+  },
+  "options": {
+    "error": {
+      "invalid_auth": "E-Mail oder Passwort sind ung\u00fcltig."
+    },
+    "step": {
+      "init": {
+        "title": "Octopus Energy Germany.",
+        "data": {
+          "email": "E-Mail",
+          "password": "Passwort"
+        }
+      }
+    }
+  }
+}
