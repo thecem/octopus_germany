@@ -61,6 +61,9 @@ class OctopusGermanyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
             if valid:
+                await self.async_set_unique_id(email)
+                self._abort_if_unique_id_configured()
+
                 # Store the complete account data in user_input
                 user_input["account_data"] = account_data
                 return self.async_create_entry(
