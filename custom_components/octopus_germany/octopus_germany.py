@@ -19,8 +19,9 @@ _LOGGER = logging.getLogger(__name__)
 GRAPH_QL_ENDPOINT = "https://api.oeg-kraken.energy/v1/graphql/"
 ELECTRICITY_LEDGER = "ELECTRICITY_LEDGER"
 
-# Global token manager to prevent multiple instances from making redundant token requests
-_GLOBAL_TOKEN_MANAGER = None
+# Global dictionary to store token managers for each account (email)
+# This prevents redundant logins while supporting multiple accounts
+_TOKEN_MANAGERS = {}
 
 # Comprehensive query that gets all data in one go
 COMPREHENSIVE_QUERY = """
@@ -791,11 +792,15 @@ class OctopusGermany:
         self._email = email
         self._password = password
 
-        # Use global token manager to prevent redundant login attempts across instances
-        global _GLOBAL_TOKEN_MANAGER
-        if _GLOBAL_TOKEN_MANAGER is None:
-            _GLOBAL_TOKEN_MANAGER = TokenManager()
-        self._token_manager = _GLOBAL_TOKEN_MANAGER
+        # Use shared token manager for this email to prevent redundant login attempts
+        global _TOKEN_MANAGERS
+        if email not in _TOKEN_MANAGERS:
+            _TOKEN_MANAGERS[email] = TokenManager()
+            _LOGGER.debug("Created new TokenManager for %s", email)
+        else:
+            _LOGGER.debug("Reusing existing TokenManager for %s", email)
+
+        self._token_manager = _TOKEN_MANAGERS[email]
 
         # Set up the token manager refresh callback
         self._token_manager.set_refresh_callback(self.login)
