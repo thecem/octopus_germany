@@ -15,7 +15,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util.dt import utcnow, as_utc, parse_datetime
 
-from .const import DOMAIN, CONF_EMAIL, CONF_PASSWORD, UPDATE_INTERVAL, DEBUG_ENABLED
+from .const import DOMAIN, CONF_EMAIL, CONF_PASSWORD, UPDATE_INTERVAL, DEBUG_ENABLED, DEVICE_UPDATE_INTERVAL
 from .octopus_germany import OctopusGermany
 
 import voluptuous as vol
@@ -1064,12 +1064,135 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 else "None",
             )
 
-    # Store API, account number and coordinator in hass.data
+    # -------------------------------------------------------------------------
+    # Fast device coordinator – polls every DEVICE_UPDATE_INTERVAL minutes.
+    # Fetches only fast-changing data: device status, charging sessions, and
+    # planned/completed dispatches.  Slow-changing account and tariff data
+    # remain on the main coordinator above.
+    # -------------------------------------------------------------------------
+
+    async def async_update_device_data():
+        """Fetch fast-changing device data for all accounts."""
+        all_device_data = {}
+
+        for account_num in account_numbers:
+            try:
+                device_data = await api.fetch_device_status(account_num)
+                if not device_data:
+                    _LOGGER.warning(
+                        "Failed to fetch device status for account %s", account_num
+                    )
+                    continue
+
+                # Retrieve cached data for fields that may be absent due to errors
+                cached_account: dict = {}
+                try:
+                    if (
+                        hasattr(device_coordinator, "data")
+                        and device_coordinator.data
+                        and account_num in device_coordinator.data
+                    ):
+                        cached_account = device_coordinator.data[account_num] or {}
+                except Exception:
+                    cached_account = {}
+
+                devices = device_data.get("devices", [])
+
+                # Vehicle battery size
+                vehicle_battery_size = None
+                for device in devices:
+                    variant = device.get("vehicleVariant") or {}
+                    if variant.get("batterySize"):
+                        try:
+                            vehicle_battery_size = float(variant["batterySize"])
+                            break
+                        except (ValueError, TypeError):
+                            pass
+
+                # Charging sessions – use cached value when the API returned an error
+                charging_sessions = device_data.get("charging_sessions")
+                if charging_sessions is None:
+                    charging_sessions = cached_account.get("charging_sessions", [])
+
+                # Completed dispatches
+                completed_dispatches = device_data.get("completedDispatches") or []
+
+                # Planned dispatches
+                planned_dispatches = device_data.get("plannedDispatches") or []
+
+                # Calculate current and next dispatch windows
+                now = utcnow()
+                current_start = None
+                current_end = None
+                next_start = None
+                next_end = None
+
+                for dispatch in sorted(
+                    planned_dispatches, key=lambda x: x.get("start", "")
+                ):
+                    try:
+                        start_str = dispatch.get("start")
+                        end_str = dispatch.get("end")
+                        if not start_str or not end_str:
+                            continue
+                        start = as_utc(parse_datetime(start_str))
+                        end = as_utc(parse_datetime(end_str))
+                        if start <= now <= end:
+                            current_start = start
+                            current_end = end
+                        elif now < start and not next_start:
+                            next_start = start
+                            next_end = end
+                    except (ValueError, TypeError) as parse_err:
+                        _LOGGER.error(
+                            "Error parsing dispatch dates: %s - %s",
+                            dispatch,
+                            str(parse_err),
+                        )
+
+                all_device_data[account_num] = {
+                    "devices": devices,
+                    "vehicle_battery_size_in_kwh": vehicle_battery_size,
+                    "charging_sessions": charging_sessions,
+                    "completed_dispatches": completed_dispatches,
+                    "planned_dispatches": planned_dispatches,
+                    "current_start": current_start,
+                    "current_end": current_end,
+                    "next_start": next_start,
+                    "next_end": next_end,
+                }
+
+            except Exception as e:
+                _LOGGER.error(
+                    "Error processing device data for account %s: %s", account_num, e
+                )
+
+        if not all_device_data:
+            _LOGGER.warning("Failed to fetch device data for any account")
+            if hasattr(device_coordinator, "data") and device_coordinator.data:
+                return device_coordinator.data
+            return {}
+
+        return all_device_data
+
+    device_coordinator = DataUpdateCoordinator(
+        hass,
+        _LOGGER,
+        name=f"{DOMAIN}_{primary_account_number}_device",
+        update_method=async_update_device_data,
+        update_interval=timedelta(minutes=DEVICE_UPDATE_INTERVAL),
+    )
+
+    # Initial device data refresh
+    await device_coordinator.async_config_entry_first_refresh()
+
+    # Store API, account number and both coordinators in hass.data
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api,
         "account_number": primary_account_number,
         "account_numbers": account_numbers,
         "coordinator": coordinator,
+        "device_coordinator": device_coordinator,
     }
 
     # Register account service devices before setting up platforms

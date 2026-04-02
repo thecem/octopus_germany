@@ -33,7 +33,7 @@ async def async_setup_entry(
     data = hass.data[DOMAIN][config_entry.entry_id]
     api = data["api"]
     account_number = data["account_number"]
-    coordinator = data["coordinator"]
+    coordinator = data["device_coordinator"]
 
     # Check for valid data in coordinator
     if not coordinator.data:
@@ -101,10 +101,9 @@ async def _setup_boost_charge_switches(
 ) -> None:
     """Set up boost charge switches."""
     try:
-        # Use the existing main coordinator instead of creating a separate one
-        # This avoids token management issues
+        # Use the device coordinator for fast status updates
         data = hass.data[DOMAIN][entry.entry_id]
-        coordinator = data["coordinator"]
+        coordinator = data["device_coordinator"]
 
         # Get current data from main coordinator
         account_data = (

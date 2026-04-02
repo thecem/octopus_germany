@@ -6,7 +6,8 @@ CONF_EMAIL = "email"
 CONF_PASSWORD = "password"
 
 # Update interval settings
-UPDATE_INTERVAL = 30  # Update interval in minutes
+UPDATE_INTERVAL = 30  # Update interval in minutes for slow-changing account data
+DEVICE_UPDATE_INTERVAL = 5  # Fast update interval in minutes for device status/dispatches
 
 # Schema exploration (run once for debugging)
 EXPLORE_SCHEMA_ONCE = False  # Set to True to run schema exploration once

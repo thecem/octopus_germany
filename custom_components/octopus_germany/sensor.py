@@ -140,9 +140,10 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up Octopus Germany price sensors from a config entry."""
-    # Using existing coordinator from hass.data[DOMAIN] to avoid duplicate API calls
+    # Using existing coordinators from hass.data[DOMAIN] to avoid duplicate API calls
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
+    device_coordinator = data["device_coordinator"]
     account_number = data["account_number"]
     client = data["api"]  # The API client is stored as "api" in __init__.py
 
@@ -254,8 +255,15 @@ async def async_setup_entry(
                         OctopusGasContractExpiryDaysSensor(acc_num, coordinator)
                     )
 
-            # Create device status sensors for each device
-            devices = account_data.get("devices", [])
+            # Create device status sensors for each device.
+            # Device data is sourced from the fast device_coordinator so that
+            # status updates are reflected within DEVICE_UPDATE_INTERVAL minutes.
+            device_account_data = (
+                device_coordinator.data.get(acc_num, {})
+                if device_coordinator.data
+                else {}
+            )
+            devices = device_account_data.get("devices", [])
             if devices:
                 _LOGGER.debug(
                     "Creating device status sensors for account %s with %d devices",
@@ -266,28 +274,19 @@ async def async_setup_entry(
                     device_id = device.get("id")
                     if device_id:
                         entities.append(
-                            OctopusDeviceStatusSensor(acc_num, coordinator, device_id)
+                            OctopusDeviceStatusSensor(
+                                acc_num, device_coordinator, device_id
+                            )
                         )
 
-            # Erzeuge für jedes Gerät eine eigene Smart Charging Sessions Entität
-            charging_sessions = account_data.get("charging_sessions")
-            device_sessions = {}
-            if charging_sessions:
-                for session in charging_sessions:
-                    device_name = session.get("device_name")
-                    if not device_name:
-                        continue
-                    if device_name not in device_sessions:
-                        device_sessions[device_name] = []
-                    device_sessions[device_name].append(session)
-            # Für jedes bekannte device eine Entität anlegen
+            # Erzeuge für jedes Gerät eine eigene Smart Charging Sessions Entität.
+            # Sessions are read dynamically from device_coordinator on every update.
             for device in devices:
                 device_name = device.get("name", f"Device_{device.get('id')}")
                 device_id = device.get("id")
-                sessions = device_sessions.get(device_name, [])
                 entities.append(
                     OctopusSmartChargingSessionsSensor(
-                        acc_num, coordinator, device_name, device_id, sessions
+                        acc_num, device_coordinator, device_name, device_id
                     )
                 )
 
@@ -2320,7 +2319,7 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
 
         current_month = datetime.now().strftime("%Y-%m")
         smart_sessions_sorted = sorted(
-            self._sessions,
+            self._get_sessions(),
             key=lambda s: s.get("start") or "",
             reverse=True,
         )
@@ -2428,7 +2427,7 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
         return attributes
 
     def __init__(
-        self, account_number, coordinator, device_name, device_id, sessions
+        self, account_number, coordinator, device_name, device_id
     ) -> None:
         """Initialize the smart charging sessions sensor for a specific device."""
         super().__init__(coordinator)
@@ -2476,10 +2475,29 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
         self._attr_state_class = SensorStateClass.MEASUREMENT
         self._attr_has_entity_name = False
 
-        # Sessions für dieses Device
-        self._sessions = sessions or []
         self._cached_value = 0
         self._cached_attributes = {}
+
+    def _get_sessions(self) -> list:
+        """Return sessions for this device from the coordinator data."""
+        if (
+            not self.coordinator.data
+            or not isinstance(self.coordinator.data, dict)
+            or self._account_number not in self.coordinator.data
+        ):
+            return []
+        charging_sessions = (
+            self.coordinator.data[self._account_number].get("charging_sessions") or []
+        )
+        return [
+            s for s in charging_sessions if s.get("device_name") == self._device_name
+        ]
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator and invalidate the cache."""
+        self._cached_attributes = {}
+        self.async_write_ha_state()
 
     @property
     def native_value(self) -> int:
@@ -2489,7 +2507,7 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
         current_month = datetime.now().strftime("%Y-%m")
         # Sort sessions by start date descending (most recent first)
         smart_sessions_sorted = sorted(
-            self._sessions,
+            self._get_sessions(),
             key=lambda s: s.get("start") or "",
             reverse=True,
         )
@@ -2519,17 +2537,6 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
                 smart_sessions_current_month.append(session)
         return len(smart_sessions_current_month)
 
-        current_month = datetime.now().strftime("%Y-%m")
-        current_month_count = len(sessions_by_month.get(current_month, []))
-        current_month_qualified = current_month_count >= 5
-        total_energy = sum(
-            float(s.get("energyAdded", {}).get("value", 0) or 0) for s in smart_sessions
-        )
-
-        # Sessions der letzten 2 Jahre (24 Monate)
-        from datetime import timedelta
-
-        from datetime import timezone
 
         now = datetime.now(timezone.utc)
         min_date = now - timedelta(days=730)

@@ -23,7 +23,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up Octopus Germany binary sensors from a config entry."""
     data = hass.data[DOMAIN][entry.entry_id]
-    coordinator = data["coordinator"]
+    coordinator = data["device_coordinator"]
     account_number = data["account_number"]
 
     # Get all account numbers from entry data or coordinator data

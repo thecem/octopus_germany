@@ -282,6 +282,130 @@ query ComprehensiveDataQuery($accountNumber: String!) {
 }
 """
 
+# Lightweight query for fast-changing device data (used by the 5-minute device coordinator).
+# Fetches only device status, charging sessions, and completed dispatches.
+# Planned dispatches are fetched separately via fetch_flex_planned_dispatches().
+DEVICE_STATUS_QUERY = """
+query DeviceStatusQuery($accountNumber: String!) {
+  completedDispatches(accountNumber: $accountNumber) {
+    delta
+    deltaKwh
+    end
+    endDt
+    meta {
+      location
+      source
+    }
+    start
+    startDt
+  }
+  devices(accountNumber: $accountNumber) {
+    status {
+      current
+      currentState
+      isSuspended
+    }
+    provider
+    preferences {
+      mode
+      schedules {
+        dayOfWeek
+        max
+        min
+        time
+      }
+      targetType
+      unit
+      gridExport
+    }
+    preferenceSetting {
+      deviceType
+      id
+      mode
+      scheduleSettings {
+        id
+        max
+        min
+        step
+        timeFrom
+        timeStep
+        timeTo
+      }
+      unit
+    }
+    name
+    integrationDeviceId
+    id
+    deviceType
+    alerts {
+      message
+      publishedAt
+    }
+    ... on SmartFlexVehicle {
+      id
+      name
+      status {
+        current
+        currentState
+        isSuspended
+      }
+      vehicleVariant {
+        model
+        batterySize
+      }
+      chargingSessions(first: 100) {
+        edges {
+          node {
+            start
+            end
+            energyAdded {
+              value
+              unit
+            }
+            cost {
+              amount
+              currency
+            }
+            ... on SmartFlexChargingSession {
+              type
+            }
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+    ... on SmartFlexChargePoint {
+      chargingSessions(first: 100) {
+        edges {
+          node {
+            start
+            end
+            energyAdded {
+              value
+              unit
+            }
+            cost {
+              amount
+              currency
+            }
+            ... on SmartFlexChargingSession {
+              type
+            }
+          }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+  }
+}
+"""
+
 # Query to get latest gas meter readings
 GAS_METER_READINGS_QUERY = """
 query GasMeterReadings($accountNumber: String!, $meterId: ID!) {
@@ -1922,6 +2046,148 @@ class OctopusGermany:
 
         except Exception as e:
             _LOGGER.error("Error fetching flex planned dispatches: %s", e)
+            return None
+
+    async def fetch_device_status(self, account_number: str):
+        """Fetch fast-changing device data: current status, sessions, and dispatches.
+
+        This lightweight query is used by the fast-polling device coordinator to
+        get current device state without re-fetching slow-changing account and
+        tariff data.  Planned dispatches are appended by calling
+        fetch_flex_planned_dispatches() for each discovered device.
+
+        Returns:
+            dict with keys ``devices``, ``completedDispatches``,
+            ``plannedDispatches``, and ``charging_sessions``, or None on error.
+        """
+        if not await self.ensure_token():
+            _LOGGER.error("Failed to ensure valid token for fetch_device_status")
+            return None
+
+        variables = {"accountNumber": account_number}
+        client = self._get_graphql_client()
+
+        try:
+            _LOGGER.debug("Fetching device status for account %s", account_number)
+            response = await client.execute_async(
+                query=DEVICE_STATUS_QUERY, variables=variables
+            )
+
+            if response is None:
+                _LOGGER.error("API returned None response for device status")
+                return None
+
+            result = {
+                "devices": [],
+                "completedDispatches": [],
+                "plannedDispatches": [],
+                "charging_sessions": [],
+            }
+
+            if "data" in response:
+                data = response["data"]
+
+                if "devices" in data:
+                    result["devices"] = (
+                        data["devices"] if data["devices"] is not None else []
+                    )
+
+                    # Detect per-field errors for chargingSessions
+                    has_charging_sessions_error = False
+                    if "errors" in response:
+                        for error in response["errors"]:
+                            if "chargingSessions" in error.get("path", []):
+                                has_charging_sessions_error = True
+                                break
+
+                    if has_charging_sessions_error:
+                        result["charging_sessions"] = None
+                    else:
+                        sessions = []
+                        for device in result["devices"]:
+                            device_id = device.get("id")
+                            device_name = device.get("name", "Unknown Device")
+                            device_type = device.get("deviceType", "UNKNOWN")
+                            raw_sessions = device.get("chargingSessions", {})
+                            if raw_sessions:
+                                for edge in raw_sessions.get("edges", []):
+                                    node = edge.get("node", {})
+                                    if node:
+                                        node["device_id"] = device_id
+                                        node["device_name"] = device_name
+                                        node["device_type"] = device_type
+                                        sessions.append(node)
+                        result["charging_sessions"] = sessions
+
+                if "completedDispatches" in data:
+                    result["completedDispatches"] = (
+                        data["completedDispatches"]
+                        if data["completedDispatches"] is not None
+                        else []
+                    )
+
+            # Handle critical errors
+            if "errors" in response:
+                error = response.get("errors", [{}])[0]
+                error_code = error.get("extensions", {}).get("errorCode")
+
+                if error_code == "KT-CT-1124":  # JWT expired
+                    _LOGGER.warning("Token expired, refreshing...")
+                    self._token_manager.clear()
+                    if await self.login():
+                        return await self.fetch_device_status(account_number)
+
+                # If no useful data came back at all, treat as a hard error
+                if not result["devices"] and not result["completedDispatches"]:
+                    _LOGGER.error(
+                        "API returned critical errors with no device data: %s",
+                        response.get("errors"),
+                    )
+                    return None
+
+            # Append planned dispatches for each device
+            for device in result["devices"]:
+                device_id = device.get("id")
+                if not device_id:
+                    continue
+                try:
+                    flex_dispatches = await self.fetch_flex_planned_dispatches(device_id)
+                    if flex_dispatches is None:
+                        _LOGGER.debug(
+                            "Skipping planned dispatch fetch for device %s (API error)",
+                            device_id,
+                        )
+                        continue
+                    for dispatch in flex_dispatches:
+                        result["plannedDispatches"].append(
+                            {
+                                "start": dispatch.get("start"),
+                                "startDt": dispatch.get("start"),
+                                "end": dispatch.get("end"),
+                                "endDt": dispatch.get("end"),
+                                "deltaKwh": dispatch.get("energyAddedKwh"),
+                                "delta": dispatch.get("energyAddedKwh"),
+                                "type": dispatch.get("type", "UNKNOWN"),
+                                "meta": {
+                                    "source": "flex_api",
+                                    "type": dispatch.get("type", "UNKNOWN"),
+                                    "deviceId": device_id,
+                                },
+                            }
+                        )
+                except Exception as dispatch_err:
+                    _LOGGER.warning(
+                        "Failed to fetch dispatches for device %s: %s",
+                        device_id,
+                        dispatch_err,
+                    )
+
+            return result
+
+        except Exception as e:
+            _LOGGER.error(
+                "Error fetching device status for account %s: %s", account_number, e
+            )
             return None
 
     def _format_time_to_hh_mm(self, time_str: str) -> str:

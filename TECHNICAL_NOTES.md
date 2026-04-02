@@ -3,55 +3,93 @@
 ## Architecture Overview
 
 ### Core Components
-- **Main Coordinator**: Central data coordinator using `DataUpdateCoordinator` with shared token management
-- **API Client** (`octopus_germany.py`): Handles GraphQL authentication, token refresh, and all API calls
-- **Platforms**: binary_sensor, sensor, switch - all sharing the main coordinator
-- **Token Management**: Automatic refresh with 59-minute intervals, robust error handling
+- **Account Coordinator** (`coordinator`): Polls slow-changing data (tariffs, balance, meter info) every 30 minutes using `DataUpdateCoordinator`.
+- **Device Coordinator** (`device_coordinator`): Polls fast-changing data (device status, dispatches, charging sessions) every 5 minutes using a separate `DataUpdateCoordinator`.
+- **API Client** (`octopus_germany.py`): Handles GraphQL authentication, token refresh, and all API calls.
+- **Platforms**: binary_sensor, sensor, switch — slow entities subscribe to `coordinator`, fast device entities subscribe to `device_coordinator`.
+- **Token Management**: Automatic refresh with 50-minute intervals, robust error handling.
 
 ### Key Implementation Details
 
 #### Token Management & Authentication
-- **Shared Token Strategy**: All platforms use `hass.data[DOMAIN][entry.entry_id]["coordinator"]`
-- **Auto-Refresh**: Background task refreshes tokens every 59 minutes
-- **Error Handling**: 5 retry attempts with exponential backoff on login failures
-- **GraphQL Client**: Centralized `_get_graphql_client()` method for consistent authentication
+- **Shared Token Strategy**: Both coordinators share the same `OctopusGermany` API client instance, which manages token state internally.
+- **Auto-Refresh**: Background task refreshes tokens every 50 minutes.
+- **Error Handling**: 5 retry attempts with exponential backoff on login failures.
+- **GraphQL Client**: Centralized `_get_graphql_client()` method for consistent authentication.
 
 #### Data Flow Architecture
 ```
 API Client (octopus_germany.py)
     ↓ (GraphQL + Token Management)
-Main Coordinator (DataUpdateCoordinator)
-    ↓ (Shared Data)
-├── Binary Sensor (intelligent dispatching)
-├── Sensors (price, balance, meter readings, device status)
-└── Switches (device suspension, boost charge)
+    ├── Account Coordinator  (30 min)       ← slow-changing data
+    │       ↓ (Shared Data)
+    │   ├── Sensors: electricity/gas price, balance, meter readings
+    │   └── Sensors: infrastructure (MALO, MELO, meter info)
+    │
+    └── Device Coordinator  (5 min)         ← fast-changing data
+            ↓ (Shared Data)
+        ├── Binary Sensor: intelligent dispatching
+        ├── Sensors: device status, smart charging sessions
+        └── Switches: device suspension, boost charge
 ```
+
+#### Data the Octopus Kraken API does NOT push
+The Kraken GraphQL API is purely poll-based — there are no webhooks or subscriptions available for Germany accounts at this time.  The two-coordinator split is therefore the most efficient approach: frequent polls for state that changes in real time, infrequent polls for data that changes at most daily.
 
 #### Critical Implementation Rules
 
 1. **Coordinator Access Pattern**:
    ```python
-   # CORRECT - All platforms must use this pattern
+   # CORRECT
    data = hass.data[DOMAIN][entry.entry_id]
-   coordinator = data["coordinator"]
+   coordinator        = data["coordinator"]         # slow data
+   device_coordinator = data["device_coordinator"]  # fast data
 
-   # WRONG - Never create separate coordinators for platforms
+   # WRONG - Never create additional coordinators inside a platform setup
    # coordinator = SeparateCoordinator(hass, client, account)
    ```
 
-2. **Token Sharing**:
-   - Never create separate GraphQL clients in platform entities
-   - Always use `self.client._get_graphql_client()` for mutations
-   - Let the main API client handle all token management
+2. **Which coordinator to use**:
+   | Entity / Data | Coordinator |
+   |---|---|
+   | Electricity/gas price, tariff rates | `coordinator` |
+   | Account balance, ledgers | `coordinator` |
+   | Meter numbers (MALO/MELO), meter info | `coordinator` |
+   | Smart meter consumption readings | `coordinator` |
+   | Device status / suspension state | `device_coordinator` |
+   | Planned dispatches, completed dispatches | `device_coordinator` |
+   | Charging sessions | `device_coordinator` |
+   | Device suspension switch, boost charge switch | `device_coordinator` |
+   | Intelligent dispatching binary sensor | `device_coordinator` |
 
-3. **Data Structure**:
+3. **Token Sharing**:
+   - Never create separate GraphQL clients in platform entities.
+   - Always use `self.client._get_graphql_client()` for mutations.
+   - Let the main API client handle all token management.
+
+4. **Data Structure**:
    ```python
+   # Slow coordinator
    coordinator.data = {
        "account_number": {
-           "devices": [...],
            "products": [...],
+           "electricity_balance": ...,
+           "malo_number": ...,
+           # ... other slow account data
+       }
+   }
+
+   # Fast coordinator
+   device_coordinator.data = {
+       "account_number": {
+           "devices": [...],
+           "charging_sessions": [...],
            "planned_dispatches": [...],
-           # ... other account data
+           "completed_dispatches": [...],
+           "current_start": ...,
+           "current_end": ...,
+           "next_start": ...,
+           "next_end": ...,
        }
    }
    ```
@@ -129,10 +167,11 @@ logger:
 
 #### Performance Considerations
 
-- **Update Interval**: 1 minute (configurable)
-- **API Call Throttling**: Prevents excessive requests
+- **Account coordinator interval**: 30 minutes (slow-changing tariff and balance data)
+- **Device coordinator interval**: 5 minutes (fast-changing device status and dispatches)
+- **API Call Throttling**: HA's built-in coordinator debouncing prevents burst requests
 - **Cached Data Fallback**: Returns last known data on API failures
-- **Efficient GraphQL**: Single query fetches all account data
+- **Efficient GraphQL**: Separate queries for slow and fast data reduce payload size per poll
 
 #### Security Notes
 
