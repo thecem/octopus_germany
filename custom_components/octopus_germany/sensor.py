@@ -2537,65 +2537,6 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
                 smart_sessions_current_month.append(session)
         return len(smart_sessions_current_month)
 
-
-        now = datetime.now(timezone.utc)
-        min_date = now - timedelta(days=730)
-        sessions_list = []
-        for session in smart_sessions_sorted:
-            start_str = session.get("start")
-            try:
-                start_dt = (
-                    datetime.fromisoformat(start_str.replace("Z", "+00:00"))
-                    if start_str
-                    else None
-                )
-                # Stelle sicher, dass start_dt offset-aware ist
-                if start_dt and start_dt.tzinfo is None:
-                    from homeassistant.util.dt import as_utc
-
-                    start_dt = as_utc(start_dt)
-            except Exception:
-                start_dt = None
-            if start_dt and start_dt < min_date:
-                continue
-            energy = session.get("energyAdded", {}) or {}
-            cost = session.get("cost") or {}
-            sessions_list.append(
-                {
-                    "start": session.get("start"),
-                    "end": session.get("end"),
-                    "energy_kwh": energy.get("value", 0),
-                    "cost_eur": cost.get("amount", 0) if cost else 0,
-                    "device_name": session.get("device_name", "Unknown"),
-                    "type": session.get("type", "UNKNOWN"),
-                    "is_successful": session.get("is_successful", True),
-                    "has_error": session.get("has_error", False),
-                    "has_truncation": session.get("has_truncation", False),
-                    "has_ended": session.get("has_ended", True),
-                    "has_energy": session.get("has_energy", False),
-                    "dispatches_utilized": session.get("dispatches_utilized", True),
-                    "soc_final": session.get("soc_final"),
-                    "error_cause": session.get("error_cause"),
-                    "truncation_cause": session.get("truncation_cause"),
-                }
-            )
-
-        qualified_month_list = sorted(
-            [m for m, v in sessions_by_month.items() if len(v) >= 5], reverse=True
-        )
-        attributes = {
-            "smart_sessions_count": len(smart_sessions),
-            "total_energy_kwh": round(total_energy, 2),
-            "qualified_months": len(qualified_month_list),
-            "qualified_month_list": qualified_month_list,
-            "current_month": current_month,
-            "current_month_count": current_month_count,
-            "current_month_qualified": current_month_qualified,
-            "recent_sessions": sessions_list,
-        }
-        self._cached_attributes = attributes
-        return attributes
-
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
