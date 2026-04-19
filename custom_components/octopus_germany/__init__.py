@@ -6,7 +6,7 @@ This module provides integration with the Octopus Germany API for Home Assistant
 from __future__ import annotations
 
 import logging
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, date
 import inspect
 
 from homeassistant.config_entries import ConfigEntry
@@ -23,6 +23,17 @@ from homeassistant.core import ServiceCall
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import aiohttp
+
+try:
+    from homeassistant.components.recorder import get_instance
+    from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
+    from homeassistant.components.recorder.statistics import (
+        async_add_external_statistics,
+        statistics_during_period,
+    )
+    HAS_RECORDER = True
+except ImportError:
+    HAS_RECORDER = False
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1034,6 +1045,139 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         return result_data
 
+    # --- Statistics import for HA energy dashboard ---
+    # Tracks which dates have been imported per account to avoid redundant API calls
+    imported_stats_dates: dict[str, set[str]] = {acc: set() for acc in account_numbers}
+
+    async def async_import_consumption_statistics():
+        """Import 15-min smart meter data into HA long-term statistics for the energy dashboard."""
+        if not HAS_RECORDER:
+            return
+
+        for account_num in account_numbers:
+            if not coordinator.data or account_num not in coordinator.data:
+                continue
+
+            account_data = coordinator.data[account_num]
+            property_ids = account_data.get("property_ids", [])
+            if not property_ids:
+                continue
+
+            property_id = property_ids[0]
+            safe_account = account_num.replace("-", "_").lower()
+            statistic_id = f"{DOMAIN}:electricity_{safe_account}_consumption"
+
+            # Determine which dates to import
+            yesterday = (date.today() - timedelta(days=1)).isoformat()
+            dates_to_import = []
+
+            if account_num not in imported_stats_dates:
+                imported_stats_dates[account_num] = set()
+
+            if yesterday not in imported_stats_dates[account_num]:
+                dates_to_import.append(yesterday)
+
+            # On first run, also try to backfill the last 7 days
+            if not imported_stats_dates[account_num]:
+                for days_back in range(2, 8):
+                    d = (date.today() - timedelta(days=days_back)).isoformat()
+                    dates_to_import.append(d)
+
+            if not dates_to_import:
+                return
+
+            # Get the last known sum from HA recorder
+            try:
+                earliest_date = datetime.fromisoformat(min(dates_to_import))
+                last_stat = await get_instance(hass).async_add_executor_job(
+                    statistics_during_period,
+                    hass,
+                    earliest_date - timedelta(days=7),
+                    earliest_date,
+                    {statistic_id},
+                    "hour",
+                    None,
+                    {"sum"},
+                )
+                running_sum = (
+                    last_stat[statistic_id][-1]["sum"]
+                    if statistic_id in last_stat and len(last_stat[statistic_id]) > 0
+                    else 0.0
+                )
+            except Exception as e:
+                _LOGGER.debug("Could not get last statistics sum: %s", e)
+                running_sum = 0.0
+
+            all_statistics = []
+
+            for date_str in sorted(dates_to_import):
+                if date_str in imported_stats_dates[account_num]:
+                    continue
+
+                try:
+                    readings = await api.fetch_electricity_15min_readings(
+                        account_num, property_id, date_str
+                    )
+                except Exception as e:
+                    _LOGGER.warning("Failed to fetch 15-min readings for %s: %s", date_str, e)
+                    continue
+
+                if not readings:
+                    continue
+
+                # Aggregate 15-min readings into hourly StatisticData entries
+                hourly_buckets: dict[str, float] = {}
+                for reading in readings:
+                    start_str = reading.get("start_time", "")
+                    if not start_str:
+                        continue
+                    try:
+                        start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                        hour_key = start_dt.replace(minute=0, second=0, microsecond=0).isoformat()
+                        value = float(reading.get("value", 0) or 0)
+                        hourly_buckets[hour_key] = hourly_buckets.get(hour_key, 0.0) + value
+                    except (ValueError, TypeError):
+                        continue
+
+                for hour_key in sorted(hourly_buckets.keys()):
+                    consumption = hourly_buckets[hour_key]
+                    running_sum += consumption
+                    hour_dt = as_utc(datetime.fromisoformat(hour_key))
+                    all_statistics.append(
+                        StatisticData(
+                            start=hour_dt,
+                            state=round(consumption, 6),
+                            sum=round(running_sum, 6),
+                        )
+                    )
+
+                imported_stats_dates[account_num].add(date_str)
+                _LOGGER.debug(
+                    "Prepared %d hourly statistics for %s on %s (running sum: %.3f)",
+                    len(hourly_buckets), account_num, date_str, running_sum,
+                )
+
+            if all_statistics:
+                meter_info = account_data.get("meter", {})
+                meter_number = meter_info.get("number", account_num) if meter_info else account_num
+
+                async_add_external_statistics(
+                    hass,
+                    StatisticMetaData(
+                        has_mean=False,
+                        has_sum=True,
+                        name=f"Electricity Consumption ({meter_number}/{account_num})",
+                        source=DOMAIN,
+                        statistic_id=statistic_id,
+                        unit_of_measurement="kWh",
+                    ),
+                    all_statistics,
+                )
+                _LOGGER.info(
+                    "Imported %d hourly statistics for account %s into energy dashboard",
+                    len(all_statistics), account_num,
+                )
+
     coordinator = DataUpdateCoordinator(
         hass,
         _LOGGER,
@@ -1063,6 +1207,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 if coordinator.data[primary_account_number]["plannedDispatches"]
                 else "None",
             )
+
+    # Import consumption statistics after each coordinator refresh
+    async def _safe_import_statistics():
+        try:
+            await async_import_consumption_statistics()
+        except Exception as e:
+            _LOGGER.warning("Error importing consumption statistics: %s", e)
+
+    def _on_coordinator_update() -> None:
+        """Schedule statistics import when coordinator data updates."""
+        hass.async_create_task(_safe_import_statistics())
+
+    coordinator.async_add_listener(_on_coordinator_update)
+
+    # Also run the initial statistics import now
+    if HAS_RECORDER and coordinator.data:
+        try:
+            await async_import_consumption_statistics()
+        except Exception as e:
+            _LOGGER.warning("Error during initial statistics import: %s", e)
 
     # Store API, account number and coordinator in hass.data
     hass.data[DOMAIN][entry.entry_id] = {

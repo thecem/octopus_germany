@@ -558,6 +558,31 @@ query getSmartMeterUsage($accountNumber: String!, $propertyId: ID!, $date: Date!
 }
 """
 
+ELECTRICITY_15MIN_READINGS_QUERY = """
+query getSmartMeter15Min($accountNumber: String!, $propertyId: ID!, $date: Date!) {
+  account(accountNumber: $accountNumber) {
+    property(id: $propertyId) {
+      measurements(
+        utilityFilters: {electricityFilters: {readingFrequencyType: RAW_INTERVAL, readingQuality: COMBINED}}
+        startOn: $date
+        first: 96
+      ) {
+        edges {
+          node {
+            ... on IntervalMeasurementType {
+              endAt
+              startAt
+              unit
+              value
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
 # Query to get vehicle device details with preference settings
 VEHICLE_DETAILS_QUERY = """
 query Vehicle($accountNumber: String = "") {
@@ -2262,6 +2287,75 @@ class OctopusGermany:
 
         except Exception as e:
             _LOGGER.error("Error fetching electricity smart meter readings: %s", e)
+            return None
+
+    async def fetch_electricity_15min_readings(
+        self, account_number: str, property_id: str, date: str
+    ):
+        """Fetch 15-minute interval smart meter readings for a specific date.
+
+        Args:
+            account_number: The account number
+            property_id: The property ID
+            date: Date in YYYY-MM-DD format
+
+        Returns:
+            List of 15-min readings with start_time, end_time, value, unit or None if error
+        """
+        if not await self.ensure_token():
+            _LOGGER.error("Failed to ensure valid token for 15min readings")
+            return None
+
+        variables = {
+            "accountNumber": account_number,
+            "propertyId": property_id,
+            "date": date,
+        }
+
+        client = self._get_graphql_client()
+
+        try:
+            response = await client.execute_async(
+                query=ELECTRICITY_15MIN_READINGS_QUERY, variables=variables
+            )
+
+            if response is None:
+                return None
+
+            if "errors" in response:
+                _LOGGER.error("GraphQL errors in 15min readings: %s", response["errors"])
+                return None
+
+            measurements = (
+                response.get("data", {})
+                .get("account", {})
+                .get("property", {})
+                .get("measurements", {})
+            )
+
+            if measurements and "edges" in measurements and measurements["edges"]:
+                readings = []
+                for edge in measurements["edges"]:
+                    if "node" in edge and edge["node"]:
+                        reading = edge["node"]
+                        readings.append(
+                            {
+                                "start_time": reading.get("startAt"),
+                                "end_time": reading.get("endAt"),
+                                "value": reading.get("value"),
+                                "unit": reading.get("unit"),
+                            }
+                        )
+                _LOGGER.debug(
+                    "Found %d 15-min readings for property %s on %s",
+                    len(readings), property_id, date,
+                )
+                return readings
+            else:
+                return []
+
+        except Exception as e:
+            _LOGGER.error("Error fetching 15min readings: %s", e)
             return None
 
     async def fetch_electricity_smart_meter_readings_v2(
