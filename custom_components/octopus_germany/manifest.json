@@ -12,5 +12,6 @@
   "requirements": [
     "python-graphql-client==0.4.3"
   ],
+  "after_dependencies": ["recorder"],
   "version": "0.0.86"
 }
