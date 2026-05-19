@@ -1608,10 +1608,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Generate filename with improved default naming
             if not filename:
                 if period == "month":
-                    # Format: octopus_A-66DF80AE_2025_01.csv
+                    # Format: octopus_A-12FD99BC_2025_01.csv
                     filename = f"octopus_{account_number}_{year}_{month:02d}"
                 else:  # year
-                    # Format: octopus_A-66DF80AE_2025.csv
+                    # Format: octopus_A-12FD99BC_2025.csv
                     filename = f"octopus_{account_number}_{year}"
 
             # Ensure filename ends with .csv
