@@ -15,7 +15,9 @@ This custom component integrates Octopus Germany services with Home Assistant, p
 **⚡ New to Octopus Energy Germany?**
 [![Octopus Energy Referral](https://img.shields.io/badge/🐙_Get_100€_Bonus-Join_Octopus_Energy-00D9FF?style=for-the-badge&logoColor=white)](https://octopusenergy.de/empfehlungen?referralCode=free-cat-744)
 
-## Features- **Account Information**: Electricity and gas balance tracking across multiple accounts
+## Features
+
+- **Account Information**: Electricity and gas balance tracking across multiple accounts
 - **Energy Pricing**: Real-time electricity tariff prices with support for:
   - Simple tariffs (fixed rate)
   - Time of Use tariffs (GO, STANDARD rates)
@@ -61,7 +63,7 @@ The integration is configured via the Home Assistant UI:
 ### Binary Sensors
 
 #### Intelligent Dispatching
-- **Entity ID**: `binary_sensor.octopus_<account_number>_intelligent_dispatching`
+- **Entity ID**: `binary_sensor.octopus_<account_number>_<device_name>_intelligent_dispatching`
 - **Description**: Shows whether Octopus Intelligent is currently dispatching (active charging schedule)
 - **State**: `on` when dispatching is active, `off` when inactive
 - **Attributes**:
@@ -192,12 +194,12 @@ The integration is configured via the Home Assistant UI:
 - **Entity ID**: `sensor.octopus_<account_number>_gas_contract_end`
 - **Description**: Contract validity end date
 
-- **Entity ID**: `sensor.octopus_<account_number>_gas_contract_days_until_expiry`
+- **Entity ID**: `sensor.octopus_<account_number>_gas_contract_expiry_days`
 - **Description**: Contract expiration countdown in days
 
 #### Device Status Sensor
 
-- **Entity ID**: `sensor.octopus_<account_number>_device_status`
+- **Entity ID**: `sensor.octopus_<account_number>_<device_name>_status`
 - **Description**: Current status of your smart charging device (e.g., "PLUGGED_IN", "CHARGING", "FINISHED", etc.)
 - **Attributes**:
   - `device_id`: Internal ID of the connected device
@@ -227,7 +229,7 @@ The integration is configured via the Home Assistant UI:
   - `is_suspended`: Whether device is suspended
 
 #### Boost Charge
-- **Entity ID**: `switch.octopus_<account_number>_<device_name>_boost_charge`
+- **Entity ID**: `switch.octopus_germany_<account_number>_<device_name>_boost_charge`
 - **Description**: Instant charge boost for immediate charging needs
 - **Requirements**:
   - **Smart charging must be enabled** (Smart Charging Control switch = ON)

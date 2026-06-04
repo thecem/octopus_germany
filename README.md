@@ -15,7 +15,9 @@ This custom component integrates Octopus Germany services with Home Assistant, p
 **⚡ New to Octopus Energy Germany?**
 [![Octopus Energy Referral](https://img.shields.io/badge/🐙_Get_100€_Bonus-Join_Octopus_Energy-00D9FF?style=for-the-badge&logoColor=white)](https://octopusenergy.de/empfehlungen?referralCode=free-cat-744)
 
-## Features- **Account Information**: Electricity and gas balance tracking across multiple accounts
+## Features
+
+- **Account Information**: Electricity and gas balance tracking across multiple accounts
 - **Energy Pricing**: Real-time electricity tariff prices with support for:
   - Simple tariffs (fixed rate)
   - Time of Use tariffs (GO, STANDARD rates)
@@ -175,7 +177,7 @@ The integration is configured via the Home Assistant UI:
 - **Entity ID**: `sensor.octopus_<account_number>_gas_contract_end`
 - **Description**: Contract validity end date
 
-- **Entity ID**: `sensor.octopus_<account_number>_gas_contract_days_until_expiry`
+- **Entity ID**: `sensor.octopus_<account_number>_gas_contract_expiry_days`
 - **Description**: Contract expiration countdown in days
 
 #### Device Status Sensor
@@ -215,7 +217,7 @@ The integration is configured via the Home Assistant UI:
 
 #### Smart Meter Readings Sensor
 
-- **Entity ID**: `sensor.octopus_<account_number>_previous_accumulative_consumption_electricity`
+- **Entity ID**: `sensor.octopus_germany_electricity_<account_number>_previous_accumulative_consumption`
 - **Description**: Shows previous day's total electricity consumption from smart meter with hourly breakdown
 - **State**: Total consumption in kWh for the most recent available day (typically 2-3 days ago)
 - **Unit**: kWh
@@ -263,7 +265,7 @@ The integration is configured via the Home Assistant UI:
   - `is_suspended`: Whether device is suspended
 
 #### Boost Charge
-- **Entity ID**: `switch.octopus_<account_number>_<device_name>_boost_charge`
+- **Entity ID**: `switch.octopus_germany_<account_number>_<device_name>_boost_charge`
 - **Description**: Instant charge boost for immediate charging needs
 - **Requirements**:
   - **Smart charging must be enabled** (Smart Charging Control switch = ON)
@@ -451,7 +453,7 @@ automation:
   - Monthly: `octopus_A-12345678_2025_01.csv` (octopus_ACCOUNT_YEAR_MONTH.csv)
   - Yearly: `octopus_A-12345678_2025.csv` (octopus_ACCOUNT_YEAR.csv)
 - File operations are performed asynchronously to prevent blocking
-- For comprehensive documentation and more automation examples, see [CSV_EXPORT_SERVICE.md](CSV_EXPORT_SERVICE.md)
+- For comprehensive documentation and more automation examples, see the examples above and the service descriptions in `custom_components/octopus_germany/services.yaml`.
 
 ## Automation
 
