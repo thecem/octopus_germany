@@ -26,7 +26,7 @@ import aiohttp
 
 try:
     from homeassistant.components.recorder import get_instance
-    from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
+    from homeassistant.components.recorder.models import StatisticData, StatisticMetaData, StatisticMeanType
     from homeassistant.components.recorder.statistics import (
         async_add_external_statistics,
         statistics_during_period,
@@ -1165,11 +1165,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     hass,
                     StatisticMetaData(
                         has_mean=False,
+                        mean_type=StatisticMeanType.NONE,
                         has_sum=True,
                         name=f"Electricity Consumption ({meter_number}/{account_num})",
                         source=DOMAIN,
                         statistic_id=statistic_id,
                         unit_of_measurement="kWh",
+                        unit_class="energy",
                     ),
                     all_statistics,
                 )
