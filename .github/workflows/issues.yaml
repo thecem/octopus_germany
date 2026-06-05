@@ -12,18 +12,18 @@ jobs:
       pull-requests: write
       discussions: write
     steps:
-      - uses: actions/stale@v9
+      - uses: actions/stale@v10
         with:
           days-before-issue-stale: 30
           days-before-issue-close: 14
           stale-issue-label: "stale"
           stale-issue-message: "This issue has become stale because it has been open for 30 days with no activity. If you still think it's an issue, please respond soon."
-          close-issue-message: "This issue has been closed because it has been inactive for 14 days since being marked as stale. This is done to help keep on top of active issues. If you still think it's an issue, please respond to this issue"
+          close-issue-message: "This issue has been closed because it has been inactive for 14 days since being marked as stale. This is done to help keep on top of active issues. If you still think it is still relevant, please reopen and explain why."
           days-before-pr-stale: -1
           days-before-pr-close: -1
           exempt-issue-labels: enhancement
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: dessant/lock-threads@v5
+      - uses: dessant/lock-threads@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           issue-inactive-days: '30'
