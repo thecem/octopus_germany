@@ -1,6 +1,6 @@
 {
   "name": "Octopus Energy Germany",
-  "homeassistant": "2026.3.2",
+  "homeassistant": "2026.6.1",
   "hacs": "2.0.5",
   "render_readme": true,
   "country": ["DE"]
