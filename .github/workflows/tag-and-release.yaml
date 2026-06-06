@@ -41,10 +41,52 @@ jobs:
           git tag "v${VERSION}"
           git push origin "v${VERSION}"
 
-      - name: Create GitHub Release with auto-generated notes
+      - name: Generate release notes
+        if: env.EXISTS == 'false'
+        id: release_notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api \
+            repos/${{ github.repository }}/releases/generate-notes \
+            -f tag_name="v${VERSION}" \
+            -f target_commitish="${{ github.sha }}" \
+            --jq '.body' > generated_notes.md
+
+      - name: Read minimum Home Assistant version
+        if: env.EXISTS == 'false'
+        run: |
+          MIN_HA_VERSION=$(jq -r '.homeassistant' hacs.json)
+          echo "MIN_HA_VERSION=$MIN_HA_VERSION" >> $GITHUB_ENV
+
+      - name: Build final release notes
+        if: env.EXISTS == 'false'
+        run: |
+          cat generated_notes.md > release_body.md
+          printf "\n\n**Minimum HA Version**: %s\n" "${MIN_HA_VERSION}" >> release_body.md
+          cat <<'EOF' >> release_body.md
+
+          ---
+
+          ## 💚 Support the Project
+
+          If you find this project valuable and would like to support its continued development, you can do so here:  
+          https://ko-fi.com/K3K71LPRM2
+
+          ## ⚡ New to Octopus Energy Germany?
+
+          If you are new to Octopus Energy Germany, you can use the following referral link to receive a **€100 bonus** upon sign-up:  
+          https://octopusenergy.de/empfehlungen?referralCode=free-cat-744
+
+          ## 🙏 Thank You
+
+          Thank you for your support, contributions, and feedback — it helps make this integration better for everyone.
+          EOF
+
+      - name: Create GitHub Release
         if: env.EXISTS == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION }}
           name: v${{ env.VERSION }}
-          generate_release_notes: true
+          body_path: release_body.md
