@@ -417,15 +417,32 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
         if devices and devices[0].get("status"):
             current_state = devices[0]["status"].get("currentState", "Unknown")
 
-        # Format dispatches for display
+        # Format dispatches for display - nur Dispatches fuer dieses Geraet
+        _LOGGER.warning("[DISPATCH DEBUG] device_id=%s, dispatches=%d, first_meta=%s",
+            self._device_id, len(planned_dispatches),
+            planned_dispatches[0].get("meta") if planned_dispatches else "NONE")
+        device_planned = [
+            d for d in planned_dispatches
+            if d.get("deviceId") == self._device_id
+            or d.get("meta", {}).get("deviceId") == self._device_id
+        ]
+        _LOGGER.warning("[DISPATCH DEBUG] device_planned count=%d", len(device_planned))
         formatted_planned_dispatches = []
-        for dispatch in planned_dispatches:
+        for dispatch in device_planned:
             formatted = self._format_dispatch(dispatch)
             if formatted:
                 formatted_planned_dispatches.append(formatted)
 
+        device_completed = [
+            d for d in completed_dispatches
+            if d.get("deviceId") == self._device_id
+            or d.get("meta", {}).get("deviceId") == self._device_id
+        ]
+        # Fallback: completedDispatches kommen ohne deviceId (andere API-Quelle)
+        if not device_completed:
+            device_completed = completed_dispatches
         formatted_completed_dispatches = []
-        for dispatch in completed_dispatches:
+        for dispatch in device_completed:
             formatted = self._format_dispatch(dispatch)
             if formatted:
                 formatted_completed_dispatches.append(formatted)
