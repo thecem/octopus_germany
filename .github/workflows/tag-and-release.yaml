@@ -17,19 +17,21 @@ jobs:
           fetch-depth: 0
 
       - name: Extract version from manifest.json
-        id: get_version
         run: |
           VERSION=$(jq -r '.version' custom_components/octopus_germany/manifest.json)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
+          if [[ "$VERSION" == *-* ]]; then
+            echo "PRERELEASE=true" >> $GITHUB_ENV
+          else
+            echo "PRERELEASE=false" >> $GITHUB_ENV
+          fi
+
       - name: Check if tag exists
-        id: check_tag
         run: |
           if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
-            echo "Tag exists"
             echo "EXISTS=true" >> $GITHUB_ENV
           else
-            echo "Tag does not exist"
             echo "EXISTS=false" >> $GITHUB_ENV
           fi
 
@@ -43,7 +45,6 @@ jobs:
 
       - name: Generate release notes
         if: env.EXISTS == 'false'
-        id: release_notes
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -90,3 +91,4 @@ jobs:
           tag_name: v${{ env.VERSION }}
           name: v${{ env.VERSION }}
           body_path: release_body.md
+          prerelease: ${{ env.PRERELEASE }}
