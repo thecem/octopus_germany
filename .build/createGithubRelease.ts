@@ -1,7 +1,23 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-const bodySuffix = "---\nEnjoying the integration? Why not make a one time or monthly [GitHub sponsorship](https://github.com/sponsors/thecem) or use my [Octopus Energy referral link](https://share.octopusenergy.de/free-cat-744)?"
+const bodySuffix = `
+---
+
+## 💚 Support the Project
+
+If you would like to support the continued development of this project, you can do so here:  
+https://ko-fi.com/K3K71LPRM2
+
+## ⚡ New to Octopus Energy Germany?
+
+If you are new to Octopus Energy Germany, you can use the following referral link to receive a **€100 bonus** upon sign-up:  
+https://octopusenergy.de/empfehlungen?referralCode=free-cat-744
+
+## 🙏 Thank You
+
+Thank you for your support and for helping improve the project.
+`;
 
 function getMinimumHomeAssistantVersion() {
   const hacsFilePath = join(__dirname, '../hacs.json');
