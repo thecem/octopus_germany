@@ -54,6 +54,23 @@ jobs:
             -f target_commitish="${{ github.sha }}" \
             --jq '.body' > generated_notes.md
 
+      - name: Extract version section from RELEASE_NOTES.md
+        if: env.EXISTS == 'false'
+        run: |
+          HEADER="## Version ${VERSION}"
+
+          awk -v header="$HEADER" '
+            $0 == header { found=1; print; next }
+            found && /^## Version / { exit }
+            found { print }
+          ' RELEASE_NOTES.md > curated_notes.md
+
+          if [ -s curated_notes.md ]; then
+            echo "HAS_CURATED_NOTES=true" >> $GITHUB_ENV
+          else
+            echo "HAS_CURATED_NOTES=false" >> $GITHUB_ENV
+          fi
+
       - name: Read minimum Home Assistant version
         if: env.EXISTS == 'false'
         run: |
@@ -63,7 +80,20 @@ jobs:
       - name: Build final release notes
         if: env.EXISTS == 'false'
         run: |
-          cat generated_notes.md > release_body.md
+          if [ "${HAS_CURATED_NOTES}" = "true" ]; then
+            cat curated_notes.md > release_body.md
+            cat <<'EOF' >> release_body.md
+
+---
+
+### Auto-generated changes
+
+EOF
+            cat generated_notes.md >> release_body.md
+          else
+            cat generated_notes.md > release_body.md
+          fi
+
           printf "\n\n**Minimum HA Version**: %s\n" "${MIN_HA_VERSION}" >> release_body.md
           cat <<'EOF' >> release_body.md
 
@@ -71,12 +101,12 @@ jobs:
 
           ## 💚 Support the Project
 
-          If you find this project valuable and would like to support its continued development, you can do so here:  
+          If you find this project valuable and would like to support its continued development, you can do so here:
           https://ko-fi.com/K3K71LPRM2
 
           ## ⚡ New to Octopus Energy Germany?
 
-          If you are new to Octopus Energy Germany, you can use the following referral link to receive a **€100 bonus** upon sign-up:  
+          If you are new to Octopus Energy Germany, you can use the following referral link to receive a **€100 bonus** upon sign-up:
           https://octopusenergy.de/empfehlungen?referralCode=free-cat-744
 
           ## 🙏 Thank You

@@ -1,6 +1,6 @@
 # Release Notes
 
-## Version 0.0.90 (2026-06-07)
+## Version 0.0.91 (2026-06-07)
 
 ### 🎉 New Features
 
@@ -38,6 +38,16 @@ Reason:
 
 - Updated both README files to document current vehicle sensors (`SoC`, `Battery Size`)
 - Removed documentation for `SoC Change` and `SoC Limit`
+
+### ⚙️ Release Automation
+
+- Updated release workflow in `.github/workflows/tag-and-release.yaml`
+  - Releases now use the matching section from `RELEASE_NOTES.md` as primary content
+  - Auto-generated GitHub notes are appended as additional context
+  - Fallback to auto-generated notes remains in place if a matching version section is missing
+
+Result:
+- New features and removals are now reliably visible in GitHub releases.
 
 ## Version 0.0.66 (2025-11-22)
 
