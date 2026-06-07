@@ -1,5 +1,21 @@
 # Release Notes
 
+## Version 0.0.94 (2026-06-07)
+
+### 🎉 New Features
+
+#### Plugged-In Binary Sensor
+- **New Sensor**: `binary_sensor.octopus_<account_number>_<device_name>_plugged`
+  - Per-device plugged-in state derived from SmartFlex `status.currentState`
+  - Uses robust state hint mapping (`PLUGGED`, `CHARGING`, `FINISHED`, `SMART_CONTROL`)
+  - Adds transparent debug attributes (`current_state`, `current`, `is_suspended`, `plugged_in_inferred`)
+
+### 🔧 Improvements
+
+#### Dispatch Location Clarification
+- Confirmed `completedDispatches.meta.location` is exposed by API as `String`
+- Clarified this is not a coordinate payload (`latitude`/`longitude`) in the current dispatch metadata path
+
 ## Version 0.0.93 (2026-06-07)
 
 ### 🎉 New Features

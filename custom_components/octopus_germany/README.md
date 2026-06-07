@@ -81,6 +81,23 @@ The integration is configured via the Home Assistant UI:
   - `melo_number`: Electricity meter number
   - `meter`: Meter information
 
+#### Plugged-In
+- **Entity ID**: `binary_sensor.octopus_<account_number>_<device_name>_plugged`
+- **Description**: Inferred plugged-in status of the SmartFlex device
+- **State**:
+  - `on`: Device appears plugged in
+  - `off`: Device appears unplugged/disconnected
+  - `unknown`: API status is present but not clearly mappable
+- **Attributes**:
+  - `device_id`: Internal ID of the connected device
+  - `device_name`: Name of the device
+  - `device_type`: Type of the smart device
+  - `current_state`: Raw SmartFlex current state from API
+  - `current`: Raw SmartFlex current status from API
+  - `is_suspended`: Whether smart charging is currently suspended
+  - `plugged_in_inferred`: Derived boolean value used for the sensor state
+  - `inference_note`: Explanation that state is inferred (API has no dedicated `isPlugged` field)
+
 ### Sensors
 
 #### Electricity Price Sensor

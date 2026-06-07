@@ -262,6 +262,24 @@ The integration is configured via the Home Assistant UI:
   - `current_state`: Current state of your smart charging device
   - `last_updated`: Timestamp of the last update
 
+#### Plugged-In Binary Sensor
+
+- **Entity ID**: `binary_sensor.octopus_<account_number>_<device_name>_plugged`
+- **Description**: Inferred plugged-in state of the smart charging device
+- **State**:
+  - `on`: Device appears plugged in
+  - `off`: Device appears unplugged/disconnected
+  - `unknown`: Status cannot be clearly inferred
+- **Attributes**:
+  - `device_id`: Internal device identifier
+  - `device_name`: Device name
+  - `device_type`: Device type (e.g., vehicle/charge point)
+  - `current_state`: Raw SmartFlex current state
+  - `current`: Raw SmartFlex current status
+  - `is_suspended`: Whether smart charging is suspended
+  - `plugged_in_inferred`: Derived boolean used for state mapping
+  - `inference_note`: Indicates that API currently provides no dedicated `isPlugged` field
+
 ### Switches
 
 #### Smart Charging Control
