@@ -82,37 +82,14 @@ jobs:
         run: |
           if [ "${HAS_CURATED_NOTES}" = "true" ]; then
             cat curated_notes.md > release_body.md
-            cat <<'EOF' >> release_body.md
-
----
-
-### Auto-generated changes
-
-EOF
+            printf "\n---\n\n### Auto-generated changes\n\n" >> release_body.md
             cat generated_notes.md >> release_body.md
           else
             cat generated_notes.md > release_body.md
           fi
 
           printf "\n\n**Minimum HA Version**: %s\n" "${MIN_HA_VERSION}" >> release_body.md
-          cat <<'EOF' >> release_body.md
-
-          ---
-
-          ## 💚 Support the Project
-
-          If you find this project valuable and would like to support its continued development, you can do so here:
-          https://ko-fi.com/K3K71LPRM2
-
-          ## ⚡ New to Octopus Energy Germany?
-
-          If you are new to Octopus Energy Germany, you can use the following referral link to receive a **€100 bonus** upon sign-up:
-          https://octopusenergy.de/empfehlungen?referralCode=free-cat-744
-
-          ## 🙏 Thank You
-
-          Thank you for your support, contributions, and feedback — it helps make this integration better for everyone.
-          EOF
+          printf "\n\n---\n\n## 💚 Support the Project\n\nIf you find this project valuable and would like to support its continued development, you can do so here:\nhttps://ko-fi.com/K3K71LPRM2\n\n## ⚡ New to Octopus Energy Germany?\n\nIf you are new to Octopus Energy Germany, you can use the following referral link to receive a **€100 bonus** upon sign-up:\nhttps://octopusenergy.de/empfehlungen?referralCode=free-cat-744\n\n## 🙏 Thank You\n\nThank you for your support, contributions, and feedback — it helps make this integration better for everyone.\n" >> release_body.md
 
       - name: Create GitHub Release
         if: env.EXISTS == 'false'
