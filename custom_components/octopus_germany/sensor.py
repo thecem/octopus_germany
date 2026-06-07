@@ -17,6 +17,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
+    PERCENTAGE,
     STATE_UNKNOWN,
     STATE_UNAVAILABLE,
     UnitOfEnergy,
@@ -269,6 +270,20 @@ async def async_setup_entry(
                             OctopusDeviceStatusSensor(acc_num, coordinator, device_id)
                         )
 
+                        # Create extra vehicle data sensors for each electric vehicle.
+                        if device.get("deviceType") == "ELECTRIC_VEHICLES":
+                            entities.append(
+                                OctopusVehicleLastSessionSocSensor(
+                                    acc_num, coordinator, device_id
+                                )
+                            )
+
+                            entities.append(
+                                OctopusVehicleBatterySizeSensor(
+                                    acc_num, coordinator, device_id
+                                )
+                            )
+
             # Erzeuge für jedes Gerät eine eigene Smart Charging Sessions Entität
             charging_sessions = account_data.get("charging_sessions")
             device_sessions = {}
@@ -354,7 +369,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
         try:
             hour, minute, second = map(int, time_str.split(":"))
             return time(hour=hour, minute=minute, second=second)
-        except (ValueError, AttributeError):
+        except ValueError, AttributeError:
             _LOGGER.error(f"Invalid time format: {time_str}")
             return None
 
@@ -386,7 +401,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
             try:
                 # Convert to float but don't round - divide by 100 to convert from cents to euros
                 return float(product.get("grossRate", "0")) / 100.0
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 return None
 
         # For TimeOfUseProductUnitRateInformation, find the currently active timeslot
@@ -406,7 +421,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
                         try:
                             # Convert to float but don't round - divide by 100 to convert from cents to euros
                             return float(timeslot.get("rate", "0")) / 100.0
-                        except (ValueError, TypeError):
+                        except ValueError, TypeError:
                             continue
 
         # If no active timeslot found or in case of errors, return None
@@ -460,7 +475,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
                                         valid_to_str,
                                     )
                                     return rate_eur
-                                except (ValueError, TypeError):
+                                except ValueError, TypeError:
                                     continue
 
             except (ValueError, TypeError) as e:
@@ -1421,7 +1436,7 @@ class OctopusGasLatestReadingSensor(CoordinatorEntity, SensorEntity):
                 reading_value = gas_reading.get("value")
                 if reading_value is not None:
                     return float(reading_value)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 _LOGGER.warning("Invalid gas meter reading value: %s", reading_value)
 
         return None
@@ -1469,7 +1484,7 @@ class OctopusGasLatestReadingSensor(CoordinatorEntity, SensorEntity):
                         reading_date.replace("Z", "+00:00")
                     )
                     reading_date = parsed_date.strftime("%Y-%m-%d %H:%M:%S")
-                except (ValueError, AttributeError):
+                except ValueError, AttributeError:
                     # Keep original date if parsing fails
                     pass
 
@@ -1557,7 +1572,7 @@ class OctopusElectricityLatestReadingSensor(CoordinatorEntity, SensorEntity):
                 reading_value = electricity_reading.get("value")
                 if reading_value is not None:
                     return float(reading_value)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 _LOGGER.warning(
                     "Invalid electricity meter reading value: %s", reading_value
                 )
@@ -1607,7 +1622,7 @@ class OctopusElectricityLatestReadingSensor(CoordinatorEntity, SensorEntity):
                         reading_date.replace("Z", "+00:00")
                     )
                     reading_date = parsed_date.strftime("%Y-%m-%d %H:%M:%S")
-                except (ValueError, AttributeError):
+                except ValueError, AttributeError:
                     # Keep original date if parsing fails
                     pass
 
@@ -1798,7 +1813,7 @@ class OctopusGasContractStartSensor(CoordinatorEntity, SensorEntity):
                     contract_start.replace("Z", "+00:00")
                 )
                 return parsed_date.date()
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 return None
 
         return None
@@ -1857,7 +1872,7 @@ class OctopusGasContractEndSensor(CoordinatorEntity, SensorEntity):
                     contract_end.replace("Z", "+00:00")
                 )
                 return parsed_date.date()
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 return None
 
         return None
@@ -2091,6 +2106,221 @@ class OctopusDeviceStatusSensor(CoordinatorEntity, SensorEntity):
         return get_account_device_info(self._account_number)
 
 
+class OctopusVehicleDataSensor(CoordinatorEntity, SensorEntity):
+    """Base sensor for per-vehicle metrics."""
+
+    _metric_name = "Metric"
+    _metric_unique_id = "metric"
+    _metric_icon = "mdi:car-electric"
+    _metric_device_class = None
+    _metric_unit = None
+
+    def __init__(self, account_number, coordinator, device_id: str) -> None:
+        """Initialize a vehicle data sensor."""
+        super().__init__(coordinator)
+
+        self._account_number = account_number
+        self._device_id = device_id
+        self._device_name = self._resolve_device_name()
+        norm_name = self._device_name.lower().replace(" ", "_")
+        for ch in [
+            "/",
+            "\\",
+            ",",
+            ".",
+            ":",
+            ";",
+            "|",
+            "[",
+            "]",
+            "{",
+            "}",
+            "(",
+            ")",
+            "'",
+            '"',
+            "#",
+            "?",
+            "!",
+            "@",
+            "=",
+            "+",
+            "*",
+            "%",
+            "&",
+            "<",
+            ">",
+        ]:
+            norm_name = norm_name.replace(ch, "_")
+
+        self._attr_name = (
+            f"Octopus {account_number} {self._device_name} {self._metric_name}"
+        )
+        self._attr_unique_id = (
+            f"octopus_{account_number}_{norm_name}_{self._metric_unique_id}"
+        )
+        self._attr_has_entity_name = False
+        self._attr_icon = self._metric_icon
+        self._attr_device_class = self._metric_device_class
+        self._attr_native_unit_of_measurement = self._metric_unit
+        self._attributes = {}
+
+    def _resolve_device_name(self) -> str:
+        """Resolve the current device name from coordinator data."""
+        device = self._get_device_data()
+        if device:
+            return device.get("name", f"Device_{self._device_id}")
+        return f"Device_{self._device_id}"
+
+    def _get_device_data(self) -> dict | None:
+        """Get the current device payload for this sensor."""
+        if (
+            not self.coordinator.data
+            or not isinstance(self.coordinator.data, dict)
+            or self._account_number not in self.coordinator.data
+        ):
+            return None
+
+        account_data = self.coordinator.data[self._account_number]
+        devices = account_data.get("devices")
+        if not isinstance(devices, list):
+            devices = []
+
+        for device in devices:
+            if device.get("id") == self._device_id:
+                return device
+        return None
+
+    def _get_latest_session(self) -> dict | None:
+        """Return the latest charging session for this device."""
+        if (
+            not self.coordinator.data
+            or not isinstance(self.coordinator.data, dict)
+            or self._account_number not in self.coordinator.data
+        ):
+            return None
+
+        account_data = self.coordinator.data[self._account_number]
+        sessions = account_data.get("charging_sessions")
+        if not isinstance(sessions, list):
+            return None
+
+        device_sessions = [
+            session
+            for session in sessions
+            if isinstance(session, dict) and session.get("device_id") == self._device_id
+        ]
+
+        if not device_sessions:
+            return None
+
+        return max(device_sessions, key=lambda s: s.get("start") or "")
+
+    @staticmethod
+    def _to_float(value: Any) -> float | None:
+        """Convert a value to float when possible."""
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except TypeError, ValueError:
+            return None
+
+    def _get_metric_value(self) -> Any:
+        """Return the concrete metric value for subclasses."""
+        raise NotImplementedError
+
+    @property
+    def native_value(self) -> Any:
+        """Return the metric value."""
+        return self._get_metric_value()
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return (
+            self.coordinator is not None
+            and self.coordinator.last_update_success
+            and isinstance(self.coordinator.data, dict)
+            and self._account_number in self.coordinator.data
+            and self._get_device_data() is not None
+            and self.native_value is not None
+        )
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return additional state attributes for the sensor."""
+        latest_session = self._get_latest_session() or {}
+        return {
+            "device_id": self._device_id,
+            "device_name": self._resolve_device_name(),
+            "account_number": self._account_number,
+            "latest_session_start": latest_session.get("start"),
+            "latest_session_end": latest_session.get("end"),
+            "last_updated": datetime.now().isoformat(),
+        }
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return get_device_specific_device_info(
+            self.coordinator.data, self._account_number, self._device_id
+        )
+
+
+class OctopusVehicleLastSessionSocSensor(OctopusVehicleDataSensor):
+    """Sensor for last known vehicle SoC from charging sessions."""
+
+    _metric_name = "SoC"
+    _metric_unique_id = "soc"
+    _metric_icon = "mdi:battery"
+    _metric_device_class = SensorDeviceClass.BATTERY
+    _metric_unit = PERCENTAGE
+
+    def _get_metric_value(self) -> float | None:
+        """Return latest SoC for this vehicle.
+
+        Prefer live SoC from device status and fall back to last charging session.
+        """
+        device = self._get_device_data()
+        if device:
+            status = device.get("status", {}) or {}
+            soc_reading = status.get("stateOfCharge")
+            if isinstance(soc_reading, dict):
+                live_soc = self._to_float(soc_reading.get("value"))
+            else:
+                live_soc = self._to_float(soc_reading)
+            if live_soc is not None:
+                return live_soc
+
+        latest_session = self._get_latest_session()
+        if not latest_session:
+            return None
+
+        value = latest_session.get(
+            "stateOfChargeFinal", latest_session.get("soc_final")
+        )
+        return self._to_float(value)
+
+
+class OctopusVehicleBatterySizeSensor(OctopusVehicleDataSensor):
+    """Sensor for EV battery size in kWh."""
+
+    _metric_name = "Battery Size"
+    _metric_unique_id = "battery_size"
+    _metric_icon = "mdi:car-electric"
+    _metric_unit = UnitOfEnergy.KILO_WATT_HOUR
+
+    def _get_metric_value(self) -> float | None:
+        """Return battery size for this vehicle."""
+        device = self._get_device_data()
+        if not device:
+            return None
+
+        vehicle_variant = device.get("vehicleVariant", {}) or {}
+        return self._to_float(vehicle_variant.get("batterySize"))
+
+
 class OctopusElectricitySmartMeterReadingsSensor(
     CoordinatorEntity, SensorEntity, RestoreEntity
 ):
@@ -2169,7 +2399,7 @@ class OctopusElectricitySmartMeterReadingsSensor(
                             total_consumption += float(value)
                         else:
                             total_consumption += float(value or 0)
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         # Skip invalid values
                         continue
                 return round(total_consumption, 3)
@@ -2203,7 +2433,7 @@ class OctopusElectricitySmartMeterReadingsSensor(
                             total_consumption += float(value)
                         else:
                             total_consumption += float(value or 0)
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         # Skip invalid values
                         continue
 
@@ -2217,7 +2447,7 @@ class OctopusElectricitySmartMeterReadingsSensor(
                             consumption_value = float(value)
                         else:
                             consumption_value = float(value or 0)
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         consumption_value = 0.0
 
                     charges.append(
@@ -2267,7 +2497,7 @@ class OctopusElectricitySmartMeterReadingsSensor(
                         self._last_reset = first_reading_time.replace(
                             hour=0, minute=0, second=0, microsecond=0
                         )
-                    except (ValueError, TypeError):
+                    except ValueError, TypeError:
                         pass
 
                 return self._attributes
@@ -2293,7 +2523,7 @@ class OctopusElectricitySmartMeterReadingsSensor(
             if state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
                 try:
                     self._state = float(state.state)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     pass
 
                 # Restore attributes

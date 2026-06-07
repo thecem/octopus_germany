@@ -180,6 +180,28 @@ query ComprehensiveDataQuery($accountNumber: String!) {
       current
       currentState
       isSuspended
+            ... on SmartFlexVehicleStatus {
+                stateOfCharge {
+                    value
+                    timestamp
+                }
+                stateOfChargeLimit {
+                    upperSocLimit
+                    timestamp
+                    isLimitViolated
+                }
+            }
+            ... on SmartFlexChargePointStatus {
+                stateOfCharge {
+                    value
+                    timestamp
+                }
+                stateOfChargeLimit {
+                    upperSocLimit
+                    timestamp
+                    isLimitViolated
+                }
+            }
     }
     provider
     preferences {
@@ -224,6 +246,17 @@ query ComprehensiveDataQuery($accountNumber: String!) {
         current
         currentState
         isSuspended
+                ... on SmartFlexVehicleStatus {
+                    stateOfCharge {
+                        value
+                        timestamp
+                    }
+                    stateOfChargeLimit {
+                        upperSocLimit
+                        timestamp
+                        isLimitViolated
+                    }
+                }
       }
       vehicleVariant {
         model
@@ -234,6 +267,8 @@ query ComprehensiveDataQuery($accountNumber: String!) {
           node {
             start
             end
+                        stateOfChargeChange
+                        stateOfChargeFinal
             energyAdded {
               value
               unit
@@ -259,6 +294,8 @@ query ComprehensiveDataQuery($accountNumber: String!) {
           node {
             start
             end
+                        stateOfChargeChange
+                        stateOfChargeFinal
             energyAdded {
               value
               unit
@@ -629,6 +666,8 @@ query ChargingSessions($accountNumber: String!) {
           node {
             start
             end
+                        stateOfChargeChange
+                        stateOfChargeFinal
             energyAdded {
               value
               unit
@@ -654,6 +693,8 @@ query ChargingSessions($accountNumber: String!) {
           node {
             start
             end
+                        stateOfChargeChange
+                        stateOfChargeFinal
             energyAdded {
               value
               unit
@@ -1182,6 +1223,21 @@ class OctopusGermany:
                                 for edge in edges:
                                     session = edge.get("node", {})
                                     if session:
+                                        # Normalize SoC fields to snake_case for internal consumers.
+                                        if (
+                                            "soc_final" not in session
+                                            and "stateOfChargeFinal" in session
+                                        ):
+                                            session["soc_final"] = session.get(
+                                                "stateOfChargeFinal"
+                                            )
+                                        if (
+                                            "soc_change" not in session
+                                            and "stateOfChargeChange" in session
+                                        ):
+                                            session["soc_change"] = session.get(
+                                                "stateOfChargeChange"
+                                            )
                                         # Add device context to session
                                         session["device_id"] = device_id
                                         session["device_name"] = device_name
@@ -1565,6 +1621,21 @@ class OctopusGermany:
                         for edge in edges:
                             session = edge.get("node", {})
                             if session:
+                                # Normalize SoC fields to snake_case for internal consumers.
+                                if (
+                                    "soc_final" not in session
+                                    and "stateOfChargeFinal" in session
+                                ):
+                                    session["soc_final"] = session.get(
+                                        "stateOfChargeFinal"
+                                    )
+                                if (
+                                    "soc_change" not in session
+                                    and "stateOfChargeChange" in session
+                                ):
+                                    session["soc_change"] = session.get(
+                                        "stateOfChargeChange"
+                                    )
                                 # Add device context to session
                                 session["device_id"] = device_id
                                 session["device_name"] = device_name
@@ -2323,7 +2394,9 @@ class OctopusGermany:
                 return None
 
             if "errors" in response:
-                _LOGGER.error("GraphQL errors in 15min readings: %s", response["errors"])
+                _LOGGER.error(
+                    "GraphQL errors in 15min readings: %s", response["errors"]
+                )
                 return None
 
             measurements = (
@@ -2348,7 +2421,9 @@ class OctopusGermany:
                         )
                 _LOGGER.debug(
                     "Found %d 15-min readings for property %s on %s",
-                    len(readings), property_id, date,
+                    len(readings),
+                    property_id,
+                    date,
                 )
                 return readings
             else:

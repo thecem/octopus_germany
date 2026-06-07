@@ -194,6 +194,21 @@ The integration is configured via the Home Assistant UI:
   - `account_number`: Your Octopus Energy account number
   - `last_updated`: Timestamp of the last update
 
+#### Vehicle Sensors
+
+- **Entity ID**: `sensor.octopus_<account_number>_<device_name>_soc`
+- **Description**: Latest vehicle state of charge (SoC) in percent
+- **State Source**:
+  - Primary: live device status (`stateOfCharge.value`)
+  - Fallback: latest charging session (`stateOfChargeFinal`)
+- **Unit**: `%`
+
+- **Entity ID**: `sensor.octopus_<account_number>_<device_name>_battery_size`
+- **Description**: Vehicle battery size reported by the provider
+- **Unit**: `kWh`
+
+**Note**: `SoC Change` and `SoC Limit` sensors were removed and are no longer created by the integration.
+
 #### Smart Charging Sessions Sensor
 
 - **Entity ID**: `sensor.octopus_<account_number>_<device_name>_smart_charging_sessions`

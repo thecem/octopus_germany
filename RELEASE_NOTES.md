@@ -1,5 +1,44 @@
 # Release Notes
 
+## Version 0.0.90 (2026-06-07)
+
+### 🎉 New Features
+
+#### Vehicle Data Sensors
+- **New Sensor**: `sensor.octopus_<account_number>_<device_name>_soc`
+  - Per-vehicle state of charge (SoC) in `%`
+  - Uses live status data (`stateOfCharge.value`) when available
+  - Falls back to latest charging session (`stateOfChargeFinal`) if needed
+
+- **New Sensor**: `sensor.octopus_<account_number>_<device_name>_battery_size`
+  - Per-vehicle battery size in `kWh`
+
+### 🔧 Improvements
+
+#### GraphQL / API Compatibility
+- Fixed SmartFlex status query to use inline fragments for type-specific fields
+  - `SmartFlexVehicleStatus`
+  - `SmartFlexChargePointStatus`
+- Fixed `stateOfCharge` query shape to match API type `DecimalReading`
+  - now queried as `stateOfCharge { value timestamp }`
+
+#### Sensor Robustness
+- Prevented coordinator listener crashes when `charging_sessions` is `null`
+- Added defensive handling for missing/partial device and session payloads
+
+### ❌ Removed
+
+- Removed `SoC Change` sensor (`..._soc_change`)
+- Removed `SoC Limit` sensor (`..._soc_limit`)
+
+Reason:
+- These values are not reliably provided by all providers/devices and caused confusion (`Nicht verfügbar`) in normal operation.
+
+### 📝 Documentation Updates
+
+- Updated both README files to document current vehicle sensors (`SoC`, `Battery Size`)
+- Removed documentation for `SoC Change` and `SoC Limit`
+
 ## Version 0.0.66 (2025-11-22)
 
 ### 🎉 New Features
