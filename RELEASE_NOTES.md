@@ -1,6 +1,6 @@
 # Release Notes
 
-## Version 0.0.92 (2026-06-07)
+## Version 0.0.93 (2026-06-07)
 
 ### 🎉 New Features
 

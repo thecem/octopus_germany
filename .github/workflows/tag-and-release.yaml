@@ -57,10 +57,8 @@ jobs:
       - name: Extract version section from RELEASE_NOTES.md
         if: env.EXISTS == 'false'
         run: |
-          HEADER="## Version ${VERSION}"
-
-          awk -v header="$HEADER" '
-            $0 == header { found=1; print; next }
+          awk -v version="$VERSION" '
+            index($0, "## Version " version) == 1 { found=1; print; next }
             found && /^## Version / { exit }
             found { print }
           ' RELEASE_NOTES.md > curated_notes.md
