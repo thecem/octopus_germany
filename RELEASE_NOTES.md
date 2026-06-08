@@ -1,5 +1,46 @@
 # Release Notes
 
+## Version 0.0.95 (2026-06-08)
+
+### 🎉 New Features
+
+#### Plugged-In Binary Sensor (pro Device)
+- **Neuer Sensor**: `binary_sensor.octopus_<account_number>_<device_name>_plugged`
+- Zeigt an, ob das Fahrzeug eingesteckt ist — **jedoch nur zuverlässig wenn Smart Control aktiviert ist**
+
+##### Wie der Sensor funktioniert
+Die Octopus-API liefert kein dediziertes `isPlugged`-Feld für Fahrzeuge.
+Der Sensor leitet den Steckstatus aus zwei API-Feldern ab:
+
+| `isSuspended` | `currentState` | Sensor-Zustand |
+|---|---|---|
+| `true` (Smart Control aus) | beliebig | `unknown` — nicht zuverlässig bestimmbar |
+| `false` | `SMART_CONTROL_NOT_AVAILABLE` | `off` — nicht eingesteckt / nicht zuhause |
+| `false` | alles andere | `on` — eingesteckt, Smart Control bereit |
+
+> **Wichtig:** Wenn Smart Control manuell deaktiviert ist (`isSuspended = true`),
+> kann die API nicht zwischen „eingesteckt aber pausiert" und „abgesteckt" unterscheiden.
+> Der Sensor gibt in diesem Fall `unknown` zurück.
+
+### 🔧 Korrekturen am Plugged-Sensor
+- Mapping auf korrekte `SmartFlexDeviceState`-Enum-Werte umgestellt
+  (vorher fehlerhafte String-Hints wie `"PLUGGED"`, `"CHARGING"` die die API nie liefert)
+- `SMART_CONTROL_OFF` korrekt auf `unknown` gesetzt statt fälschlicherweise `on`
+- Lifecycle-Guard: Bei `current != LIVE` liefert der Sensor ebenfalls `unknown`
+
+### ℹ️ Bekannte API-Einschränkungen (Stand 2026-06)
+
+Nach vollständiger Schema-Introspection der OEG-Kraken-API wurden folgende Felder
+gesucht und **nicht gefunden bzw. nicht nutzbar**:
+
+| Feature | Status |
+|---|---|
+| **Odometer / Kilometerstand** | ❌ Nicht vorhanden — weder in `SmartFlexVehicle` noch anderswo |
+| **GPS-Koordinaten** | ❌ `locationLatitude`/`locationLongitude` existieren nicht für Fahrzeug-Statustypen |
+| **Dispatch-Standort** | ⚠️ `completedDispatches.meta.location` ist ein einfacher String, kein Koordinatenobjekt |
+| **Ziel-SoC (`upperSocLimit`)** | ⚠️ Im Schema definiert, liefert für VW ID.4 aktuell `null` — Provider übermittelt diesen Wert nicht |
+| **`isPlugged` als Boolean** | ❌ Nur für `BatteryDeviceType` (Hausspeicher) vorhanden, nicht für Fahrzeuge |
+
 ## Version 0.0.94 (2026-06-07)
 
 ### 🎉 New Features

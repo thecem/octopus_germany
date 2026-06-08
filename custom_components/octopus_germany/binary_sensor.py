@@ -557,10 +557,21 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
 
 
 class OctopusPluggedInBinarySensor(CoordinatorEntity, BinarySensorEntity):
-    """Binary sensor for EV plugged-in state derived from SmartFlex device status."""
+    """Binary sensor for EV plugged-in state derived from SmartFlex device status.
 
-    _PLUGGED_STATE_HINTS = {"PLUGGED", "CHARGING", "FINISHED", "SMART_CONTROL"}
-    _UNPLUGGED_STATE_HINTS = {"UNPLUGGED", "DISCONNECTED", "AWAY"}
+    Uses SmartFlexDeviceState (currentState) enum values from the API.
+    Plugged-in states (device at home and capable of / undergoing smart control):
+      SMART_CONTROL_CAPABLE, SMART_CONTROL_IN_PROGRESS, BOOSTING, SMART_CONTROL_OFF
+    Unplugged / not-available states:
+      SMART_CONTROL_NOT_AVAILABLE, TEST_CHARGE_NOT_AVAILABLE
+    All other states (onboarding, auth, etc.) → None (unknown).
+    """
+
+    # Logic:
+    # isSuspended=True  → unknown  (smart control off, API cannot confirm plug state)
+    # isSuspended=False + SMART_CONTROL_NOT_AVAILABLE → False  (unplugged or away)
+    # isSuspended=False + anything else               → True   (plugged, smart control capable)
+    _NOT_PLUGGED_STATE = "SMART_CONTROL_NOT_AVAILABLE"
 
     def __init__(self, account_number, coordinator, device_id, device_name) -> None:
         """Initialize plugged-in binary sensor for a specific device."""
@@ -620,28 +631,42 @@ class OctopusPluggedInBinarySensor(CoordinatorEntity, BinarySensorEntity):
                 return device
         return None
 
-    def _derive_plugged_state(self, current_state: str | None) -> bool | None:
-        """Infer plugged state from SmartFlex currentState string."""
+    def _derive_plugged_state(
+        self, current_state: str | None, is_suspended: bool | None
+    ) -> bool | None:
+        """Derive plugged boolean from isSuspended + currentState.
+
+        - isSuspended=True  → None  (unknown: smart control off, plug state unreliable)
+        - isSuspended=False + SMART_CONTROL_NOT_AVAILABLE → False (unplugged/away)
+        - isSuspended=False + anything else               → True  (plugged, ready)
+        """
+        if is_suspended:
+            return None
         if not current_state:
             return None
-
-        normalized = current_state.upper()
-        if any(hint in normalized for hint in self._UNPLUGGED_STATE_HINTS):
+        if current_state == self._NOT_PLUGGED_STATE:
             return False
-        if any(hint in normalized for hint in self._PLUGGED_STATE_HINTS):
-            return True
-        return None
+        return True
 
     @property
     def is_on(self) -> bool | None:
-        """Return True when the device appears plugged in, False when not, else None."""
+        """Return True when plugged, False when not, None when unknown."""
         device = self._get_device_data()
         if not device:
             return None
 
         status = device.get("status", {}) if isinstance(device, dict) else {}
-        current_state = status.get("currentState") if isinstance(status, dict) else None
-        return self._derive_plugged_state(current_state)
+        if not isinstance(status, dict):
+            return None
+
+        # Only meaningful when the device lifecycle is LIVE
+        lifecycle = status.get("current")
+        if lifecycle and lifecycle not in ("LIVE", "ONBOARDING_TEST_IN_PROGRESS"):
+            return None
+
+        current_state = status.get("currentState")
+        is_suspended = status.get("isSuspended", False)
+        return self._derive_plugged_state(current_state, is_suspended)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -663,8 +688,14 @@ class OctopusPluggedInBinarySensor(CoordinatorEntity, BinarySensorEntity):
             "is_suspended": status.get("isSuspended")
             if isinstance(status, dict)
             else None,
-            "plugged_in_inferred": self._derive_plugged_state(current_state),
-            "inference_note": "Derived from status.currentState (no dedicated isPlugged field in API)",
+            "plugged_in_inferred": self._derive_plugged_state(
+                current_state,
+                status.get("isSuspended") if isinstance(status, dict) else None,
+            ),
+            "inference_note": (
+                "When isSuspended=True: unknown (smart control off, plug state unreliable). "
+                "When isSuspended=False: off if SMART_CONTROL_NOT_AVAILABLE, on otherwise."
+            ),
         }
 
     @property
