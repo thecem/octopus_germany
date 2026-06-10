@@ -1,5 +1,18 @@
 # Release Notes
 
+## Version 0.0.96 (2026-06-10)
+
+### 🔧 Fixes
+
+#### Service Response in Home Assistant Actions UI
+- `get_smart_meter_readings` and `export_smart_meter_csv` are now registered as
+  response-capable services (`SupportsResponse.ONLY`).
+- The returned data is visible directly in the **Actions** window in Home Assistant,
+  in addition to the existing fired events
+  (`octopus_germany_smart_meter_readings_result` and `octopus_germany_csv_export_result`).
+
+---
+
 ## Version 0.0.95 (2026-06-08)
 
 ### 🎉 New Features
