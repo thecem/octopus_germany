@@ -321,7 +321,7 @@ For direct HAN interface readings from an iMSys/SMGW meter, use this integration
 
 Recommended split:
 
-- `octopus_germany`: tariff/account/dispatch/control data
+- `octopus_germany`: tariff/account/dispatch/control data plus read access to Octopus-stored historical consumption and meter data
 - `ha-ppc-smgw-han`: direct local HAN meter telemetry
 
 ## Automation

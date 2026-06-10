@@ -79,7 +79,7 @@ Fuer direkte HAN-Auslesung am Smart Meter Gateway (SMGW) kann diese Integration 
 
 Empfohlene Kombination:
 
-- octopus_germany fuer Tarif, Konto, SmartFlex, Steuerung
+- octopus_germany fuer Tarif, Konto, SmartFlex, Steuerung sowie das Auslesen der bei Octopus gespeicherten historischen Verbrauchs-/Zaehlerdaten
 - ha-ppc-smgw-han fuer lokale HAN-Rohdaten
 
 ## Automationen

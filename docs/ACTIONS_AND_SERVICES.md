@@ -119,5 +119,5 @@ For direct local HAN meter telemetry, use this integration in parallel:
 
 Recommended split:
 
-- `octopus_germany`: account, tariff, dispatch and SmartFlex controls
+- `octopus_germany`: account, tariff, dispatch and SmartFlex controls, plus read access to Octopus-stored historical consumption and meter data
 - `ha-ppc-smgw-han`: direct HAN data from your smart meter gateway

@@ -95,7 +95,7 @@ kannst du diese Integration parallel nutzen:
 - [`TRON4R/ha-ppc-smgw-han`](https://github.com/TRON4R/ha-ppc-smgw-han)
 
 Empfehlung:
-- `octopus_germany` für Vertrags-/Tarif-/Account- und SmartFlex-Daten
+- `octopus_germany` für Vertrags-/Tarif-/Account- und SmartFlex-Daten sowie das Auslesen der bei Octopus gespeicherten historischen Verbrauchs-/Zählerdaten
 - `ha-ppc-smgw-han` für lokale, direkte HAN-Messwerte vom Gateway
 
 ## Automation

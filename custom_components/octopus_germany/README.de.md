@@ -78,7 +78,7 @@ Fuer direkte HAN-Auslesung am Smart Meter Gateway (SMGW) kann parallel genutzt w
 
 Empfohlene Rollenverteilung:
 
-- octopus_germany: Tarif, Konto, SmartFlex, Steuerung
+- octopus_germany: Tarif, Konto, SmartFlex, Steuerung sowie Auslesen der bei Octopus gespeicherten historischen Verbrauchs-/Zaehlerdaten
 - ha-ppc-smgw-han: lokale HAN-Telemetrie
 
 ## API Support

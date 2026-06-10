@@ -118,5 +118,5 @@ Fuer direkte lokale HAN-Telemetrie kann diese Integration parallel genutzt werde
 
 Empfohlene Aufteilung:
 
-- `octopus_germany`: Konto-, Tarif-, Dispatch- und SmartFlex-Steuerdaten
+- `octopus_germany`: Konto-, Tarif-, Dispatch- und SmartFlex-Steuerdaten sowie Auslesen der bei Octopus gespeicherten historischen Verbrauchs-/Zaehlerdaten
 - `ha-ppc-smgw-han`: direkte HAN-Werte vom Smart Meter Gateway
