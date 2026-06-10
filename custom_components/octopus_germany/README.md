@@ -29,6 +29,7 @@ This custom component integrates Octopus Germany services with Home Assistant, p
 - **Device Control**: Smart charging control for electric vehicles and charge points
 - **Boost Charging**: Instant charge boost functionality (requires smart charging enabled)
 - **Intelligent Dispatching**: Real-time status of Octopus Intelligent charge scheduling
+- **Octopus Historical Data Readout**: Read historical consumption and meter readings stored by Octopus
 - **Multi-Account**: Support for multiple Octopus accounts under one integration
 - **Gas infrastructure monitoring** (MALO/MELO numbers, meters, readings)
 - **Latest Electricity meter reading**

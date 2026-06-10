@@ -20,7 +20,8 @@ Diese Custom Integration bindet Octopus Energy Germany in Home Assistant ein. Si
 - Aktuelle Tarifpreise (inkl. Dynamic/TOU)
 - SmartFlex-Geraetestatus, Dispatching, Session-Daten
 - Schalter fuer Smart Control und Boost Charge
-- Smart-Meter-Readings (historisch) und CSV-Export
+- **Smart-Meter-Readings**: Vortagsverbrauch akkumuliert mit stundenweiser Aufschluesselung (aus bei Octopus gespeicherten Zaehlerdaten)
+- **Historische Octopus-Daten auslesen**: Historische Verbrauchs- und Zaehlerdaten aus dem Octopus-System abrufen
 - Multi-Account und Multi-Device Support
 
 ## Installation
