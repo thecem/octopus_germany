@@ -11,7 +11,7 @@ import inspect
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, SupportsResponse
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util.dt import utcnow, as_utc, parse_datetime
 
@@ -1822,12 +1822,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         DOMAIN,
         SERVICE_GET_SMART_METER_READINGS,
         handle_get_smart_meter_readings,
+        supports_response=SupportsResponse.ONLY,
     )
 
     hass.services.async_register(
         DOMAIN,
         SERVICE_EXPORT_SMART_METER_CSV,
         handle_export_smart_meter_csv,
+        supports_response=SupportsResponse.ONLY,
     )
 
     return True
