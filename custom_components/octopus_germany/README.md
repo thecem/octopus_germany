@@ -1,5 +1,7 @@
 # Octopus Germany Integration for Home Assistant
 
+Language / Sprache: [English](README.md) | [Deutsch](README.de.md)
+
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 ![installation_badge](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=integration%20usage&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=$.octopus_germany.total)
 
@@ -58,6 +60,12 @@ The integration is configured via the Home Assistant UI:
 3. Enter your Octopus Energy Germany email and password
 4. The integration will automatically fetch your account number and set up the entities
 
+## Documentation Structure
+
+To keep the repository start page compact, action details are documented in:
+
+- [`docs/ACTIONS_AND_SERVICES.md`](../../docs/ACTIONS_AND_SERVICES.md)
+
 ## Entities
 
 ### Binary Sensors
@@ -85,9 +93,9 @@ The integration is configured via the Home Assistant UI:
 - **Entity ID**: `binary_sensor.octopus_<account_number>_<device_name>_plugged`
 - **Description**: Inferred plugged-in status of the SmartFlex device
 - **State**:
-  - `on`: Device appears plugged in
-  - `off`: Device appears unplugged/disconnected
-  - `unknown`: API status is present but not clearly mappable
+  - `on`: Smart control active and `currentState != SMART_CONTROL_NOT_AVAILABLE`
+  - `off`: Smart control active and `currentState == SMART_CONTROL_NOT_AVAILABLE`
+  - `unknown`: Smart control suspended (`is_suspended = true`) or API cannot determine state
 - **Attributes**:
   - `device_id`: Internal ID of the connected device
   - `device_name`: Name of the device
@@ -246,7 +254,7 @@ The integration is configured via the Home Assistant UI:
 ### Switches
 
 #### Smart Charging Control
-- **Entity ID**: `switch.octopus_<account_number>_device_smart_control`
+- **Entity ID**: `switch.octopus_<account_number>_<device_name>_smart_control`
 - **Description**: Controls smart charging functionality for electric vehicles/charge points
 - **Requirements**: Device must be connected and capable of smart control
 - **Actions**:
@@ -304,6 +312,18 @@ data:
 ```
 
 **Note**: The old `set_vehicle_charge_preferences` service has been removed. Use `set_device_preferences` instead with specific device IDs.
+
+## iMSys / SMGW-HAN
+
+For direct HAN interface readings from an iMSys/SMGW meter, use this integration in parallel:
+
+- [`TRON4R/ha-ppc-smgw-han`](https://github.com/TRON4R/ha-ppc-smgw-han)
+
+Recommended split:
+
+- `octopus_germany`: tariff/account/dispatch/control data
+- `ha-ppc-smgw-han`: direct local HAN meter telemetry
+
 ## Automation
 
 [Octopus Intelligent Go mit EVCC](https://github.com/ha-puzzles/homeassistant-puzzlepieces/blob/main/use-cases/stromtarife/octopus-intelligent-go/README.md)
