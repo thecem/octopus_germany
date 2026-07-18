@@ -336,6 +336,7 @@ data:
 ```
 
 **Note**: The OE mutation accepts the day plus register values; it does not submit per-entry timestamps.
+For a full Home Assistant automation example, see [docs/UPLOAD_DAILY_METER_READING_AUTOMATION.md](../../docs/UPLOAD_DAILY_METER_READING_AUTOMATION.md).
 
 ## iMSys / SMGW-HAN
 

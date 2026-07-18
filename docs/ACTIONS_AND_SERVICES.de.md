@@ -137,6 +137,11 @@ data:
 Wichtige Einschraenkung:
 
 - Die OE-Mutation akzeptiert ein Datum und Registerwerte, keine Zeitstempel pro Listeintrag.
+- Hier werden nur **Tageswerte** eingespielt, keine 15-Minuten-Intervalle.
+
+Praktisches Beispiel:
+
+- [Tägliche Zaehlerstand-Automation](UPLOAD_DAILY_METER_READING_AUTOMATION.md)
 
 ## iMSys / SMGW-HAN Empfehlung
 

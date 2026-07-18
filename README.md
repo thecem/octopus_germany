@@ -89,6 +89,7 @@ To keep this start page compact, detailed documentation is split across focused 
   - Export iMSys readings to CSV (month/year)
 - `octopus_germany.submit_meter_readings`
   - Submit electricity or gas meter readings to the OE API
+  - [Daily upload automation example](docs/UPLOAD_DAILY_METER_READING_AUTOMATION.md)
 
 ### iMSys / SMGW HAN Hinweis
 

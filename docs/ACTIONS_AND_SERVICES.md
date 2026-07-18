@@ -138,6 +138,11 @@ data:
 Important limitation:
 
 - The OE mutation accepts a date and register values, not per-entry timestamps.
+- Only **daily values** should be submitted here, not 15-minute intervals.
+
+Practical example:
+
+- [Daily meter reading upload automation](UPLOAD_DAILY_METER_READING_AUTOMATION.md)
 
 ## iMSys / SMGW-HAN Recommendation
 
