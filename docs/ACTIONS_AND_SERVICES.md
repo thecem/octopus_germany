@@ -111,6 +111,39 @@ Parameters:
 - `layout` (optional): `wide` or `tall`
 - `summary` (optional): `true/false`
 
+### `octopus_germany.submit_meter_readings`
+
+Submit electricity or gas meter readings to the OE API.
+
+Parameters:
+
+- `meter_type` (required): `electricity` or `gas`
+- `meter_id` (required): OE meter ID from the meter entity attributes
+- `reading_date` (required): `YYYY-MM-DD`
+- `readings_json` (optional): JSON array of readings, each containing `value` and `register_obis_code`
+- `reading_value` and `register_obis_code` (optional): helper fields for a single register reading
+
+Example:
+
+```yaml
+service: octopus_germany.submit_meter_readings
+data:
+  meter_type: electricity
+  meter_id: "1234567890"
+  reading_date: "2026-06-01"
+  readings_json: >-
+    [{"value": 1234.56, "register_obis_code": "1-0:1.8.0"}]
+```
+
+Important limitation:
+
+- The OE mutation accepts a date and register values, not per-entry timestamps.
+- Only **daily values** should be submitted here, not 15-minute intervals.
+
+Practical example:
+
+- [Daily meter reading upload automation](UPLOAD_DAILY_METER_READING_AUTOMATION.md)
+
 ## iMSys / SMGW-HAN Recommendation
 
 For direct local HAN meter telemetry, use this integration in parallel:

@@ -142,3 +142,55 @@ export_smart_meter_csv:
       example: "04:30"
       selector:
         time:
+
+submit_meter_readings:
+  name: Submit Meter Readings
+  description: Submit one or more electricity or gas meter readings to the OE API. Use either a JSON array of readings or the single-reading helper fields. Results are returned in the service response and as event `octopus_germany_meter_readings_submission_result`.
+  fields:
+    meter_type:
+      name: Meter Type
+      description: Select electricity or gas to route the reading to the correct OE mutation
+      required: true
+      selector:
+        select:
+          options:
+            - "electricity"
+            - "gas"
+    meter_id:
+      name: Meter ID
+      description: The OE meter ID (available on the meter entity attributes)
+      required: true
+      example: "1234567890"
+      selector:
+        text:
+    reading_date:
+      name: Reading Date
+      description: Date the reading applies to (YYYY-MM-DD)
+      required: true
+      example: "2026-06-01"
+      selector:
+        date:
+    readings_json:
+      name: Readings JSON
+      description: Optional JSON array of readings. Each item must contain value and register_obis_code. If provided, this takes precedence over the single-reading fields below.
+      required: false
+      example: '[{"value": 1234.56, "register_obis_code": "1-0:1.8.0"}]'
+      selector:
+        text:
+    reading_value:
+      name: Reading Value
+      description: Optional single reading value for a one-register submission
+      required: false
+      example: 1234.56
+      selector:
+        number:
+          min: 0
+          max: 1000000000
+          mode: box
+    register_obis_code:
+      name: Register OBIS Code
+      description: Optional OBIS code used with reading_value for single-reading submissions
+      required: false
+      example: "1-0:1.8.0"
+      selector:
+        text:

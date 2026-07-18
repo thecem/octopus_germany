@@ -5,6 +5,7 @@ This module provides integration with the Octopus Germany API for Home Assistant
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import timedelta, datetime, date
 import inspect
@@ -26,11 +27,16 @@ import aiohttp
 
 try:
     from homeassistant.components.recorder import get_instance
-    from homeassistant.components.recorder.models import StatisticData, StatisticMetaData, StatisticMeanType
+    from homeassistant.components.recorder.models import (
+        StatisticData,
+        StatisticMetaData,
+        StatisticMeanType,
+    )
     from homeassistant.components.recorder.statistics import (
         async_add_external_statistics,
         statistics_during_period,
     )
+
     HAS_RECORDER = True
 except ImportError:
     HAS_RECORDER = False
@@ -45,11 +51,18 @@ API_URL = "https://api.octopus.energy/v1/graphql/"
 SERVICE_SET_DEVICE_PREFERENCES = "set_device_preferences"
 SERVICE_GET_SMART_METER_READINGS = "get_smart_meter_readings"
 SERVICE_EXPORT_SMART_METER_CSV = "export_smart_meter_csv"
+SERVICE_SUBMIT_METER_READINGS = "submit_meter_readings"
 ATTR_ACCOUNT_NUMBER = "account_number"
 ATTR_DEVICE_ID = "device_id"
 ATTR_TARGET_PERCENTAGE = "target_percentage"
 ATTR_TARGET_TIME = "target_time"
 ATTR_DATE = "date"
+ATTR_READING_DATE = "reading_date"
+ATTR_METER_ID = "meter_id"
+ATTR_METER_TYPE = "meter_type"
+ATTR_READINGS_JSON = "readings_json"
+ATTR_READING_VALUE = "reading_value"
+ATTR_REGISTER_OBIS_CODE = "register_obis_code"
 ATTR_PROPERTY_ID = "property_id"
 ATTR_PERIOD = "period"
 ATTR_YEAR = "year"
@@ -404,7 +417,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         device["vehicleVariant"]["batterySize"]
                     )
                     break
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     pass
         result_data[account_number]["vehicle_battery_size_in_kwh"] = (
             vehicle_battery_size
@@ -917,7 +930,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     gas_price = (
                         float(gross_rate_str) / 100.0
                     )  # Convert from cents to EUR
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     gas_price = None
 
                 # Extract contract dates
@@ -1119,7 +1132,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         account_num, property_id, date_str
                     )
                 except Exception as e:
-                    _LOGGER.warning("Failed to fetch 15-min readings for %s: %s", date_str, e)
+                    _LOGGER.warning(
+                        "Failed to fetch 15-min readings for %s: %s", date_str, e
+                    )
                     continue
 
                 if not readings:
@@ -1132,11 +1147,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     if not start_str:
                         continue
                     try:
-                        start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
-                        hour_key = start_dt.replace(minute=0, second=0, microsecond=0).isoformat()
+                        start_dt = datetime.fromisoformat(
+                            start_str.replace("Z", "+00:00")
+                        )
+                        hour_key = start_dt.replace(
+                            minute=0, second=0, microsecond=0
+                        ).isoformat()
                         value = float(reading.get("value", 0) or 0)
-                        hourly_buckets[hour_key] = hourly_buckets.get(hour_key, 0.0) + value
-                    except (ValueError, TypeError):
+                        hourly_buckets[hour_key] = (
+                            hourly_buckets.get(hour_key, 0.0) + value
+                        )
+                    except ValueError, TypeError:
                         continue
 
                 for hour_key in sorted(hourly_buckets.keys()):
@@ -1154,12 +1175,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 imported_stats_dates[account_num].add(date_str)
                 _LOGGER.debug(
                     "Prepared %d hourly statistics for %s on %s (running sum: %.3f)",
-                    len(hourly_buckets), account_num, date_str, running_sum,
+                    len(hourly_buckets),
+                    account_num,
+                    date_str,
+                    running_sum,
                 )
 
             if all_statistics:
                 meter_info = account_data.get("meter", {})
-                meter_number = meter_info.get("number", account_num) if meter_info else account_num
+                meter_number = (
+                    meter_info.get("number", account_num) if meter_info else account_num
+                )
 
                 async_add_external_statistics(
                     hass,
@@ -1177,7 +1203,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
                 _LOGGER.info(
                     "Imported %d hourly statistics for account %s into energy dashboard",
-                    len(all_statistics), account_num,
+                    len(all_statistics),
+                    account_num,
                 )
 
     coordinator = DataUpdateCoordinator(
@@ -1811,6 +1838,135 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
             raise HomeAssistantError(f"Error exporting smart meter data: {e}")
 
+    async def handle_submit_meter_readings(call: ServiceCall) -> dict:
+        """Handle the submit_meter_readings service call."""
+        meter_type = call.data.get(ATTR_METER_TYPE)
+        meter_id = call.data.get(ATTR_METER_ID)
+        reading_date = call.data.get(ATTR_READING_DATE)
+        readings_json = call.data.get(ATTR_READINGS_JSON)
+        reading_value = call.data.get(ATTR_READING_VALUE)
+        register_obis_code = call.data.get(ATTR_REGISTER_OBIS_CODE)
+
+        if not meter_type:
+            from homeassistant.exceptions import ServiceValidationError
+
+            raise ServiceValidationError(
+                "Meter type is required",
+                translation_domain=DOMAIN,
+            )
+
+        if not meter_id:
+            from homeassistant.exceptions import ServiceValidationError
+
+            raise ServiceValidationError(
+                "Meter ID is required",
+                translation_domain=DOMAIN,
+            )
+
+        if not reading_date:
+            from homeassistant.exceptions import ServiceValidationError
+
+            raise ServiceValidationError(
+                "Reading date is required",
+                translation_domain=DOMAIN,
+            )
+
+        try:
+            datetime.strptime(reading_date, "%Y-%m-%d")
+        except ValueError:
+            from homeassistant.exceptions import ServiceValidationError
+
+            raise ServiceValidationError(
+                f"Invalid reading date format: {reading_date}. Expected YYYY-MM-DD",
+                translation_domain=DOMAIN,
+            )
+
+        readings = None
+        if readings_json:
+            try:
+                parsed_readings = json.loads(readings_json)
+            except json.JSONDecodeError as json_error:
+                from homeassistant.exceptions import ServiceValidationError
+
+                raise ServiceValidationError(
+                    f"Invalid JSON for readings_json: {json_error}",
+                    translation_domain=DOMAIN,
+                )
+
+            if not isinstance(parsed_readings, list):
+                from homeassistant.exceptions import ServiceValidationError
+
+                raise ServiceValidationError(
+                    "readings_json must be a JSON array",
+                    translation_domain=DOMAIN,
+                )
+
+            readings = parsed_readings
+        elif reading_value is not None:
+            if not register_obis_code:
+                from homeassistant.exceptions import ServiceValidationError
+
+                raise ServiceValidationError(
+                    "register_obis_code is required when reading_value is used",
+                    translation_domain=DOMAIN,
+                )
+
+            readings = [
+                {
+                    "value": reading_value,
+                    "registerObisCode": register_obis_code,
+                }
+            ]
+        else:
+            from homeassistant.exceptions import ServiceValidationError
+
+            raise ServiceValidationError(
+                "Either readings_json or reading_value must be provided",
+                translation_domain=DOMAIN,
+            )
+
+        _LOGGER.info(
+            "Submitting meter readings for meter_id=%s, meter_type=%s, reading_date=%s, reading_count=%d",
+            meter_id,
+            meter_type,
+            reading_date,
+            len(readings),
+        )
+
+        try:
+            result = await api.submit_meter_readings(
+                meter_type,
+                meter_id,
+                reading_date,
+                readings,
+            )
+
+            if result:
+                hass.bus.async_fire(
+                    f"{DOMAIN}_meter_readings_submission_result", result
+                )
+                return result
+
+            from homeassistant.exceptions import ServiceValidationError
+
+            raise ServiceValidationError(
+                "Failed to submit meter readings. Check the log for details.",
+                translation_domain=DOMAIN,
+            )
+        except ValueError as e:
+            _LOGGER.error("Validation error submitting meter readings: %s", e)
+            from homeassistant.exceptions import ServiceValidationError
+
+            raise ServiceValidationError(
+                f"Invalid parameters: {e}",
+                translation_domain=DOMAIN,
+            )
+        except Exception as e:
+            _LOGGER.exception("Unexpected error submitting meter readings: %s", e)
+            from homeassistant.exceptions import HomeAssistantError
+
+            raise HomeAssistantError(f"Error submitting meter readings: {e}")
+
     # Register services
     hass.services.async_register(
         DOMAIN,
@@ -1829,6 +1985,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         DOMAIN,
         SERVICE_EXPORT_SMART_METER_CSV,
         handle_export_smart_meter_csv,
+        supports_response=SupportsResponse.ONLY,
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SUBMIT_METER_READINGS,
+        handle_submit_meter_readings,
         supports_response=SupportsResponse.ONLY,
     )
 

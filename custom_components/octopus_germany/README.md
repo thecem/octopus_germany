@@ -314,6 +314,30 @@ data:
 
 **Note**: The old `set_vehicle_charge_preferences` service has been removed. Use `set_device_preferences` instead with specific device IDs.
 
+### submit_meter_readings
+- **Service ID**: `octopus_germany.submit_meter_readings`
+- **Description**: Submit electricity or gas meter readings to the OE API
+- **Parameters**:
+  - `meter_type` (required): `electricity` or `gas`
+  - `meter_id` (required): The OE meter ID from the meter entity attributes
+  - `reading_date` (required): `YYYY-MM-DD`
+  - `readings_json` (optional): JSON array of reading objects with `value` and `register_obis_code`
+  - `reading_value` / `register_obis_code` (optional): Convenience fields for a single register reading
+
+**Example:**
+```yaml
+service: octopus_germany.submit_meter_readings
+data:
+  meter_type: electricity
+  meter_id: "1234567890"
+  reading_date: "2026-06-01"
+  readings_json: >-
+    [{"value": 1234.56, "register_obis_code": "1-0:1.8.0"}]
+```
+
+**Note**: The OE mutation accepts the day plus register values; it does not submit per-entry timestamps.
+For a full Home Assistant automation example, see [docs/UPLOAD_DAILY_METER_READING_AUTOMATION.md](../../docs/UPLOAD_DAILY_METER_READING_AUTOMATION.md).
+
 ## iMSys / SMGW-HAN
 
 For direct HAN interface readings from an iMSys/SMGW meter, use this integration in parallel:
