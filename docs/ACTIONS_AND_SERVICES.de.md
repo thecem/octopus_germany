@@ -110,6 +110,34 @@ Parameter:
 - `layout` (optional): `wide` oder `tall`
 - `summary` (optional): `true/false`
 
+### `octopus_germany.submit_meter_readings`
+
+Schreibt Strom- oder Gas-Zaehlerstaende in die OE-API.
+
+Parameter:
+
+- `meter_type` (required): `electricity` oder `gas`
+- `meter_id` (required): OE-Meter-ID aus den Attributen des Meter-Entitaets
+- `reading_date` (required): `YYYY-MM-DD`
+- `readings_json` (optional): JSON-Array von Eintraegen mit `value` und `register_obis_code`
+- `reading_value` und `register_obis_code` (optional): Hilfsfelder fuer einen einzelnen Registerwert
+
+Beispiel:
+
+```yaml
+service: octopus_germany.submit_meter_readings
+data:
+  meter_type: electricity
+  meter_id: "1234567890"
+  reading_date: "2026-06-01"
+  readings_json: >-
+    [{"value": 1234.56, "register_obis_code": "1-0:1.8.0"}]
+```
+
+Wichtige Einschraenkung:
+
+- Die OE-Mutation akzeptiert ein Datum und Registerwerte, keine Zeitstempel pro Listeintrag.
+
 ## iMSys / SMGW-HAN Empfehlung
 
 Fuer direkte lokale HAN-Telemetrie kann diese Integration parallel genutzt werden:

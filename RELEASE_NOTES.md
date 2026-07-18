@@ -1,5 +1,18 @@
 # Release Notes
 
+## Version 0.0.97 (2026-07-18)
+
+### 🎉 New Features
+
+#### Meter Reading Submission Service
+- Added `octopus_germany.submit_meter_readings` to submit gas or electricity meter readings back to the OE API.
+- Supports both a single-reading helper mode and a JSON list of register readings.
+- Service responses are returned in Home Assistant and mirrored via the `octopus_germany_meter_readings_submission_result` event.
+
+### ℹ️ API Details
+- The OE write mutation uses `readingDate` plus register values, not per-reading timestamps.
+- Electricity and gas submissions are routed to the corresponding OE mutation automatically.
+
 ## Version 0.0.96 (2026-06-10)
 
 ### 🔧 Fixes

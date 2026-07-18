@@ -1852,6 +1852,140 @@ class OctopusGermany:
             _LOGGER.error("Error setting device preferences: %s", e)
             return False
 
+    async def submit_meter_readings(
+        self,
+        meter_type: str,
+        meter_id: str,
+        reading_date: str,
+        readings: list[dict[str, Any]],
+    ) -> Dict[str, Any] | None:
+        """Submit meter readings for a gas or electricity meter.
+
+        Args:
+            meter_type: Either "electricity" or "gas".
+            meter_id: The meter ID to submit readings for.
+            reading_date: Reading date in YYYY-MM-DD format.
+            readings: One or more register readings.
+
+        Returns:
+            The API response payload or None if the submission failed.
+        """
+        if not await self.ensure_token():
+            _LOGGER.error("Failed to ensure valid token for submit_meter_readings")
+            return None
+
+        normalized_meter_type = meter_type.strip().lower()
+        if normalized_meter_type not in ("electricity", "gas"):
+            _LOGGER.error("Invalid meter type: %s", meter_type)
+            return None
+
+        if not meter_id:
+            _LOGGER.error("Meter ID is required for submit_meter_readings")
+            return None
+
+        if not reading_date:
+            _LOGGER.error("Reading date is required for submit_meter_readings")
+            return None
+
+        if not readings:
+            _LOGGER.error("At least one reading is required for submit_meter_readings")
+            return None
+
+        normalized_readings = []
+        for reading in readings:
+            register_obis_code = (
+                reading.get("registerObisCode")
+                or reading.get("register_obis_code")
+                or reading.get("register_obiscode")
+            )
+            value = reading.get("value")
+
+            if register_obis_code in (None, ""):
+                _LOGGER.error("Each reading requires a register OBIS code")
+                return None
+
+            if value in (None, ""):
+                _LOGGER.error("Each reading requires a value")
+                return None
+
+            normalized_readings.append(
+                {
+                    "registerObisCode": str(register_obis_code),
+                    "value": str(value),
+                }
+            )
+
+        mutation_name = (
+            "createElectricityMeterReadings"
+            if normalized_meter_type == "electricity"
+            else "createGasMeterReadings"
+        )
+
+        query = f"""
+        mutation SubmitMeterReadings($input: ReadingsInput!) {{
+          {mutation_name}(input: $input) {{
+            readingDate
+            numberOfReadingsCreated
+          }}
+        }}
+        """
+
+        variables = {
+            "input": {
+                "meterId": meter_id,
+                "readingDate": reading_date,
+                "readings": normalized_readings,
+            }
+        }
+
+        client = self._get_graphql_client()
+
+        try:
+            _LOGGER.info(
+                "Submitting %d %s meter readings for meter %s on %s",
+                len(normalized_readings),
+                normalized_meter_type,
+                meter_id,
+                reading_date,
+            )
+
+            response = await client.execute_async(query=query, variables=variables)
+            _LOGGER.debug("Submit meter readings response: %s", response)
+
+            if "errors" in response:
+                error = response.get("errors", [{}])[0]
+                error_code = error.get("extensions", {}).get("errorCode")
+
+                if error_code == "KT-CT-1124":
+                    _LOGGER.warning(
+                        "Token expired during meter reading submission, refreshing..."
+                    )
+                    self._token_manager.clear()
+                    success = await self.login()
+                    if success:
+                        return await self.submit_meter_readings(
+                            meter_type, meter_id, reading_date, readings
+                        )
+
+                _LOGGER.error("API returned errors: %s", response["errors"])
+                return None
+
+            result = response.get("data", {}).get(mutation_name)
+            if not result:
+                _LOGGER.error("No result returned from %s", mutation_name)
+                return None
+
+            return {
+                "success": True,
+                "meter_type": normalized_meter_type,
+                "meter_id": meter_id,
+                "reading_date": result.get("readingDate", reading_date),
+                "number_of_readings_created": result.get("numberOfReadingsCreated", 0),
+            }
+        except Exception as e:
+            _LOGGER.error("Error submitting meter readings: %s", e)
+            return None
+
     async def get_vehicle_devices(self, account_number: str):
         """Get vehicle device details with preference settings.
 
