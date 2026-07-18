@@ -1,5 +1,14 @@
 # Release Notes
 
+## Version 0.0.98 (2026-07-18)
+
+### 🎉 New Features
+
+#### EV Active Power Sensor
+- Added `sensor.octopus_<account_number>_<vehicle_name>_active_power` for EV devices.
+- Exposes the live `SmartFlexVehicleStatus.activePower` value as charging power in kW.
+- The sensor is read-only and updates with the current vehicle status.
+
 ## Version 0.0.97 (2026-07-18)
 
 ### 🎉 New Features
