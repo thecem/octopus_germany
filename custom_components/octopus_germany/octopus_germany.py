@@ -181,6 +181,10 @@ query ComprehensiveDataQuery($accountNumber: String!) {
       currentState
       isSuspended
             ... on SmartFlexVehicleStatus {
+                activePower {
+                    value
+                    timestamp
+                }
                 stateOfCharge {
                     value
                     timestamp
@@ -247,6 +251,10 @@ query ComprehensiveDataQuery($accountNumber: String!) {
         currentState
         isSuspended
                 ... on SmartFlexVehicleStatus {
+                    activePower {
+                        value
+                        timestamp
+                    }
                     stateOfCharge {
                         value
                         timestamp

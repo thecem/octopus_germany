@@ -21,6 +21,7 @@ from homeassistant.const import (
     STATE_UNKNOWN,
     STATE_UNAVAILABLE,
     UnitOfEnergy,
+    UnitOfPower,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -280,6 +281,12 @@ async def async_setup_entry(
 
                             entities.append(
                                 OctopusVehicleBatterySizeSensor(
+                                    acc_num, coordinator, device_id
+                                )
+                            )
+
+                            entities.append(
+                                OctopusVehicleActivePowerSensor(
                                     acc_num, coordinator, device_id
                                 )
                             )
@@ -2319,6 +2326,24 @@ class OctopusVehicleBatterySizeSensor(OctopusVehicleDataSensor):
 
         vehicle_variant = device.get("vehicleVariant", {}) or {}
         return self._to_float(vehicle_variant.get("batterySize"))
+
+
+class OctopusVehicleActivePowerSensor(OctopusVehicleDataSensor):
+    """Sensor for current EV charging power in kW."""
+
+    _metric_name = "Active Power"
+    _metric_unique_id = "active_power"
+    _metric_icon = "mdi:lightning-bolt"
+    _metric_device_class = SensorDeviceClass.POWER
+    _metric_unit = UnitOfPower.KILO_WATT
+
+    def _get_metric_value(self) -> float | None:
+        device = self._get_device_data()
+        if not device:
+            return None
+        status = device.get("status", {}) or {}
+        active_power = status.get("activePower", {}) or {}
+        return self._to_float(active_power.get("value"))
 
 
 class OctopusElectricitySmartMeterReadingsSensor(
