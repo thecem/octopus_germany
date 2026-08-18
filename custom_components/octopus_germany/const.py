@@ -1,12 +1,21 @@
 """Constants for the Octopus Germany integration."""
 
+import os
+
 DOMAIN = "octopus_germany"
 
 CONF_EMAIL = "email"
 CONF_PASSWORD = "password"
 
-# Debug interval settings
-UPDATE_INTERVAL = 1  # Update interval in minutes (set to 1 for faster testing)
+# Account/device polling (balances, dispatch, tariffs). Override in minutes
+# with OCTOPUS_GERMANY_UPDATE_INTERVAL for local testing.
+_DEFAULT_UPDATE_INTERVAL_MINUTES = 15
+UPDATE_INTERVAL = int(
+    os.environ.get("OCTOPUS_GERMANY_UPDATE_INTERVAL", _DEFAULT_UPDATE_INTERVAL_MINUTES)
+)
+
+# Smart meter interval data at Octopus is ingested in a batch every 3-4 hours.
+MEASUREMENTS_UPDATE_INTERVAL_HOURS = 3
 
 # Schema exploration (run once for debugging)
 EXPLORE_SCHEMA_ONCE = True  # Set to True to run schema exploration once

@@ -129,7 +129,10 @@ logger:
 
 #### Performance Considerations
 
-- **Update Interval**: 1 minute (configurable)
+- **Account/device poll**: 15 minutes (balances, dispatch, tariffs)
+- **Smart meter readings**: at most every 3 hours (yesterday's intervals; last result reused in between)
+- **Token refresh**: every 50 minutes
+- **Local testing**: set `OCTOPUS_GERMANY_UPDATE_INTERVAL` (minutes) and restart Home Assistant
 - **API Call Throttling**: Prevents excessive requests
 - **Cached Data Fallback**: Returns last known data on API failures
 - **Efficient GraphQL**: Single query fetches all account data

@@ -16,7 +16,14 @@ from homeassistant.core import HomeAssistant, SupportsResponse
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util.dt import utcnow, as_utc, parse_datetime
 
-from .const import DOMAIN, CONF_EMAIL, CONF_PASSWORD, UPDATE_INTERVAL, DEBUG_ENABLED
+from .const import (
+    DOMAIN,
+    CONF_EMAIL,
+    CONF_PASSWORD,
+    UPDATE_INTERVAL,
+    DEBUG_ENABLED,
+    MEASUREMENTS_UPDATE_INTERVAL_HOURS,
+)
 from .octopus_germany import OctopusGermany
 
 import voluptuous as vol
@@ -419,9 +426,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     break
                 except ValueError, TypeError:
                     pass
-        result_data[account_number]["vehicle_battery_size_in_kwh"] = (
-            vehicle_battery_size
-        )
+        result_data[account_number][
+            "vehicle_battery_size_in_kwh"
+        ] = vehicle_battery_size
 
         # Handle dispatch data if it exists
         # Try to fall back to cached data from coordinator if API omits the field
@@ -956,9 +963,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             except (ValueError, TypeError) as e:
                 _LOGGER.warning("Error calculating gas contract expiry days: %s", e)
 
-        result_data[account_number]["gas_contract_days_until_expiry"] = (
-            gas_contract_days_until_expiry
-        )
+        result_data[account_number][
+            "gas_contract_days_until_expiry"
+        ] = gas_contract_days_until_expiry
 
         # Gas meter smart reading capability
         gas_meter_smart_reading = None
@@ -1037,17 +1044,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     str(e),
                 )
 
-        result_data[account_number]["electricity_latest_reading"] = (
-            electricity_latest_reading
-        )
+        result_data[account_number][
+            "electricity_latest_reading"
+        ] = electricity_latest_reading
 
         # Extract smart meter readings if available
         electricity_smart_meter_readings = data.get(
             "electricity_smart_meter_readings", []
         )
-        result_data[account_number]["electricity_smart_meter_readings"] = (
-            electricity_smart_meter_readings
-        )
+        result_data[account_number][
+            "electricity_smart_meter_readings"
+        ] = electricity_smart_meter_readings
 
         if electricity_smart_meter_readings:
             _LOGGER.debug(
@@ -1061,11 +1068,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # --- Statistics import for HA energy dashboard ---
     # Tracks which dates have been imported per account to avoid redundant API calls
     imported_stats_dates: dict[str, set[str]] = {acc: set() for acc in account_numbers}
+    last_stats_import_at = None
 
     async def async_import_consumption_statistics():
         """Import 15-min smart meter data into HA long-term statistics for the energy dashboard."""
         if not HAS_RECORDER:
             return
+
+        nonlocal last_stats_import_at
+        now = datetime.now()
+        if last_stats_import_at is not None and now - last_stats_import_at < timedelta(
+            hours=MEASUREMENTS_UPDATE_INTERVAL_HOURS
+        ):
+            return
+        last_stats_import_at = now
 
         for account_num in account_numbers:
             if not coordinator.data or account_num not in coordinator.data:
@@ -1232,9 +1248,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
             _LOGGER.info(
                 "First planned dispatch: %s",
-                coordinator.data[primary_account_number]["plannedDispatches"][0]
-                if coordinator.data[primary_account_number]["plannedDispatches"]
-                else "None",
+                (
+                    coordinator.data[primary_account_number]["plannedDispatches"][0]
+                    if coordinator.data[primary_account_number]["plannedDispatches"]
+                    else "None"
+                ),
             )
 
     # Import consumption statistics after each coordinator refresh

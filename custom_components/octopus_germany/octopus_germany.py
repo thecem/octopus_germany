@@ -12,7 +12,11 @@ import asyncio
 import jwt
 from homeassistant.exceptions import ConfigEntryNotReady
 from python_graphql_client import GraphqlClient
-from .const import TOKEN_AUTO_REFRESH_INTERVAL, TOKEN_REFRESH_MARGIN
+from .const import (
+    MEASUREMENTS_UPDATE_INTERVAL_HOURS,
+    TOKEN_AUTO_REFRESH_INTERVAL,
+    TOKEN_REFRESH_MARGIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -882,6 +886,9 @@ class OctopusGermany:
         # Start the auto-refresh task immediately
         asyncio.create_task(self._token_manager.start_auto_refresh())
 
+        self._last_measurements_fetch_at = {}
+        self._measurements_cache = {}
+
     @property
     def _token(self):
         """Get the current token from the token manager."""
@@ -959,9 +966,9 @@ class OctopusGermany:
                                 masked_token = (
                                     token[:5] + "*" * mask_length + token[-5:]
                                 )
-                                safe_response["data"]["obtainKrakenToken"]["token"] = (
-                                    masked_token
-                                )
+                                safe_response["data"]["obtainKrakenToken"][
+                                    "token"
+                                ] = masked_token
                         _LOGGER.info(
                             "Token response (partial): %s",
                             json.dumps(safe_response, indent=2),
@@ -1414,7 +1421,18 @@ class OctopusGermany:
 
                 # Fetch electricity smart meter readings if property data is available
                 try:
-                    if (
+                    now = datetime.now()
+                    last_fetch = self._last_measurements_fetch_at.get(account_number)
+                    measurements_due = (
+                        last_fetch is None
+                        or now - last_fetch
+                        >= timedelta(hours=MEASUREMENTS_UPDATE_INTERVAL_HOURS)
+                    )
+                    if not measurements_due:
+                        cached = self._measurements_cache.get(account_number)
+                        if cached:
+                            result.update(cached)
+                    elif (
                         result.get("account")
                         and "allProperties" in result["account"]
                         and result["account"]["allProperties"]
@@ -1467,7 +1485,6 @@ class OctopusGermany:
                                     for date_str, label in test_dates
                                 ],
                             )
-
                             smart_meter_readings = None
                             successful_date = None
 
@@ -1503,16 +1520,21 @@ class OctopusGermany:
                                         date_str,
                                     )
 
+                            self._last_measurements_fetch_at[account_number] = now
                             if smart_meter_readings:
-                                result["electricity_smart_meter_readings"] = (
-                                    smart_meter_readings
-                                )
-                                result["electricity_smart_meter_readings_date"] = (
-                                    successful_date[0]
-                                )
-                                result["electricity_smart_meter_readings_label"] = (
-                                    successful_date[1]
-                                )
+                                cached = {
+                                    "electricity_smart_meter_readings": (
+                                        smart_meter_readings
+                                    ),
+                                    "electricity_smart_meter_readings_date": (
+                                        successful_date[0]
+                                    ),
+                                    "electricity_smart_meter_readings_label": (
+                                        successful_date[1]
+                                    ),
+                                }
+                                self._measurements_cache[account_number] = cached
+                                result.update(cached)
                             else:
                                 _LOGGER.warning(
                                     "No smart meter readings found for any tested date"
@@ -1527,15 +1549,19 @@ class OctopusGermany:
                                 )
 
                                 if smart_meter_readings_v2:
-                                    result["electricity_smart_meter_readings"] = (
-                                        smart_meter_readings_v2
-                                    )
-                                    result["electricity_smart_meter_readings_date"] = (
-                                        yesterday.isoformat()
-                                    )
-                                    result["electricity_smart_meter_readings_label"] = (
-                                        "yesterday_v2"
-                                    )
+                                    cached = {
+                                        "electricity_smart_meter_readings": (
+                                            smart_meter_readings_v2
+                                        ),
+                                        "electricity_smart_meter_readings_date": (
+                                            yesterday.isoformat()
+                                        ),
+                                        "electricity_smart_meter_readings_label": (
+                                            "yesterday_v2"
+                                        ),
+                                    }
+                                    self._measurements_cache[account_number] = cached
+                                    result.update(cached)
                                     _LOGGER.info(
                                         "Successfully fetched %d smart meter readings with V2 query for yesterday",
                                         len(smart_meter_readings_v2),
@@ -2855,16 +2881,18 @@ class OctopusGermany:
                                 "name": type_name,
                                 "kind": type_def.get("kind"),
                                 "description": type_def.get("description"),
-                                "fields": [
-                                    {
-                                        "name": field.get("name"),
-                                        "description": field.get("description"),
-                                        "type": field.get("type", {}).get("name"),
-                                    }
-                                    for field in type_def.get("fields", [])
-                                ]
-                                if type_def.get("fields")
-                                else [],
+                                "fields": (
+                                    [
+                                        {
+                                            "name": field.get("name"),
+                                            "description": field.get("description"),
+                                            "type": field.get("type", {}).get("name"),
+                                        }
+                                        for field in type_def.get("fields", [])
+                                    ]
+                                    if type_def.get("fields")
+                                    else []
+                                ),
                             }
                         )
 

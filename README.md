@@ -153,6 +153,8 @@ LOG_API_RESPONSES = True
 ```
 After restarting HA the API-Responses and additional information will be in debug log.
 
+To poll account/device state more often while developing, set the environment variable `OCTOPUS_GERMANY_UPDATE_INTERVAL` to a number of minutes (for example `1`) and restart Home Assistant. Yesterday's meter readings still refresh at most every 3 hours.
+
 
 ## API Support
 
