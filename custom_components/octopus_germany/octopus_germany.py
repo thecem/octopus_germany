@@ -532,6 +532,7 @@ query getSmartMeterUsageV2($accountNumber: String!, $propertyId: ID!, $date: Dat
       measurements(
         utilityFilters: {electricityFilters: {readingFrequencyType: HOUR_INTERVAL, readingQuality: COMBINED}}
         startOn: $date
+        endOn: $date
         first: 24
       ) {
         edges {
@@ -589,6 +590,7 @@ query getSmartMeterUsage($accountNumber: String!, $propertyId: ID!, $date: Date!
       measurements(
         utilityFilters: {electricityFilters: {readingFrequencyType: HOUR_INTERVAL, readingQuality: COMBINED}}
         startOn: $date
+        endOn: $date
         first: 24
       ) {
         edges {
@@ -614,6 +616,7 @@ query getSmartMeter15Min($accountNumber: String!, $propertyId: ID!, $date: Date!
       measurements(
         utilityFilters: {electricityFilters: {readingFrequencyType: RAW_INTERVAL, readingQuality: COMBINED}}
         startOn: $date
+        endOn: $date
         first: 96
       ) {
         edges {
