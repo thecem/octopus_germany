@@ -1461,123 +1461,31 @@ class OctopusGermany:
                                 # Mark as explored to prevent repeated exploration
                                 self._schema_explored = True
 
-                            # Get multiple dates for testing: today, yesterday, day before yesterday
                             from datetime import date, timedelta
 
-                            today = date.today()
-                            yesterday = today - timedelta(days=1)
-                            day_before_yesterday = today - timedelta(days=2)
-                            week_ago = today - timedelta(days=7)
-                            month_ago = today - timedelta(days=30)
-
-                            test_dates = [
-                                (today.isoformat(), "today"),
-                                (yesterday.isoformat(), "yesterday"),
-                                (
-                                    day_before_yesterday.isoformat(),
-                                    "day_before_yesterday",
-                                ),
-                                (week_ago.isoformat(), "week_ago"),
-                                (month_ago.isoformat(), "month_ago"),
-                            ]
-
-                            _LOGGER.info(
-                                "Testing smart meter readings for multiple dates: %s",
-                                [
-                                    f"{label} ({date_str})"
-                                    for date_str, label in test_dates
-                                ],
+                            yesterday = (date.today() - timedelta(days=1)).isoformat()
+                            readings = (
+                                await self.fetch_electricity_smart_meter_readings_v2(
+                                    account_number, property_id, yesterday
+                                )
                             )
-                            smart_meter_readings = None
-                            successful_date = None
-
-                            # Test each date until we find data
-                            for date_str, date_label in test_dates:
-                                _LOGGER.debug(
-                                    "Fetching electricity smart meter readings for property %s on %s (%s)",
-                                    property_id,
-                                    date_str,
-                                    date_label,
-                                )
-
-                                readings = (
-                                    await self.fetch_electricity_smart_meter_readings(
-                                        account_number, property_id, date_str
-                                    )
-                                )
-
-                                if readings:
-                                    smart_meter_readings = readings
-                                    successful_date = (date_str, date_label)
-                                    _LOGGER.info(
-                                        "Successfully fetched %d smart meter readings for %s (%s)",
-                                        len(readings),
-                                        date_label,
-                                        date_str,
-                                    )
-                                    break
-                                else:
-                                    _LOGGER.debug(
-                                        "No smart meter readings found for %s (%s)",
-                                        date_label,
-                                        date_str,
-                                    )
-
                             self._last_measurements_fetch_at[account_number] = now
-                            if smart_meter_readings:
+                            if readings:
                                 cached = {
-                                    "electricity_smart_meter_readings": (
-                                        smart_meter_readings
-                                    ),
-                                    "electricity_smart_meter_readings_date": (
-                                        successful_date[0]
-                                    ),
+                                    "electricity_smart_meter_readings": readings,
+                                    "electricity_smart_meter_readings_date": yesterday,
                                     "electricity_smart_meter_readings_label": (
-                                        successful_date[1]
+                                        "yesterday"
                                     ),
                                 }
                                 self._measurements_cache[account_number] = cached
                                 result.update(cached)
                             else:
-                                _LOGGER.warning(
-                                    "No smart meter readings found for any tested date"
+                                _LOGGER.debug(
+                                    "No smart meter readings for property %s on %s",
+                                    property_id,
+                                    yesterday,
                                 )
-
-                                # Try V2 query with yesterday's date as fallback
-                                _LOGGER.info(
-                                    "Trying V2 query with yesterday's date as fallback"
-                                )
-                                smart_meter_readings_v2 = await self.fetch_electricity_smart_meter_readings_v2(
-                                    account_number, property_id, yesterday.isoformat()
-                                )
-
-                                if smart_meter_readings_v2:
-                                    cached = {
-                                        "electricity_smart_meter_readings": (
-                                            smart_meter_readings_v2
-                                        ),
-                                        "electricity_smart_meter_readings_date": (
-                                            yesterday.isoformat()
-                                        ),
-                                        "electricity_smart_meter_readings_label": (
-                                            "yesterday_v2"
-                                        ),
-                                    }
-                                    self._measurements_cache[account_number] = cached
-                                    result.update(cached)
-                                    _LOGGER.info(
-                                        "Successfully fetched %d smart meter readings with V2 query for yesterday",
-                                        len(smart_meter_readings_v2),
-                                    )
-                                else:
-                                    _LOGGER.warning(
-                                        "No smart meter readings available with any query or date - checking property structure"
-                                    )
-                                    # Log the entire property structure for debugging
-                                    _LOGGER.info(
-                                        "Property data structure: %s",
-                                        json.dumps(property_data, indent=2),
-                                    )
                         else:
                             _LOGGER.debug(
                                 "No property ID found for smart meter readings"
