@@ -58,6 +58,16 @@ Important limitation:
 
 ## Services
 
+### `octopus_germany.refresh_intelligent_data`
+
+Request an immediate refresh of device and dispatch data for all configured accounts with Intelligent tariff support. Accounts without that capability are ignored.
+
+Example:
+
+```yaml
+service: octopus_germany.refresh_intelligent_data
+```
+
 ### `octopus_germany.set_device_preferences`
 
 Set target SoC and target time for a specific EV/charge point.

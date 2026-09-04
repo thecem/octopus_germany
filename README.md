@@ -65,6 +65,12 @@ The integration is configured via the Home Assistant UI:
 3. Enter your Octopus Energy Germany email and password
 4. The integration will automatically fetch your account number and set up the entities
 
+### Polling
+
+The default base polling interval is 30 minutes. Accounts with detected Intelligent tariff support use a separate three-minute polling interval for device and dispatch data. Both intervals can be changed from the integration options and are validated between 1 and 60 minutes.
+
+Intelligent device and dispatch entities are created only when the account exposes the required tariff capability. Accounts without that capability do not receive the Intelligent polling coordinator.
+
 ## Documentation
 
 To keep this start page compact, detailed documentation is split across focused pages:

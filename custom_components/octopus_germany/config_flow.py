@@ -1,15 +1,45 @@
 """Config flow for Octopus Germany integration."""
 
 import logging
-import voluptuous as vol
 
+import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_EMAIL, CONF_PASSWORD, DOMAIN
+from .const import (
+    CONF_EMAIL,
+    CONF_INTELLIGENT_UPDATE_INTERVAL,
+    CONF_PASSWORD,
+    CONF_UPDATE_INTERVAL,
+    DOMAIN,
+    INTELLIGENT_UPDATE_INTERVAL,
+    UPDATE_INTERVAL,
+)
 from .octopus_germany import OctopusGermany
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def build_options_schema(
+    current_email: str,
+    current_interval: object,
+    current_intelligent_interval: object,
+) -> vol.Schema:
+    """Build the options schema with backwards-compatible defaults."""
+    return vol.Schema(
+        {
+            vol.Required(CONF_EMAIL, default=current_email): str,
+            vol.Required(CONF_PASSWORD): str,
+            vol.Required(
+                CONF_UPDATE_INTERVAL,
+                default=current_interval,
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=60)),
+            vol.Required(
+                CONF_INTELLIGENT_UPDATE_INTERVAL,
+                default=current_intelligent_interval,
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=60)),
+        }
+    )
 
 
 async def validate_credentials(
@@ -179,22 +209,38 @@ class OctopusGermanyOptionsFlow(config_entries.OptionsFlow):
                     self.config_entry, data=new_data, title=f"Octopus Germany ({email})"
                 )
 
-                # Return updated options (empty since we store in data)
-                return self.async_create_entry(title="", data={})
+                return self.async_create_entry(
+                    title="",
+                    data={
+                        CONF_UPDATE_INTERVAL: user_input[CONF_UPDATE_INTERVAL],
+                        CONF_INTELLIGENT_UPDATE_INTERVAL: user_input[
+                            CONF_INTELLIGENT_UPDATE_INTERVAL
+                        ],
+                    },
+                )
 
             if error:
                 errors["base"] = error
 
         # Pre-populate with current credentials
         current_email = self.config_entry.data.get(CONF_EMAIL, "")
+        current_interval = self.config_entry.options.get(
+            CONF_UPDATE_INTERVAL,
+            self.config_entry.data.get(CONF_UPDATE_INTERVAL, UPDATE_INTERVAL),
+        )
+        current_intelligent_interval = self.config_entry.options.get(
+            CONF_INTELLIGENT_UPDATE_INTERVAL,
+            self.config_entry.data.get(
+                CONF_INTELLIGENT_UPDATE_INTERVAL, INTELLIGENT_UPDATE_INTERVAL
+            ),
+        )
 
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_EMAIL, default=current_email): str,
-                    vol.Required(CONF_PASSWORD): str,
-                }
+            data_schema=build_options_schema(
+                current_email,
+                current_interval,
+                current_intelligent_interval,
             ),
             errors=errors,
         )

@@ -61,6 +61,12 @@ The integration is configured via the Home Assistant UI:
 3. Enter your Octopus Energy Germany email and password
 4. The integration will automatically fetch your account number and set up the entities
 
+### Polling and tariff availability
+
+Base account and meter data are polled every 30 minutes by default. When Intelligent tariff support is detected, device and dispatch data use a separate three-minute coordinator. Both intervals can be configured in the integration options from 1 to 60 minutes.
+
+Smart-meter readings are requested only for accounts reporting smart-meter support, and Intelligent entities are created only when the corresponding capability is available.
+
 ## Documentation Structure
 
 To keep the repository start page compact, action details are documented in:

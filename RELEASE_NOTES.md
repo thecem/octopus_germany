@@ -1,5 +1,123 @@
 # Release Notes
 
+## Version 0.0.115 (2026-09-04)
+
+### Fixes
+
+- Triggered an immediate Intelligent refresh after successful device-preference updates.
+- Reused the shared refresh helper for consistent account filtering.
+
+## Version 0.0.114 (2026-09-04)
+
+### Fixes
+
+- Fixed Time-of-Use product processing after Ruff-style list-comprehension cleanup.
+- Verified startup with the configured account and restored sensor creation.
+
+## Version 0.0.113 (2026-09-04)
+
+### New Features
+
+- Added `octopus_germany.refresh_intelligent_data` for on-demand device and dispatch refreshes.
+
+## Version 0.0.112 (2026-09-04)
+
+### Fixes
+
+- Explicitly gated device, dispatch, and smart-control entities on detected Intelligent tariff capability.
+- Prevented cached device data from exposing Intelligent entities for standard tariffs.
+
+## Version 0.0.111 (2026-09-04)
+
+### Fixes
+
+- Changed the default base polling interval from one minute to 30 minutes to reduce API traffic.
+- Kept the Intelligent polling default at three minutes and both intervals configurable.
+
+## Version 0.0.110 (2026-09-04)
+
+### Fixes
+
+- Prevented the separate Intelligent refresh from repeating meter-reading requests.
+- Kept electricity and gas meter readings exclusively on the base data refresh.
+
+## Version 0.0.109 (2026-09-04)
+
+### Fixes
+
+- Prevented the Intelligent coordinator from repeating electricity and gas meter reading requests.
+- Kept meter readings on the base coordinator while Intelligent updates focus on device and dispatch data.
+
+## Version 0.0.108 (2026-09-04)
+
+### Fixes
+
+- Smart-meter readings are now requested only when the account reports smart-meter support.
+- Fixed the timezone-safe previous-day date calculation used by the reduced reading query.
+
+## Version 0.0.107 (2026-09-04)
+
+### Fixes
+
+- Reduced smart-meter polling during account refresh to one previous-day query instead of probing five dates.
+- Kept the existing previous-day V2 fallback for accounts where the primary reading query has no data.
+
+## Version 0.0.106 (2026-09-04)
+
+### Fixes
+
+- Disabled schema exploration and multi-date smart-meter probing by default to reduce startup API traffic.
+- Kept the explicit schema exploration code available for debugging.
+
+## Version 0.0.105 (2026-09-04)
+
+### Fixes
+
+- Fixed missing normalized electricity and gas meter variables during account processing.
+- Verified the integration startup with a configured Home Assistant account.
+
+## Version 0.0.104 (2026-09-04)
+
+### Fixes
+
+- Fixed runtime errors in account normalization after meter data extraction.
+- Electricity and gas meter readings now use the normalized meter objects correctly.
+
+## Version 0.0.103 (2026-09-04)
+
+### New Features
+
+- Added a configurable Intelligent polling interval (1-60 minutes) to integration options.
+
+## Version 0.0.102 (2026-09-04)
+
+### New Features
+
+- Added an optional three-minute Intelligent data coordinator for accounts with detected Intelligent tariff support.
+- Merged Intelligent device and dispatch updates into the existing entity data coordinator for compatibility.
+
+## Version 0.0.101 (2026-09-04)
+
+### Fixes
+
+- Validated the comprehensive, smart-meter, and property schema queries against the current OEG GraphQL endpoint.
+- Updated property schema exploration to use `electricityMalos` and `gasMalos` with `MaLo.meters`.
+
+## Version 0.0.100 (2026-09-04)
+
+### Fixes
+
+- Updated electricity and gas meter queries for the current OEG GraphQL schema.
+- Read `meloNumber` from `Meter` objects returned through `MaLo.meters`.
+- Kept compatibility with older responses that used a singular `meter` field.
+
+## Version 0.0.99 (2026-09-04)
+
+### New Features
+
+- Added a configurable polling interval (1-60 minutes) to the integration options.
+- Added tariff capability detection and conditional Intelligent-/dispatch data queries.
+
 ## Version 0.0.98 (2026-07-18)
 
 ### 🎉 New Features

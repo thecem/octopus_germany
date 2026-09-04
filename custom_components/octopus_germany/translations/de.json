@@ -38,7 +38,9 @@
         "title": "Octopus Energy Germany.",
         "data": {
           "email": "E-Mail",
-          "password": "Passwort"
+          "password": "Passwort",
+          "update_interval": "Abfrageintervall (Minuten)",
+          "intelligent_update_interval": "Intelligentes Abfrageintervall (Minuten)"
         }
       }
     }

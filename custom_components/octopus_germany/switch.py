@@ -1,23 +1,30 @@
 """Switch platform for Octopus Germany."""
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
-import asyncio
-from typing import Any, Callable, Optional, Dict, List
+from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.const import STATE_ON, STATE_OFF, STATE_UNKNOWN
 
-from .const import DOMAIN, UPDATE_INTERVAL
+from .const import DOMAIN
+from .models import has_intelligent_capability
 from .sensor import get_account_device_info
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _get_intelligent_devices(account_data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return devices only when Intelligent tariff support is available."""
+    if not has_intelligent_capability(account_data):
+        return []
+    return account_data.get("devices", [])
 
 
 async def async_setup_entry(
@@ -56,14 +63,14 @@ async def async_setup_entry(
     for acc_num in account_numbers:
         if acc_num not in coordinator.data:
             _LOGGER.info(
-                "No data for account %s found in coordinator data, not creating switches",
+                "No data for account %s found; not creating switches",
                 acc_num,
             )
             continue
 
         # Extract devices from the coordinator data structure
         account_data = coordinator.data.get(acc_num, {})
-        devices = account_data.get("devices", [])
+        devices = _get_intelligent_devices(account_data)
 
         if not devices:
             _LOGGER.info(
@@ -110,7 +117,7 @@ async def _setup_boost_charge_switches(
         account_data = (
             coordinator.data.get(account_number, {}) if coordinator.data else {}
         )
-        devices = account_data.get("devices", [])
+        devices = _get_intelligent_devices(account_data)
 
         # Create switches for each electric vehicle/charge point
         switches = []
@@ -280,7 +287,7 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
                 self._pending_state = None
                 self._pending_until = None
                 _LOGGER.warning(
-                    "Switch state change timeout reached for device_id=%s, reverting to API state",
+                    "Switch timeout for device_id=%s; reverting to API state",
                     self._device_id,
                 )
             else:
@@ -401,7 +408,7 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        # The entity is available if the coordinator has data and the specific device exists
+        # Available when coordinator data and the specific device exist.
         coordinator_has_data = (
             self.coordinator.last_update_success
             and self._account_number in self.coordinator.data
@@ -467,7 +474,7 @@ class BoostChargeSwitch(CoordinatorEntity, SwitchEntity):
         self._attr_name = f"Octopus {account_number} {device_name} Boost Charge"
         self._attr_icon = "mdi:lightning-bolt"
 
-    def _get_device_data(self) -> Dict[str, Any]:
+    def _get_device_data(self) -> dict[str, Any]:
         """Get device data from main coordinator."""
         if not self.coordinator.data:
             return {}
@@ -511,7 +518,7 @@ class BoostChargeSwitch(CoordinatorEntity, SwitchEntity):
         return not status.get("isSuspended", True)
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes."""
         device_data = self._get_device_data()
         if not device_data:

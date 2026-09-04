@@ -1,36 +1,56 @@
-"""Octopus Germany Integration.
+"""
+Octopus Germany Integration.
 
 This module provides integration with the Octopus Germany API for Home Assistant.
 """
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
-from datetime import timedelta, datetime, date
-import inspect
+from datetime import UTC, datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, SupportsResponse
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from homeassistant.util.dt import utcnow, as_utc, parse_datetime
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
+from homeassistant.util.dt import as_utc
 
-from .const import DOMAIN, CONF_EMAIL, CONF_PASSWORD, UPDATE_INTERVAL, DEBUG_ENABLED
+from .const import (
+    CONF_INTELLIGENT_UPDATE_INTERVAL,
+    CONF_UPDATE_INTERVAL,
+    DEBUG_ENABLED,
+    DOMAIN,
+    INTELLIGENT_UPDATE_INTERVAL,
+    UPDATE_INTERVAL,
+)
+from .coordinator import OctopusDataCoordinator, normalize_update_interval
+from .data_processing import (
+    calculate_dispatch_state,
+    create_empty_account_data,
+    extract_device_data,
+    extract_gross_rate,
+    extract_meter_data,
+    get_product_type,
+    merge_normalized_account_data,
+    normalize_direct_products,
+    normalize_timeslots,
+    normalize_unit_rate_forecast,
+    process_ledgers,
+)
+from .models import detect_tariff_capabilities
 from .octopus_germany import OctopusGermany
-
-import voluptuous as vol
-from homeassistant.core import ServiceCall
-from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-import aiohttp
+from .services import (
+    async_handle_refresh_intelligent_data,
+    async_request_intelligent_refresh,
+)
 
 try:
     from homeassistant.components.recorder import get_instance
     from homeassistant.components.recorder.models import (
         StatisticData,
-        StatisticMetaData,
         StatisticMeanType,
+        StatisticMetaData,
     )
     from homeassistant.components.recorder.statistics import (
         async_add_external_statistics,
@@ -47,11 +67,42 @@ PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR, Platform.S
 
 API_URL = "https://api.octopus.energy/v1/graphql/"
 
+
+async def _async_fetch_account_data(
+    api: OctopusGermany,
+    account_numbers: list[str],
+    process_api_data: Any,
+    capabilities_by_account: dict,
+) -> dict:
+    """Fetch and normalize base data for all configured accounts."""
+    all_accounts_data = {}
+    for account_number in account_numbers:
+        try:
+            capabilities = await api.fetch_tariff_capabilities(account_number)
+            capabilities_by_account[account_number] = capabilities
+            account_data = await api.fetch_data_for_account(account_number)
+            if not account_data:
+                _LOGGER.warning("Failed to fetch data for account %s", account_number)
+                continue
+
+            processed = await process_api_data(account_data, account_number, api)
+            processed[account_number]["tariff_capabilities"] = {
+                "has_dynamic_prices": capabilities.has_dynamic_prices,
+                "has_intelligent_dispatches": capabilities.has_intelligent_dispatches,
+                "has_smart_meter": capabilities.has_smart_meter,
+            }
+            all_accounts_data.update(processed)
+        except Exception:
+            _LOGGER.exception("Error fetching data for account %s", account_number)
+    return all_accounts_data
+
+
 # Service schemas
 SERVICE_SET_DEVICE_PREFERENCES = "set_device_preferences"
 SERVICE_GET_SMART_METER_READINGS = "get_smart_meter_readings"
 SERVICE_EXPORT_SMART_METER_CSV = "export_smart_meter_csv"
 SERVICE_SUBMIT_METER_READINGS = "submit_meter_readings"
+SERVICE_REFRESH_INTELLIGENT_DATA = "refresh_intelligent_data"
 ATTR_ACCOUNT_NUMBER = "account_number"
 ATTR_DEVICE_ID = "device_id"
 ATTR_TARGET_PERCENTAGE = "target_percentage"
@@ -93,6 +144,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Enhanced multi-account support with all ledgers
     account_numbers = entry.data.get("account_numbers", [])
+    polling_interval = entry.options.get(
+        CONF_UPDATE_INTERVAL,
+        entry.data.get(CONF_UPDATE_INTERVAL, UPDATE_INTERVAL),
+    )
+    polling_interval = normalize_update_interval(polling_interval, UPDATE_INTERVAL)
+    intelligent_polling_interval = entry.options.get(
+        CONF_INTELLIGENT_UPDATE_INTERVAL,
+        entry.data.get(CONF_INTELLIGENT_UPDATE_INTERVAL, INTELLIGENT_UPDATE_INTERVAL),
+    )
+    intelligent_polling_interval = normalize_update_interval(
+        intelligent_polling_interval, INTELLIGENT_UPDATE_INTERVAL
+    )
     if not account_numbers:
         # Backward compatibility: try single account_number
         single_account = entry.data.get("account_number")
@@ -121,16 +184,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entry, data={**entry.data, "account_number": primary_account_number}
         )
 
+    capabilities_by_account = {}
+    intelligent_coordinator = None
+
     # Create data update coordinator with improved error handling and retry logic
     async def async_update_data():
         """Fetch data from API with improved error handling for all accounts."""
-        current_time = datetime.now()
+        current_time = datetime.now(UTC)
 
         # Add throttling to prevent too frequent API calls
         # Store last successful API call time on the function object
         if not hasattr(async_update_data, "last_api_call"):
-            async_update_data.last_api_call = datetime.now() - timedelta(
-                minutes=UPDATE_INTERVAL
+            async_update_data.last_api_call = datetime.now(UTC) - timedelta(
+                minutes=polling_interval
             )
 
         # Calculate time since last API call
@@ -138,7 +204,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             current_time - async_update_data.last_api_call
         ).total_seconds()
         min_interval = (
-            UPDATE_INTERVAL * 60 * 0.9
+            polling_interval * 60 * 0.9
         )  # 90% of the update interval in seconds
 
         # Get simplified caller information instead of full stack trace
@@ -166,7 +232,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.debug(
             "Coordinator update called at %s (Update interval: %s minutes, Time since last API call: %.1f seconds, Caller: %s)",
             current_time.strftime("%H:%M:%S"),
-            UPDATE_INTERVAL,
+            polling_interval,
             time_since_last_call,
             caller_info,
         )
@@ -189,31 +255,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "Fetching data from API at %s", current_time.strftime("%H:%M:%S")
             )
 
-            # Fetch data for all accounts
-            all_accounts_data = {}
-            for account_num in account_numbers:
-                try:
-                    # Fetch all data in one call to minimize API requests
-                    account_data = await api.fetch_all_data(account_num)
-                    if account_data:
-                        # Process the raw API data into a more usable format
-                        processed_account_data = await process_api_data(
-                            account_data, account_num, api
-                        )
-                        all_accounts_data.update(processed_account_data)
-                    else:
-                        _LOGGER.warning(
-                            "Failed to fetch data for account %s", account_num
-                        )
-                except Exception as e:
-                    _LOGGER.error(
-                        "Error fetching data for account %s: %s", account_num, e
-                    )
-                    continue
+            all_accounts_data = await _async_fetch_account_data(
+                api,
+                account_numbers,
+                process_api_data,
+                capabilities_by_account,
+            )
 
             # Update last API call timestamp only on successful calls
             if all_accounts_data:
-                async_update_data.last_api_call = datetime.now()
+                async_update_data.last_api_call = datetime.now(UTC)
 
             if not all_accounts_data:
                 _LOGGER.error(
@@ -221,9 +272,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
                 return coordinator.data if hasattr(coordinator, "data") else {}
 
+            if intelligent_coordinator and intelligent_coordinator.data:
+                for (
+                    account_num,
+                    intelligent_data,
+                ) in intelligent_coordinator.data.items():
+                    if account_num in all_accounts_data:
+                        all_accounts_data[account_num] = merge_normalized_account_data(
+                            all_accounts_data[account_num], intelligent_data
+                        )
+
             _LOGGER.debug(
                 "Successfully fetched data from API at %s for %d accounts",
-                datetime.now().strftime("%H:%M:%S"),
+                datetime.now(UTC).strftime("%H:%M:%S"),
                 len(all_accounts_data),
             )
             return all_accounts_data
@@ -233,36 +294,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Return previous data if available, empty dict otherwise
             return coordinator.data if hasattr(coordinator, "data") else {}
 
-    async def process_api_data(data, account_number, api):
+    async def process_api_data(
+        data, account_number, api, *, include_meter_readings=True
+    ):
         """Process raw API response into structured data."""
         if not data:
             return {}
 
-        # Initialize the data structure
-        result_data = {
-            account_number: {
-                "account_number": account_number,
-                "electricity_balance": 0,
-                "planned_dispatches": [],
-                "completed_dispatches": [],
-                "property_ids": [],
-                "devices": [],
-                "products": [],
-                "gas_products": [],
-                "vehicle_battery_size_in_kwh": None,
-                "current_start": None,
-                "current_end": None,
-                "next_start": None,
-                "next_end": None,
-                "ledgers": [],
-                "malo_number": None,
-                "melo_number": None,
-                "meter": None,
-                "gas_malo_number": None,
-                "gas_melo_number": None,
-                "gas_meter": None,
-            }
-        }
+        result_data = create_empty_account_data(account_number)
 
         # Extract account data - this should be available even if device-related endpoints fail
         account_data = data.get("account", {})
@@ -276,6 +315,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Only try to access account_data keys if it's not None and is a dictionary
         if account_data and isinstance(account_data, dict):
             _LOGGER.debug("Account data fields: %s", list(account_data.keys()))
+            capabilities = detect_tariff_capabilities(account_data)
+            result_data[account_number]["tariff_capabilities"] = {
+                "has_dynamic_prices": capabilities.has_dynamic_prices,
+                "has_intelligent_dispatches": capabilities.has_intelligent_dispatches,
+                "has_smart_meter": capabilities.has_smart_meter,
+            }
         else:
             _LOGGER.warning("Account data is missing or invalid: %s", account_data)
             # Return the basic structure with default values
@@ -285,143 +330,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ledgers = account_data.get("ledgers", [])
         result_data[account_number]["ledgers"] = ledgers
 
-        # Initialize all ledger balances
-        electricity_balance_eur = 0
-        gas_balance_eur = 0
-        heat_balance_eur = 0
-        other_ledgers = {}
-
-        # Process all available ledgers
-        for ledger in ledgers:
-            ledger_type = ledger.get("ledgerType")
-            balance_cents = ledger.get("balance", 0)
-            balance_eur = balance_cents / 100
-
-            if ledger_type == "ELECTRICITY_LEDGER":
-                electricity_balance_eur = balance_eur
-            elif ledger_type == "GAS_LEDGER":
-                gas_balance_eur = balance_eur
-            elif ledger_type == "HEAT_LEDGER":
-                heat_balance_eur = balance_eur
-            else:
-                # Store any other ledger types we might encounter
-                other_ledgers[ledger_type] = balance_eur
-                _LOGGER.debug(
-                    "Found additional ledger type: %s with balance: %.2f EUR",
-                    ledger_type,
-                    balance_eur,
-                )
-
-        # Store all ledger balances in result
-        result_data[account_number]["electricity_balance"] = electricity_balance_eur
-        result_data[account_number]["gas_balance"] = gas_balance_eur
-        result_data[account_number]["heat_balance"] = heat_balance_eur
-        result_data[account_number]["other_ledgers"] = other_ledgers
+        ledger_balances = process_ledgers(ledgers)
+        result_data[account_number].update(ledger_balances)
 
         _LOGGER.debug(
             "Processed %d ledgers for account %s: electricity=%.2f, gas=%.2f, heat=%.2f, other=%d",
             len(ledgers),
             account_number,
-            electricity_balance_eur,
-            gas_balance_eur,
-            heat_balance_eur,
-            len(other_ledgers),
+            ledger_balances["electricity_balance"],
+            ledger_balances["gas_balance"],
+            ledger_balances["heat_balance"],
+            len(ledger_balances["other_ledgers"]),
         )
 
-        # Extract MALO and MELO numbers
-        malo_number = next(
-            (
-                malo.get("maloNumber")
-                for prop in account_data.get("allProperties", [])
-                for malo in prop.get("electricityMalos", [])
-                if malo.get("maloNumber")
-            ),
-            None,
-        )
-        result_data[account_number]["malo_number"] = malo_number
+        result_data[account_number].update(extract_meter_data(account_data))
 
-        melo_number = next(
-            (
-                malo.get("meloNumber")
-                for prop in account_data.get("allProperties", [])
-                for malo in prop.get("electricityMalos", [])
-                if malo.get("meloNumber")
-            ),
-            None,
-        )
-        result_data[account_number]["melo_number"] = melo_number
-
-        # Get meter data
-        meter = None
-        for prop in account_data.get("allProperties", []):
-            for malo in prop.get("electricityMalos", []):
-                if malo.get("meter"):
-                    meter = malo.get("meter")
-                    break
-            if meter:
-                break
-        result_data[account_number]["meter"] = meter
-
-        # Extract gas MALO and MELO numbers
-        gas_malo_number = next(
-            (
-                malo.get("maloNumber")
-                for prop in account_data.get("allProperties", [])
-                for malo in prop.get("gasMalos", [])
-                if malo.get("maloNumber")
-            ),
-            None,
-        )
-        result_data[account_number]["gas_malo_number"] = gas_malo_number
-
-        gas_melo_number = next(
-            (
-                malo.get("meloNumber")
-                for prop in account_data.get("allProperties", [])
-                for malo in prop.get("gasMalos", [])
-                if malo.get("meloNumber")
-            ),
-            None,
-        )
-        result_data[account_number]["gas_melo_number"] = gas_melo_number
-
-        # Get gas meter data
-        gas_meter = None
-        for prop in account_data.get("allProperties", []):
-            for malo in prop.get("gasMalos", []):
-                if malo.get("meter"):
-                    gas_meter = malo.get("meter")
-                    break
-            if gas_meter:
-                break
-        result_data[account_number]["gas_meter"] = gas_meter
-
-        # Extract property IDs
-        property_ids = [
-            prop.get("id") for prop in account_data.get("allProperties", [])
-        ]
-        result_data[account_number]["property_ids"] = property_ids
-
-        # Handle device-related data if it exists (may be missing with KT-CT-4301 error)
-        devices = data.get("devices", [])
-        result_data[account_number]["devices"] = devices
-
-        # Extract vehicle battery size if available
-        vehicle_battery_size = None
-        for device in devices:
-            if device.get("vehicleVariant") and device["vehicleVariant"].get(
-                "batterySize"
-            ):
-                try:
-                    vehicle_battery_size = float(
-                        device["vehicleVariant"]["batterySize"]
-                    )
-                    break
-                except ValueError, TypeError:
-                    pass
-        result_data[account_number]["vehicle_battery_size_in_kwh"] = (
-            vehicle_battery_size
-        )
+        result_data[account_number].update(extract_device_data(data))
 
         # Handle dispatch data if it exists
         # Try to fall back to cached data from coordinator if API omits the field
@@ -454,39 +378,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             completed_dispatches = cached_account.get("completed_dispatches", [])
         result_data[account_number]["completed_dispatches"] = completed_dispatches
 
-        # Calculate current and next dispatches
-        now = utcnow()  # Use timezone-aware UTC now
-        current_start = None
-        current_end = None
-        next_start = None
-        next_end = None
-
-        for dispatch in sorted(planned_dispatches, key=lambda x: x.get("start", "")):
-            try:
-                # Convert string to timezone-aware datetime objects
-                start_str = dispatch.get("start")
-                end_str = dispatch.get("end")
-
-                if not start_str or not end_str:
-                    continue
-
-                # Parse string to datetime and ensure it's UTC timezone-aware
-                start = as_utc(parse_datetime(start_str))
-                end = as_utc(parse_datetime(end_str))
-
-                if start <= now <= end:
-                    current_start = start
-                    current_end = end
-                elif now < start and not next_start:
-                    next_start = start
-                    next_end = end
-            except (ValueError, TypeError) as e:
-                _LOGGER.error("Error parsing dispatch dates: %s - %s", dispatch, str(e))
-
-        result_data[account_number]["current_start"] = current_start
-        result_data[account_number]["current_end"] = current_end
-        result_data[account_number]["next_start"] = next_start
-        result_data[account_number]["next_end"] = next_end
+        result_data[account_number].update(calculate_dispatch_state(planned_dispatches))
 
         # Extract charging sessions from comprehensive query data
         # Sessions are now included in the devices query, no separate API call needed!
@@ -500,41 +392,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         result_data[account_number]["charging_sessions"] = charging_sessions
 
         # Extract products - ensure we always have product data
-        products = []
         direct_products = data.get("direct_products", [])
+        products = normalize_direct_products(direct_products)
 
         # Check if we have direct products data first
         if direct_products:
             _LOGGER.debug("Found %d direct products", len(direct_products))
-            for product in direct_products:
-                # Get the gross rate from the direct products data
-                gross_rate = "0"
-                if "grossRateInformation" in product:
-                    gross_info = product.get("grossRateInformation", {})
-                    if isinstance(gross_info, dict):
-                        gross_rate = gross_info.get("grossRate", "0")
-                    elif isinstance(gross_info, list) and gross_info:
-                        gross_rate = gross_info[0].get("grossRate", "0")
-
-                products.append(
-                    {
-                        "code": product.get("code", "Unknown"),
-                        "description": product.get("description", ""),
-                        "name": product.get("fullName", "Unknown"),
-                        "grossRate": gross_rate,
-                        "type": "Simple",  # Default type for direct products
-                        "validFrom": None,  # We don't have this info from direct products
-                        "validTo": None,  # We don't have this info from direct products
-                        "isTimeOfUse": product.get("isTimeOfUse", False),
-                    }
-                )
 
         # If no direct products, try to extract from the account data
         if not products:
             _LOGGER.debug("Extracting products from account data")
-
-            # This tracks if we've found any gross rates to help with debugging
-            found_any_gross_rate = False
 
             for prop in account_data.get("allProperties", []):
                 for malo in prop.get("electricityMalos", []):
@@ -549,71 +416,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             )
 
                         # Determine the product type
-                        product_type = "Simple"
-                        if "__typename" in unit_rate_info:
-                            product_type = (
-                                "Simple"
-                                if unit_rate_info["__typename"]
-                                == "SimpleProductUnitRateInformation"
-                                else "TimeOfUse"
-                            )
+                        product_type = get_product_type(unit_rate_info)
 
                         # For Simple product types
                         if product_type == "Simple":
-                            # Get the gross rate from various possible sources
-                            gross_rate = "0"
-
-                            # Check different possible sources for gross rate
-                            if "grossRateInformation" in unit_rate_info:
-                                found_any_gross_rate = True
-                                if isinstance(
-                                    unit_rate_info["grossRateInformation"], dict
-                                ):
-                                    gross_rate = unit_rate_info[
-                                        "grossRateInformation"
-                                    ].get("grossRate", "0")
-                                elif (
-                                    isinstance(
-                                        unit_rate_info["grossRateInformation"], list
-                                    )
-                                    and unit_rate_info["grossRateInformation"]
-                                ):
-                                    gross_rate = (
-                                        unit_rate_info["grossRateInformation"][0].get(
-                                            "grossRate", "0"
-                                        )
-                                        if unit_rate_info["grossRateInformation"]
-                                        else "0"
-                                    )
-                            elif "latestGrossUnitRateCentsPerKwh" in unit_rate_info:
-                                found_any_gross_rate = True
-                                gross_rate = unit_rate_info[
-                                    "latestGrossUnitRateCentsPerKwh"
-                                ]
-                            elif "unitRateGrossRateInformation" in agreement:
-                                found_any_gross_rate = True
-                                if isinstance(
-                                    agreement["unitRateGrossRateInformation"], dict
-                                ):
-                                    gross_rate = agreement[
-                                        "unitRateGrossRateInformation"
-                                    ].get("grossRate", "0")
-                                elif (
-                                    isinstance(
-                                        agreement["unitRateGrossRateInformation"], list
-                                    )
-                                    and agreement["unitRateGrossRateInformation"]
-                                ):
-                                    gross_rate = (
-                                        agreement["unitRateGrossRateInformation"][
-                                            0
-                                        ].get("grossRate", "0")
-                                        if agreement["unitRateGrossRateInformation"]
-                                        else "0"
-                                    )
+                            agreement_rate = extract_gross_rate(
+                                agreement.get("unitRateGrossRateInformation")
+                            )
+                            gross_rate = extract_gross_rate(
+                                unit_rate_info.get("grossRateInformation"),
+                                unit_rate_info.get(
+                                    "latestGrossUnitRateCentsPerKwh", agreement_rate
+                                ),
+                            )
 
                             # Add unitRateForecast for TimeOfUse products
-                            unit_rate_forecast = agreement.get("unitRateForecast", [])
+                            unit_rate_forecast = normalize_unit_rate_forecast(
+                                agreement.get("unitRateForecast")
+                            )
 
                             products.append(
                                 {
@@ -631,59 +451,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
                         # For TimeOfUse product types
                         elif product_type == "TimeOfUse" and "rates" in unit_rate_info:
-                            # Process time-of-use rates
-                            timeslots = []
-
-                            for rate in unit_rate_info["rates"]:
-                                gross_rate = "0"
-
-                                # Extract the gross rate
-                                if (
-                                    "grossRateInformation" in rate
-                                    and rate["grossRateInformation"]
-                                ):
-                                    if isinstance(rate["grossRateInformation"], dict):
-                                        gross_rate = rate["grossRateInformation"].get(
-                                            "grossRate", "0"
-                                        )
-                                    elif (
-                                        isinstance(rate["grossRateInformation"], list)
-                                        and rate["grossRateInformation"]
-                                    ):
-                                        gross_rate = rate["grossRateInformation"][
-                                            0
-                                        ].get("grossRate", "0")
-                                elif "latestGrossUnitRateCentsPerKwh" in rate:
-                                    gross_rate = rate["latestGrossUnitRateCentsPerKwh"]
-
-                                # Create activation rules
-                                activation_rules = []
-                                if "timeslotActivationRules" in rate and isinstance(
-                                    rate["timeslotActivationRules"], list
-                                ):
-                                    for rule in rate["timeslotActivationRules"]:
-                                        activation_rules.append(
-                                            {
-                                                "from_time": rule.get(
-                                                    "activeFromTime", "00:00:00"
-                                                ),
-                                                "to_time": rule.get(
-                                                    "activeToTime", "00:00:00"
-                                                ),
-                                            }
-                                        )
-
-                                # Add timeslot data
-                                timeslots.append(
-                                    {
-                                        "name": rate.get("timeslotName", "Unknown"),
-                                        "rate": gross_rate,
-                                        "activation_rules": activation_rules,
-                                    }
-                                )
+                            timeslots = normalize_timeslots(unit_rate_info["rates"])
 
                             # Add unitRateForecast for TimeOfUse products
-                            unit_rate_forecast = agreement.get("unitRateForecast", [])
+                            unit_rate_forecast = normalize_unit_rate_forecast(
+                                agreement.get("unitRateForecast")
+                            )
 
                             # Create a TimeOfUse product with timeslots
                             products.append(
@@ -746,61 +519,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     unit_rate_info = agreement.get("unitRateInformation", {})
 
                     # Determine the product type
-                    product_type = "Simple"
-                    if "__typename" in unit_rate_info:
-                        product_type = (
-                            "Simple"
-                            if unit_rate_info["__typename"]
-                            == "SimpleProductUnitRateInformation"
-                            else "TimeOfUse"
-                        )
+                    product_type = get_product_type(unit_rate_info)
 
                     # For Simple product types
                     if product_type == "Simple":
-                        # Get the gross rate from various possible sources
-                        gross_rate = "0"
-
-                        # Check different possible sources for gross rate
-                        if "grossRateInformation" in unit_rate_info:
-                            if isinstance(unit_rate_info["grossRateInformation"], dict):
-                                gross_rate = unit_rate_info["grossRateInformation"].get(
-                                    "grossRate", "0"
-                                )
-                            elif (
-                                isinstance(unit_rate_info["grossRateInformation"], list)
-                                and unit_rate_info["grossRateInformation"]
-                            ):
-                                gross_rate = (
-                                    unit_rate_info["grossRateInformation"][0].get(
-                                        "grossRate", "0"
-                                    )
-                                    if unit_rate_info["grossRateInformation"]
-                                    else "0"
-                                )
-                        elif "latestGrossUnitRateCentsPerKwh" in unit_rate_info:
-                            gross_rate = unit_rate_info[
-                                "latestGrossUnitRateCentsPerKwh"
-                            ]
-                        elif "unitRateGrossRateInformation" in agreement:
-                            if isinstance(
-                                agreement["unitRateGrossRateInformation"], dict
-                            ):
-                                gross_rate = agreement[
-                                    "unitRateGrossRateInformation"
-                                ].get("grossRate", "0")
-                            elif (
-                                isinstance(
-                                    agreement["unitRateGrossRateInformation"], list
-                                )
-                                and agreement["unitRateGrossRateInformation"]
-                            ):
-                                gross_rate = (
-                                    agreement["unitRateGrossRateInformation"][0].get(
-                                        "grossRate", "0"
-                                    )
-                                    if agreement["unitRateGrossRateInformation"]
-                                    else "0"
-                                )
+                        agreement_rate = extract_gross_rate(
+                            agreement.get("unitRateGrossRateInformation")
+                        )
+                        gross_rate = extract_gross_rate(
+                            unit_rate_info.get("grossRateInformation"),
+                            unit_rate_info.get(
+                                "latestGrossUnitRateCentsPerKwh", agreement_rate
+                            ),
+                        )
 
                         gas_products.append(
                             {
@@ -817,51 +548,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
                     # For TimeOfUse product types (if gas supports it)
                     elif product_type == "TimeOfUse" and "rates" in unit_rate_info:
-                        # Process time-of-use rates for gas
-                        timeslots = []
-
-                        for rate in unit_rate_info["rates"]:
-                            gross_rate = "0"
-
-                            # Get the gross rate for this timeslot
-                            if "grossRateInformation" in rate:
-                                if isinstance(rate["grossRateInformation"], dict):
-                                    gross_rate = rate["grossRateInformation"].get(
-                                        "grossRate", "0"
-                                    )
-                                elif (
-                                    isinstance(rate["grossRateInformation"], list)
-                                    and rate["grossRateInformation"]
-                                ):
-                                    gross_rate = (
-                                        rate["grossRateInformation"][0].get(
-                                            "grossRate", "0"
-                                        )
-                                        if rate["grossRateInformation"]
-                                        else "0"
-                                    )
-                            elif "latestGrossUnitRateCentsPerKwh" in rate:
-                                gross_rate = rate["latestGrossUnitRateCentsPerKwh"]
-
-                            # Process activation rules
-                            activation_rules = []
-                            for rule in rate.get("timeslotActivationRules", []):
-                                activation_rules.append(
-                                    {
-                                        "from_time": rule.get(
-                                            "activeFromTime", "00:00:00"
-                                        ),
-                                        "to_time": rule.get("activeToTime", "00:00:00"),
-                                    }
-                                )
-
-                            timeslots.append(
-                                {
-                                    "name": rate.get("timeslotName", "Unknown"),
-                                    "rate": gross_rate,
-                                    "activation_rules": activation_rules,
-                                }
-                            )
+                        timeslots = normalize_timeslots(unit_rate_info["rates"])
 
                         gas_products.append(
                             {
@@ -904,7 +591,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         if gas_products:
             # Find current valid gas product based on validity dates
-            now = datetime.now().isoformat()
+            now = datetime.now(UTC).isoformat()
             valid_gas_products = []
 
             for product in gas_products:
@@ -945,9 +632,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         gas_contract_days_until_expiry = None
         if gas_contract_end:
             try:
-                end_date = datetime.fromisoformat(
-                    gas_contract_end.replace("Z", "+00:00")
-                )
+                end_date = datetime.fromisoformat(gas_contract_end)
                 now_date = datetime.now(end_date.tzinfo)
                 days_diff = (end_date - now_date).days
                 gas_contract_days_until_expiry = max(
@@ -960,7 +645,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             gas_contract_days_until_expiry
         )
 
+        meter = result_data[account_number]["meter"]
+
         # Gas meter smart reading capability
+        gas_meter = result_data[account_number]["gas_meter"]
         gas_meter_smart_reading = None
         if gas_meter and isinstance(gas_meter, dict):
             gas_meter_smart_reading = gas_meter.get("shouldReceiveSmartMeterData", None)
@@ -969,7 +657,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # Fetch latest gas meter reading if gas meter exists
         gas_latest_reading = None
-        if gas_meter and gas_meter.get("id"):
+        if include_meter_readings and gas_meter and gas_meter.get("id"):
             try:
                 gas_meter_id = gas_meter.get("id")
                 _LOGGER.debug(
@@ -1005,7 +693,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         # Fetch latest electricity meter reading if electricity meter exists
         electricity_latest_reading = None
-        if meter and meter.get("id"):
+        if include_meter_readings and meter and meter.get("id"):
             try:
                 electricity_meter_id = meter.get("id")
                 _LOGGER.debug(
@@ -1081,7 +769,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             statistic_id = f"{DOMAIN}:electricity_{safe_account}_consumption"
 
             # Determine which dates to import
-            yesterday = (date.today() - timedelta(days=1)).isoformat()
+            yesterday = (datetime.now(UTC).date() - timedelta(days=1)).isoformat()
             dates_to_import = []
 
             if account_num not in imported_stats_dates:
@@ -1093,7 +781,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # On first run, also try to backfill the last 7 days
             if not imported_stats_dates[account_num]:
                 for days_back in range(2, 8):
-                    d = (date.today() - timedelta(days=days_back)).isoformat()
+                    d = (
+                        datetime.now(UTC).date() - timedelta(days=days_back)
+                    ).isoformat()
                     dates_to_import.append(d)
 
             if not dates_to_import:
@@ -1147,9 +837,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     if not start_str:
                         continue
                     try:
-                        start_dt = datetime.fromisoformat(
-                            start_str.replace("Z", "+00:00")
-                        )
+                        start_dt = datetime.fromisoformat(start_str)
                         hour_key = start_dt.replace(
                             minute=0, second=0, microsecond=0
                         ).isoformat()
@@ -1207,16 +895,78 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     account_num,
                 )
 
-    coordinator = DataUpdateCoordinator(
+    async def async_update_intelligent_data():
+        """Fetch and normalize Intelligent data for eligible accounts."""
+        intelligent_data = {}
+        for account_num, capabilities in capabilities_by_account.items():
+            if not capabilities.has_intelligent_dispatches:
+                continue
+            try:
+                account_data = await api.fetch_all_data(
+                    account_num,
+                    include_intelligent=True,
+                    include_meter_readings=False,
+                )
+                if account_data:
+                    intelligent_data.update(
+                        await process_api_data(
+                            account_data,
+                            account_num,
+                            api,
+                            include_meter_readings=False,
+                        )
+                    )
+            except Exception as err:
+                _LOGGER.warning(
+                    "Error fetching Intelligent data for account %s: %s",
+                    account_num,
+                    err,
+                )
+        return intelligent_data
+
+    coordinator = OctopusDataCoordinator(
         hass,
         _LOGGER,
         name=f"{DOMAIN}_{primary_account_number}",
         update_method=async_update_data,
-        update_interval=timedelta(minutes=UPDATE_INTERVAL),
+        update_interval_minutes=polling_interval,
     )
 
     # Initial data refresh - only once to prevent duplicate API calls
     await coordinator.async_config_entry_first_refresh()
+
+    if any(
+        capabilities.has_intelligent_dispatches
+        for capabilities in capabilities_by_account.values()
+    ):
+        intelligent_coordinator = OctopusDataCoordinator(
+            hass,
+            _LOGGER,
+            name=f"{DOMAIN}_{primary_account_number}_intelligent",
+            update_method=async_update_intelligent_data,
+            update_interval_minutes=intelligent_polling_interval,
+        )
+        await intelligent_coordinator.async_config_entry_first_refresh()
+        merged_data = dict(coordinator.data or {})
+        for account_num, intelligent_data in intelligent_coordinator.data.items():
+            if account_num in merged_data:
+                merged_data[account_num] = merge_normalized_account_data(
+                    merged_data[account_num], intelligent_data
+                )
+        coordinator.async_set_updated_data(merged_data)
+
+        def _merge_intelligent_update() -> None:
+            if not coordinator.data or not intelligent_coordinator.data:
+                return
+            merged_data = dict(coordinator.data)
+            for account_num, intelligent_data in intelligent_coordinator.data.items():
+                if account_num in merged_data:
+                    merged_data[account_num] = merge_normalized_account_data(
+                        merged_data[account_num], intelligent_data
+                    )
+            coordinator.async_set_updated_data(merged_data)
+
+        intelligent_coordinator.async_add_listener(_merge_intelligent_update)
 
     # Log the account data after update to help diagnose attribute issues
     if coordinator.data and primary_account_number in coordinator.data:
@@ -1262,11 +1012,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "api": api,
         "account_number": primary_account_number,
         "account_numbers": account_numbers,
+        "capabilities_by_account": capabilities_by_account,
         "coordinator": coordinator,
+        "intelligent_coordinator": intelligent_coordinator,
     }
 
     # Register account service devices before setting up platforms
     from homeassistant.helpers import device_registry as dr
+
     from .sensor import get_account_device_info
 
     device_registry = dr.async_get(hass)
@@ -1330,7 +1083,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             from homeassistant.exceptions import ServiceValidationError
 
             raise ServiceValidationError(
-                f"Invalid time format: {str(time_error)}",
+                f"Invalid time format: {time_error!s}",
                 translation_domain=DOMAIN,
             )
 
@@ -1350,15 +1103,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
             if success:
                 _LOGGER.info("Successfully set device preferences")
+                await async_request_intelligent_refresh(hass)
                 return {"success": True}
-            else:
-                _LOGGER.error("Failed to set device preferences")
-                from homeassistant.exceptions import ServiceValidationError
+            _LOGGER.error("Failed to set device preferences")
+            from homeassistant.exceptions import ServiceValidationError
 
-                raise ServiceValidationError(
-                    "Failed to set device preferences. Check the log for details.",
-                    translation_domain=DOMAIN,
-                )
+            raise ServiceValidationError(
+                "Failed to set device preferences. Check the log for details.",
+                translation_domain=DOMAIN,
+            )
         except ValueError as e:
             _LOGGER.error("Validation error: %s", e)
             from homeassistant.exceptions import ServiceValidationError
@@ -1400,7 +1153,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             from datetime import datetime
 
-            parsed_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            datetime.strptime(date_str, "%Y-%m-%d").date()
         except ValueError:
             from homeassistant.exceptions import ServiceValidationError
 
@@ -1413,7 +1166,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Get the coordinator for this account
             coordinator = None
             client = None
-            for entry_id, data in hass.data[DOMAIN].items():
+            for data in hass.data[DOMAIN].values():
                 if (
                     data["coordinator"].data
                     and account_number in data["coordinator"].data
@@ -1555,7 +1308,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # Get the coordinator for this account
             coordinator = None
             client = None
-            for entry_id, data in hass.data[DOMAIN].items():
+            for data in hass.data[DOMAIN].values():
                 if (
                     data["coordinator"].data
                     and account_number in data["coordinator"].data
@@ -1590,11 +1343,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 start_date = datetime(year, month, 1)
                 _, last_day = monthrange(year, month)
                 end_date = datetime(year, month, last_day)
-                period_label = f"{year}-{month:02d}"
             else:  # year
                 start_date = datetime(year, 1, 1)
                 end_date = datetime(year, 12, 31)
-                period_label = f"{year}"
                 month = None  # Reset month for yearly export
 
             _LOGGER.info(
@@ -1630,7 +1381,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 from homeassistant.exceptions import ServiceValidationError
 
                 raise ServiceValidationError(
-                    f"No smart meter readings found for the specified period",
+                    "No smart meter readings found for the specified period",
                     translation_domain=DOMAIN,
                 )
 
@@ -1657,10 +1408,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     writer = csv.writer(csvfile, delimiter=";")
 
                     # Create time slots (15-minute intervals)
-                    time_slots = []
-                    for hour in range(24):
-                        for minute in [0, 15, 30, 45]:
-                            time_slots.append(f"{hour:02d}:{minute:02d}")
+                    time_slots = [
+                        f"{hour:02d}:{minute:02d}"
+                        for hour in range(24)
+                        for minute in [0, 15, 30, 45]
+                    ]
 
                     # Prepare data structures
                     readings_by_time = {time_slot: {} for time_slot in time_slots}
@@ -1700,9 +1452,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             )
                             if start_at:
                                 try:
-                                    reading_time = datetime.fromisoformat(
-                                        start_at.replace("Z", "+00:00")
-                                    )
+                                    reading_time = datetime.fromisoformat(start_at)
                                     time_key = reading_time.strftime("%H:%M")
                                     minute = reading_time.minute
                                     rounded_minute = (minute // 15) * 15
@@ -1995,14 +1745,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         supports_response=SupportsResponse.ONLY,
     )
 
+    if not hass.services.has_service(DOMAIN, SERVICE_REFRESH_INTELLIGENT_DATA):
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_REFRESH_INTELLIGENT_DATA,
+            lambda call: async_handle_refresh_intelligent_data(hass, call),
+        )
+
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+        data = hass.data[DOMAIN].get(entry.entry_id, {})
+        if intelligent_coordinator := data.get("intelligent_coordinator"):
+            await intelligent_coordinator.async_shutdown()
+        await data["coordinator"].async_shutdown()
         hass.data[DOMAIN].pop(entry.entry_id)
+        if not hass.data[DOMAIN] and hass.services.has_service(
+            DOMAIN, SERVICE_REFRESH_INTELLIGENT_DATA
+        ):
+            hass.services.async_remove(DOMAIN, SERVICE_REFRESH_INTELLIGENT_DATA)
 
     return unload_ok
 

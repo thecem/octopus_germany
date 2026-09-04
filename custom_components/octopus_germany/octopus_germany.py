@@ -1,18 +1,23 @@
-"""Provide the OctopusGermany class for interacting with the Octopus Energy API.
+"""
+Provide the OctopusGermany class for interacting with the Octopus Energy API.
 
 Includes methods for authentication, fetching account details, managing devices, and retrieving
 various data related to electricity usage and tariffs.
 """
 
-import logging
-import json
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
 import asyncio
+import json
+import logging
+from datetime import datetime, timedelta
+from typing import Any
+
 import jwt
 from homeassistant.exceptions import ConfigEntryNotReady
 from python_graphql_client import GraphqlClient
+
 from .const import TOKEN_AUTO_REFRESH_INTERVAL, TOKEN_REFRESH_MARGIN
+from .data_processing import extract_charging_sessions
+from .models import TariffCapabilities, detect_tariff_capabilities
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,7 +30,7 @@ _TOKEN_MANAGERS = {}
 
 # Comprehensive query that gets all data in one go
 COMPREHENSIVE_QUERY = """
-query ComprehensiveDataQuery($accountNumber: String!) {
+query ComprehensiveDataQuery($accountNumber: String!, $includeIntelligent: Boolean!) {
   account(accountNumber: $accountNumber) {
     id
     ledgers {
@@ -95,11 +100,11 @@ query ComprehensiveDataQuery($accountNumber: String!) {
           validTo
         }
         maloNumber
-        meloNumber
-        meter {
+                meters {
           id
           meterType
           number
+                    meloNumber
           shouldReceiveSmartMeterData
           submitMeterReadingUrl
         }
@@ -151,11 +156,11 @@ query ComprehensiveDataQuery($accountNumber: String!) {
           validTo
         }
         maloNumber
-        meloNumber
-        meter {
+                meters {
           id
           meterType
           number
+                    meloNumber
           shouldReceiveSmartMeterData
           submitMeterReadingUrl
         }
@@ -163,7 +168,7 @@ query ComprehensiveDataQuery($accountNumber: String!) {
       }
     }
   }
-  completedDispatches(accountNumber: $accountNumber) {
+    completedDispatches(accountNumber: $accountNumber) @include(if: $includeIntelligent) {
     delta
     deltaKwh
     end
@@ -175,7 +180,7 @@ query ComprehensiveDataQuery($accountNumber: String!) {
     start
     startDt
   }
-  devices(accountNumber: $accountNumber) {
+    devices(accountNumber: $accountNumber) @include(if: $includeIntelligent) {
     status {
       current
       currentState
@@ -327,6 +332,105 @@ query ComprehensiveDataQuery($accountNumber: String!) {
 }
 """
 
+INTELLIGENT_DATA_QUERY = """
+query IntelligentDataQuery($accountNumber: String!) {
+    completedDispatches(accountNumber: $accountNumber) {
+        delta
+        deltaKwh
+        end
+        endDt
+        meta { location source }
+        start
+        startDt
+    }
+    devices(accountNumber: $accountNumber) {
+        id
+        name
+        deviceType
+        provider
+        integrationDeviceId
+        status {
+            current
+            currentState
+            isSuspended
+            ... on SmartFlexVehicleStatus {
+                activePower { value timestamp }
+                stateOfCharge { value timestamp }
+                stateOfChargeLimit {
+                    upperSocLimit
+                    timestamp
+                    isLimitViolated
+                }
+            }
+            ... on SmartFlexChargePointStatus {
+                stateOfCharge { value timestamp }
+                stateOfChargeLimit {
+                    upperSocLimit
+                    timestamp
+                    isLimitViolated
+                }
+            }
+        }
+        preferences {
+            mode
+            targetType
+            unit
+            gridExport
+            schedules { dayOfWeek max min time }
+        }
+        preferenceSetting {
+            deviceType
+            id
+            mode
+            unit
+            scheduleSettings {
+                id
+                max
+                min
+                step
+                timeFrom
+                timeStep
+                timeTo
+            }
+        }
+        alerts { message publishedAt }
+        ... on SmartFlexVehicle {
+            vehicleVariant { model batterySize }
+            chargingSessions(first: 100) {
+                edges {
+                    node {
+                        start
+                        end
+                        stateOfChargeChange
+                        stateOfChargeFinal
+                        energyAdded { value unit }
+                        cost { amount currency }
+                        ... on SmartFlexChargingSession { type }
+                    }
+                }
+                pageInfo { hasNextPage endCursor }
+            }
+        }
+        ... on SmartFlexChargePoint {
+            chargingSessions(first: 100) {
+                edges {
+                    node {
+                        start
+                        end
+                        stateOfChargeChange
+                        stateOfChargeFinal
+                        energyAdded { value unit }
+                        cost { amount currency }
+                        ... on SmartFlexChargingSession { type }
+                    }
+                }
+                pageInfo { hasNextPage endCursor }
+            }
+        }
+    }
+}
+"""
+
 # Query to get latest gas meter readings
 GAS_METER_READINGS_QUERY = """
 query GasMeterReadings($accountNumber: String!, $meterId: ID!) {
@@ -461,47 +565,27 @@ query PropertySchema($accountNumber: String!, $propertyId: ID!) {
     property(id: $propertyId) {
       __typename
       id
-      address {
-        line1
-        line2
-        postcode
-      }
-      electricityMeterPoints {
-        id
-        mpan
-        meterReadings(first: 5) {
-          edges {
-            node {
-              readAt
-              value
-              unit
+            address
+            electricityMalos {
+                maloNumber
+                meters {
+                    id
+                    number
+                    meterType
+                    meloNumber
+                    shouldReceiveSmartMeterData
+                }
             }
-          }
-        }
-        meters {
-          id
-          serialNumber
-          smartMeter
-        }
-      }
-      gasMeterPoints {
-        id
-        mprn
-        meterReadings(first: 5) {
-          edges {
-            node {
-              readAt
-              value
-              unit
+            gasMalos {
+                maloNumber
+                meters {
+                    id
+                    number
+                    meterType
+                    meloNumber
+                    shouldReceiveSmartMeterData
+                }
             }
-          }
-        }
-        meters {
-          id
-          serialNumber
-          smartMeter
-        }
-      }
     }
   }
 }
@@ -513,10 +597,11 @@ query getSmartMeterUsageV2($accountNumber: String!, $propertyId: ID!, $date: Dat
   account(accountNumber: $accountNumber) {
     property(id: $propertyId) {
       electricityMalos {
-        meter {
+                meters {
           id
           number
           meterType
+                    meloNumber
           shouldReceiveSmartMeterData
         }
         agreements {
@@ -552,10 +637,11 @@ query getElectricityMaloReadings($accountNumber: String!, $propertyId: ID!) {
   account(accountNumber: $accountNumber) {
     property(id: $propertyId) {
       electricityMalos {
-        meter {
+                meters {
           id
           number
           meterType
+                    meloNumber
           shouldReceiveSmartMeterData
           registers {
             obisCode
@@ -741,6 +827,29 @@ query {
 }
 """
 
+ACCOUNT_CAPABILITIES_QUERY = """
+query AccountCapabilities($accountNumber: String!) {
+    account(accountNumber: $accountNumber) {
+        allProperties {
+            electricityMalos {
+                agreements {
+                    product {
+                        code
+                        description
+                        fullName
+                        isTimeOfUse
+                    }
+                }
+                                meters {
+                    shouldReceiveSmartMeterData
+                                    meloNumber
+                }
+            }
+        }
+    }
+}
+"""
+
 
 class TokenManager:
     """Centralized token management for Octopus Germany API."""
@@ -857,11 +966,13 @@ class TokenManager:
 
 class OctopusGermany:
     def __init__(self, email: str, password: str):
-        """Initialize the OctopusGermany API client.
+        """
+        Initialize the OctopusGermany API client.
 
         Args:
             email: The email address for the Octopus Germany account
             password: The password for the Octopus Germany account
+
         """
         self._email = email
         self._password = password
@@ -875,6 +986,7 @@ class OctopusGermany:
             _LOGGER.debug("Reusing existing TokenManager for %s", email)
 
         self._token_manager = _TOKEN_MANAGERS[email]
+        self._capabilities_by_account: dict[str, TariffCapabilities] = {}
 
         # Set up the token manager refresh callback
         self._token_manager.set_refresh_callback(self.login)
@@ -987,17 +1099,16 @@ class OctopusGermany:
                                 delay * 2, max_delay
                             )  # Exponential backoff with max cap
                             continue
-                        else:
-                            _LOGGER.error(
-                                "Login failed: %s (attempt %s of %s)",
-                                error_message,
-                                attempt,
-                                retries,
-                            )
-                            # For other types of errors, continue with retries
-                            await asyncio.sleep(delay)
-                            delay = min(delay * 2, max_delay)
-                            continue
+                        _LOGGER.error(
+                            "Login failed: %s (attempt %s of %s)",
+                            error_message,
+                            attempt,
+                            retries,
+                        )
+                        # For other types of errors, continue with retries
+                        await asyncio.sleep(delay)
+                        delay = min(delay * 2, max_delay)
+                        continue
 
                     if "data" in response and "obtainKrakenToken" in response["data"]:
                         token_data = response["data"]["obtainKrakenToken"]
@@ -1018,12 +1129,11 @@ class OctopusGermany:
                                 self._token_manager.set_token(token)
 
                             return True
-                        else:
-                            _LOGGER.error(
-                                "No token in response despite successful request (attempt %s of %s)",
-                                attempt,
-                                retries,
-                            )
+                        _LOGGER.error(
+                            "No token in response despite successful request (attempt %s of %s)",
+                            attempt,
+                            retries,
+                        )
                     else:
                         _LOGGER.error(
                             "Unexpected API response format at attempt %s: %s",
@@ -1075,9 +1185,8 @@ class OctopusGermany:
 
                 # Return the accounts data
                 return accounts
-            else:
-                _LOGGER.error("Unexpected API response structure: %s", response)
-                return None
+            _LOGGER.error("Unexpected API response structure: %s", response)
+            return None
         except Exception as e:
             _LOGGER.error("Error fetching accounts with initial data: %s", e)
             return None
@@ -1096,9 +1205,70 @@ class OctopusGermany:
         """Fetch accounts data."""
         return await self.fetch_accounts_with_initial_data()
 
+    async def fetch_tariff_capabilities(
+        self, account_number: str
+    ) -> TariffCapabilities:
+        """Fetch and cache the features available for an account."""
+        if account_number in self._capabilities_by_account:
+            return self._capabilities_by_account[account_number]
+
+        if not await self.ensure_token():
+            return TariffCapabilities()
+
+        try:
+            response = await self._get_graphql_client().execute_async(
+                query=ACCOUNT_CAPABILITIES_QUERY,
+                variables={"accountNumber": account_number},
+            )
+            account_data = (response.get("data") or {}).get("account") or {}
+            capabilities = detect_tariff_capabilities(account_data)
+        except Exception as err:
+            _LOGGER.warning(
+                "Unable to determine tariff capabilities for account %s: %s",
+                account_number,
+                err,
+            )
+            capabilities = TariffCapabilities()
+
+        self._capabilities_by_account[account_number] = capabilities
+        return capabilities
+
+    async def fetch_data_for_account(self, account_number: str):
+        """Fetch base account data without Intelligent-specific fields."""
+        await self.fetch_tariff_capabilities(account_number)
+        return await self.fetch_all_data(account_number, include_intelligent=False)
+
+    async def fetch_intelligent_data(self, account_number: str):
+        """Fetch device and dispatch data for an Intelligent account."""
+        capabilities = await self.fetch_tariff_capabilities(account_number)
+        if not capabilities.has_intelligent_dispatches:
+            return None
+
+        if not await self.ensure_token():
+            return None
+
+        try:
+            return await self._get_graphql_client().execute_async(
+                query=INTELLIGENT_DATA_QUERY,
+                variables={"accountNumber": account_number},
+            )
+        except Exception as err:
+            _LOGGER.warning(
+                "Unable to fetch intelligent data for account %s: %s",
+                account_number,
+                err,
+            )
+            return None
+
     # Comprehensive data fetch in a single query
-    async def fetch_all_data(self, account_number: str):
-        """Fetch all data for an account including devices, dispatches and account details.
+    async def fetch_all_data(
+        self,
+        account_number: str,
+        include_intelligent: bool = True,
+        include_meter_readings: bool = True,
+    ):
+        """
+        Fetch all data for an account including devices, dispatches and account details.
 
         This comprehensive query consolidates multiple separate queries into one
         to minimize API calls and improve performance.
@@ -1106,6 +1276,8 @@ class OctopusGermany:
         if not await self.ensure_token():
             _LOGGER.error("Failed to ensure valid token for fetch_all_data")
             return None
+
+        capabilities = await self.fetch_tariff_capabilities(account_number)
 
         variables = {"accountNumber": account_number}
         client = self._get_graphql_client()
@@ -1116,7 +1288,11 @@ class OctopusGermany:
                 account_number,
             )
             response = await client.execute_async(
-                query=COMPREHENSIVE_QUERY, variables=variables
+                query=COMPREHENSIVE_QUERY,
+                variables={
+                    **variables,
+                    "includeIntelligent": include_intelligent,
+                },
             )
 
             # Log the full API response only when LOG_API_RESPONSES is enabled
@@ -1207,50 +1383,11 @@ class OctopusGermany:
                                 )
                                 break
 
-                    # Extract charging sessions from devices (now included in COMPREHENSIVE_QUERY)
-                    charging_sessions = [] if not has_charging_sessions_error else None
-
-                    # Only process if there was no chargingSessions error
-                    if not has_charging_sessions_error:
-                        for device in result["devices"]:
-                            device_id = device.get("id")
-                            device_name = device.get("name", "Unknown Device")
-                            device_type = device.get("deviceType", "UNKNOWN")
-
-                            sessions = device.get("chargingSessions", {})
-                            if sessions is None:
-                                # API returned null (temporary issue or authorization problem)
-                                _LOGGER.debug(
-                                    "Device '%s' (%s): chargingSessions is NULL "
-                                    "(temporary API issue - data will be available on next update)",
-                                    device_name,
-                                    device_id,
-                                )
-                            elif sessions:
-                                edges = sessions.get("edges", [])
-                                for edge in edges:
-                                    session = edge.get("node", {})
-                                    if session:
-                                        # Normalize SoC fields to snake_case for internal consumers.
-                                        if (
-                                            "soc_final" not in session
-                                            and "stateOfChargeFinal" in session
-                                        ):
-                                            session["soc_final"] = session.get(
-                                                "stateOfChargeFinal"
-                                            )
-                                        if (
-                                            "soc_change" not in session
-                                            and "stateOfChargeChange" in session
-                                        ):
-                                            session["soc_change"] = session.get(
-                                                "stateOfChargeChange"
-                                            )
-                                        # Add device context to session
-                                        session["device_id"] = device_id
-                                        session["device_name"] = device_name
-                                        session["device_type"] = device_type
-                                        charging_sessions.append(session)
+                    charging_sessions = (
+                        None
+                        if has_charging_sessions_error
+                        else extract_charging_sessions(result["devices"])
+                    )
 
                     # Store charging sessions in result
                     result["charging_sessions"] = charging_sessions
@@ -1412,10 +1549,12 @@ class OctopusGermany:
                                     # Retry with new token
                                     return await self.fetch_all_data(account_number)
 
-                # Fetch electricity smart meter readings if property data is available
+                # Fetch electricity smart meter readings only when supported.
                 try:
                     if (
-                        result.get("account")
+                        include_meter_readings
+                        and capabilities.has_smart_meter
+                        and result.get("account")
                         and "allProperties" in result["account"]
                         and result["account"]["allProperties"]
                     ):
@@ -1440,32 +1579,17 @@ class OctopusGermany:
                                 # Mark as explored to prevent repeated exploration
                                 self._schema_explored = True
 
-                            # Get multiple dates for testing: today, yesterday, day before yesterday
-                            from datetime import date, timedelta
+                            # Meter readings are published with a delay; query yesterday once.
+                            from datetime import timedelta
 
-                            today = date.today()
-                            yesterday = today - timedelta(days=1)
-                            day_before_yesterday = today - timedelta(days=2)
-                            week_ago = today - timedelta(days=7)
-                            month_ago = today - timedelta(days=30)
+                            yesterday = datetime.now().astimezone().date() - timedelta(
+                                days=1
+                            )
+                            test_dates = [(yesterday.isoformat(), "yesterday")]
 
-                            test_dates = [
-                                (today.isoformat(), "today"),
-                                (yesterday.isoformat(), "yesterday"),
-                                (
-                                    day_before_yesterday.isoformat(),
-                                    "day_before_yesterday",
-                                ),
-                                (week_ago.isoformat(), "week_ago"),
-                                (month_ago.isoformat(), "month_ago"),
-                            ]
-
-                            _LOGGER.info(
-                                "Testing smart meter readings for multiple dates: %s",
-                                [
-                                    f"{label} ({date_str})"
-                                    for date_str, label in test_dates
-                                ],
+                            _LOGGER.debug(
+                                "Fetching smart meter readings for the previous day: %s",
+                                yesterday.isoformat(),
                             )
 
                             smart_meter_readings = None
@@ -1496,12 +1620,11 @@ class OctopusGermany:
                                         date_str,
                                     )
                                     break
-                                else:
-                                    _LOGGER.debug(
-                                        "No smart meter readings found for %s (%s)",
-                                        date_label,
-                                        date_str,
-                                    )
+                                _LOGGER.debug(
+                                    "No smart meter readings found for %s (%s)",
+                                    date_label,
+                                    date_str,
+                                )
 
                             if smart_meter_readings:
                                 result["electricity_smart_meter_readings"] = (
@@ -1565,7 +1688,7 @@ class OctopusGermany:
                     # Continue without smart meter readings as this is not critical
 
                 return result
-            elif "errors" in response:
+            if "errors" in response:
                 # Handle critical errors that prevent any data from being returned
                 error = response.get("errors", [{}])[0]
                 error_code = error.get("extensions", {}).get("errorCode")
@@ -1584,20 +1707,21 @@ class OctopusGermany:
                     response.get("errors"),
                 )
                 return None
-            else:
-                _LOGGER.error("API response contains neither data nor errors")
-                return None
+            _LOGGER.error("API response contains neither data nor errors")
+            return None
 
         except Exception as e:
             _LOGGER.error("Error fetching all data: %s", e)
             return None
 
     async def fetch_charging_sessions(self, account_number: str):
-        """Fetch charging sessions for smart charging rewards tracking.
+        """
+        Fetch charging sessions for smart charging rewards tracking.
 
         Returns:
             list: List of charging sessions, or empty list if no sessions/devices
             None: Only on actual API errors (token issues, network problems, etc.)
+
         """
         if not await self.ensure_token():
             _LOGGER.warning(
@@ -1614,7 +1738,7 @@ class OctopusGermany:
                 query=CHARGING_SESSIONS_QUERY, variables=variables
             )
 
-            if "data" in response and response["data"]:
+            if response.get("data"):
                 devices = response["data"].get("devices", [])
                 all_sessions = []
 
@@ -1651,7 +1775,7 @@ class OctopusGermany:
                                 all_sessions.append(session)
 
                 return all_sessions
-            elif "errors" in response:
+            if "errors" in response:
                 error = response.get("errors", [{}])[0]
                 error_code = error.get("extensions", {}).get("errorCode")
 
@@ -1670,8 +1794,7 @@ class OctopusGermany:
                     response.get("errors"),
                 )
                 return []  # Empty list is valid - means no devices/sessions
-            else:
-                return []
+            return []
 
         except Exception as e:
             _LOGGER.error(
@@ -1737,7 +1860,8 @@ class OctopusGermany:
         target_percentage: int,
         target_time: str,
     ) -> bool:
-        """Set device charging preferences using the new setDevicePreferences API.
+        """
+        Set device charging preferences using the new setDevicePreferences API.
 
         Args:
             device_id: The device ID to set preferences for
@@ -1746,6 +1870,7 @@ class OctopusGermany:
 
         Returns:
             True if successful, False otherwise
+
         """
         if not await self.ensure_token():
             _LOGGER.error("Failed to ensure valid token for set_device_preferences")
@@ -1866,8 +1991,9 @@ class OctopusGermany:
         meter_id: str,
         reading_date: str,
         readings: list[dict[str, Any]],
-    ) -> Dict[str, Any] | None:
-        """Submit meter readings for a gas or electricity meter.
+    ) -> dict[str, Any] | None:
+        """
+        Submit meter readings for a gas or electricity meter.
 
         Args:
             meter_type: Either "electricity" or "gas".
@@ -1877,6 +2003,7 @@ class OctopusGermany:
 
         Returns:
             The API response payload or None if the submission failed.
+
         """
         if not await self.ensure_token():
             _LOGGER.error("Failed to ensure valid token for submit_meter_readings")
@@ -1995,13 +2122,15 @@ class OctopusGermany:
             return None
 
     async def get_vehicle_devices(self, account_number: str):
-        """Get vehicle device details with preference settings.
+        """
+        Get vehicle device details with preference settings.
 
         Args:
             account_number: The account number
 
         Returns:
             List of vehicle devices with their settings or None if error
+
         """
         if not await self.ensure_token():
             _LOGGER.error("Failed to ensure valid token for get_vehicle_devices")
@@ -2057,22 +2186,23 @@ class OctopusGermany:
                     len(vehicle_devices),
                 )
                 return vehicle_devices
-            else:
-                _LOGGER.error("Invalid response structure for vehicle devices")
-                return None
+            _LOGGER.error("Invalid response structure for vehicle devices")
+            return None
 
         except Exception as e:
             _LOGGER.error("Error fetching vehicle devices: %s", e)
             return None
 
     async def fetch_flex_planned_dispatches(self, device_id: str):
-        """Fetch planned dispatches for a specific device using the new flexPlannedDispatches API.
+        """
+        Fetch planned dispatches for a specific device using the new flexPlannedDispatches API.
 
         Args:
             device_id: The device ID to fetch planned dispatches for
 
         Returns:
             List of planned dispatches for the device or None if error
+
         """
         if not await self.ensure_token():
             _LOGGER.error(
@@ -2127,21 +2257,18 @@ class OctopusGermany:
                         error_message,
                     )
                     return []
-                elif (
-                    error_code == "KT-CT-4340"
-                ):  # Temporary API error - unable to fetch
+                if error_code == "KT-CT-4340":  # Temporary API error - unable to fetch
                     _LOGGER.debug(
                         "Temporary API error fetching dispatches for device %s: %s (will use cached data)",
                         device_id,
                         error_message,
                     )
                     return None  # Return None to signal error - coordinator will keep old data
-                else:
-                    _LOGGER.error(
-                        "GraphQL errors in flex planned dispatches response: %s",
-                        response["errors"],
-                    )
-                    return None
+                _LOGGER.error(
+                    "GraphQL errors in flex planned dispatches response: %s",
+                    response["errors"],
+                )
+                return None
 
             if "data" in response and "flexPlannedDispatches" in response["data"]:
                 dispatches = response["data"]["flexPlannedDispatches"]
@@ -2154,16 +2281,16 @@ class OctopusGermany:
                     device_id,
                 )
                 return dispatches
-            else:
-                _LOGGER.error("Invalid response structure for flex planned dispatches")
-                return None
+            _LOGGER.error("Invalid response structure for flex planned dispatches")
+            return None
 
         except Exception as e:
             _LOGGER.error("Error fetching flex planned dispatches: %s", e)
             return None
 
     def _format_time_to_hh_mm(self, time_str: str) -> str:
-        """Format time to HH:MM format required by the API.
+        """
+        Format time to HH:MM format required by the API.
 
         Handles various input formats like "HH:MM:SS", "HH:MM",
         or time selector values from Home Assistant.
@@ -2176,6 +2303,7 @@ class OctopusGermany:
 
         Raises:
             ValueError: If time_str cannot be parsed or contains invalid hours/minutes
+
         """
         if not time_str:
             raise ValueError("Empty time value provided")
@@ -2206,37 +2334,36 @@ class OctopusGermany:
 
                 return f"{hours:02d}:{minutes:02d}"
 
-            else:
-                # For other formats, try using datetime
-                from datetime import datetime
+            # For other formats, try using datetime
+            from datetime import datetime
 
-                # Try different common formats
-                formats = ["%H:%M:%S", "%H:%M", "%I:%M %p", "%I:%M:%S %p"]
+            # Try different common formats
+            formats = ["%H:%M:%S", "%H:%M", "%I:%M %p", "%I:%M:%S %p"]
 
-                for fmt in formats:
-                    try:
-                        dt = datetime.strptime(time_str, fmt)
-                        return f"{dt.hour:02d}:{dt.minute:02d}"
-                    except ValueError:
-                        continue
+            for fmt in formats:
+                try:
+                    dt = datetime.strptime(time_str, fmt)
+                    return f"{dt.hour:02d}:{dt.minute:02d}"
+                except ValueError:
+                    continue
 
-                # If we got here, none of the formats worked
-                raise ValueError(
-                    f"Could not parse time: '{time_str}'. Please use HH:MM format (e.g. '05:00')"
-                )
+            # If we got here, none of the formats worked
+            raise ValueError(
+                f"Could not parse time: '{time_str}'. Please use HH:MM format (e.g. '05:00')"
+            )
 
         except Exception as e:
             if isinstance(e, ValueError):
                 # Pass through ValueError with informative messages
                 raise
-            else:
-                # Wrap other exceptions
-                raise ValueError(f"Error processing time '{time_str}': {str(e)}")
+            # Wrap other exceptions
+            raise ValueError(f"Error processing time '{time_str}': {e!s}")
 
     # Remove redundant _fetch_account_and_devices method since fetch_all_data does the same thing
     # The method below is kept only for backward compatibility
     async def _fetch_account_and_devices(self, account_number: str):
-        """Fetch account and devices data using the comprehensive query.
+        """
+        Fetch account and devices data using the comprehensive query.
 
         This method is kept for backward compatibility but now uses the same
         comprehensive query as fetch_all_data.
@@ -2259,7 +2386,8 @@ class OctopusGermany:
         }
 
     async def fetch_gas_meter_reading(self, account_number: str, meter_id: str):
-        """Fetch the latest gas meter reading for a specific meter.
+        """
+        Fetch the latest gas meter reading for a specific meter.
 
         Args:
             account_number: The account number
@@ -2267,6 +2395,7 @@ class OctopusGermany:
 
         Returns:
             Dict containing the latest reading data or None if error
+
         """
         if not await self.ensure_token():
             _LOGGER.error("Failed to ensure valid token for fetch_gas_meter_reading")
@@ -2314,21 +2443,18 @@ class OctopusGermany:
                         latest_reading.get("origin"),
                     )
                     return latest_reading
-                else:
-                    _LOGGER.warning(
-                        "No gas meter readings found for meter %s", meter_id
-                    )
-                    return None
-            else:
-                _LOGGER.error("Invalid response structure for gas meter reading")
+                _LOGGER.warning("No gas meter readings found for meter %s", meter_id)
                 return None
+            _LOGGER.error("Invalid response structure for gas meter reading")
+            return None
 
         except Exception as e:
             _LOGGER.error("Error fetching gas meter reading: %s", e)
             return None
 
     async def fetch_electricity_meter_reading(self, account_number: str, meter_id: str):
-        """Fetch the latest electricity meter reading for a specific meter.
+        """
+        Fetch the latest electricity meter reading for a specific meter.
 
         Args:
             account_number: The account number
@@ -2336,6 +2462,7 @@ class OctopusGermany:
 
         Returns:
             Dict containing the latest reading data or None if error
+
         """
         if not await self.ensure_token():
             _LOGGER.error(
@@ -2387,16 +2514,12 @@ class OctopusGermany:
                         latest_reading.get("origin"),
                     )
                     return latest_reading
-                else:
-                    _LOGGER.warning(
-                        "No electricity meter readings found for meter %s", meter_id
-                    )
-                    return None
-            else:
-                _LOGGER.error(
-                    "Invalid response structure for electricity meter reading"
+                _LOGGER.warning(
+                    "No electricity meter readings found for meter %s", meter_id
                 )
                 return None
+            _LOGGER.error("Invalid response structure for electricity meter reading")
+            return None
 
         except Exception as e:
             _LOGGER.error("Error fetching electricity meter reading: %s", e)
@@ -2405,7 +2528,8 @@ class OctopusGermany:
     async def fetch_electricity_smart_meter_readings(
         self, account_number: str, property_id: str, date: str
     ):
-        """Fetch electricity smart meter readings for a specific date.
+        """
+        Fetch electricity smart meter readings for a specific date.
 
         Args:
             account_number: The account number
@@ -2414,6 +2538,7 @@ class OctopusGermany:
 
         Returns:
             Dict containing the hourly smart meter readings or None if error
+
         """
         if not await self.ensure_token():
             _LOGGER.error(
@@ -2466,7 +2591,7 @@ class OctopusGermany:
                 if measurements and "edges" in measurements and measurements["edges"]:
                     readings = []
                     for edge in measurements["edges"]:
-                        if "node" in edge and edge["node"]:
+                        if edge.get("node"):
                             reading = edge["node"]
                             readings.append(
                                 {
@@ -2484,19 +2609,17 @@ class OctopusGermany:
                         date,
                     )
                     return readings
-                else:
-                    _LOGGER.debug(
-                        "No smart meter readings for property %s on %s "
-                        "(data may not be available yet)",
-                        property_id,
-                        date,
-                    )
-                    return []
-            else:
-                _LOGGER.error(
-                    "Invalid response structure for electricity smart meter readings"
+                _LOGGER.debug(
+                    "No smart meter readings for property %s on %s "
+                    "(data may not be available yet)",
+                    property_id,
+                    date,
                 )
-                return None
+                return []
+            _LOGGER.error(
+                "Invalid response structure for electricity smart meter readings"
+            )
+            return None
 
         except Exception as e:
             _LOGGER.error("Error fetching electricity smart meter readings: %s", e)
@@ -2505,7 +2628,8 @@ class OctopusGermany:
     async def fetch_electricity_15min_readings(
         self, account_number: str, property_id: str, date: str
     ):
-        """Fetch 15-minute interval smart meter readings for a specific date.
+        """
+        Fetch 15-minute interval smart meter readings for a specific date.
 
         Args:
             account_number: The account number
@@ -2514,6 +2638,7 @@ class OctopusGermany:
 
         Returns:
             List of 15-min readings with start_time, end_time, value, unit or None if error
+
         """
         if not await self.ensure_token():
             _LOGGER.error("Failed to ensure valid token for 15min readings")
@@ -2551,7 +2676,7 @@ class OctopusGermany:
             if measurements and "edges" in measurements and measurements["edges"]:
                 readings = []
                 for edge in measurements["edges"]:
-                    if "node" in edge and edge["node"]:
+                    if edge.get("node"):
                         reading = edge["node"]
                         readings.append(
                             {
@@ -2568,8 +2693,7 @@ class OctopusGermany:
                     date,
                 )
                 return readings
-            else:
-                return []
+            return []
 
         except Exception as e:
             _LOGGER.error("Error fetching 15min readings: %s", e)
@@ -2578,7 +2702,8 @@ class OctopusGermany:
     async def fetch_electricity_smart_meter_readings_v2(
         self, account_number: str, property_id: str, date: str
     ):
-        """Fetch electricity smart meter readings using the improved V2 query.
+        """
+        Fetch electricity smart meter readings using the improved V2 query.
 
         Args:
             account_number: The account number
@@ -2587,6 +2712,7 @@ class OctopusGermany:
 
         Returns:
             List of hourly readings with start_time, end_time, value, unit
+
         """
         if not await self.ensure_token():
             _LOGGER.error("Failed to ensure valid token for smart meter readings V2")
@@ -2611,7 +2737,7 @@ class OctopusGermany:
                 query=ELECTRICITY_SMART_METER_READINGS_QUERY_V2, variables=variables
             )
 
-            if "data" in response and response["data"]:
+            if response.get("data"):
                 account_data = response["data"].get("account")
                 if (
                     account_data
@@ -2623,14 +2749,17 @@ class OctopusGermany:
                     # Log meter information from electricityMalos
                     if "electricityMalos" in property_data:
                         for malo in property_data["electricityMalos"]:
-                            meter = malo.get("meter", {})
-                            _LOGGER.info(
-                                "Meter info: id=%s, number=%s, type=%s, shouldReceiveSmartMeterData=%s",
-                                meter.get("id"),
-                                meter.get("number"),
-                                meter.get("meterType"),
-                                meter.get("shouldReceiveSmartMeterData"),
-                            )
+                            meters = malo.get("meters") or []
+                            if not meters and malo.get("meter"):
+                                meters = [malo["meter"]]
+                            for meter in meters:
+                                _LOGGER.info(
+                                    "Meter info: id=%s, number=%s, type=%s, shouldReceiveSmartMeterData=%s",
+                                    meter.get("id"),
+                                    meter.get("number"),
+                                    meter.get("meterType"),
+                                    meter.get("shouldReceiveSmartMeterData"),
+                                )
 
                     # Process measurements
                     measurements = property_data.get("measurements", {})
@@ -2654,30 +2783,24 @@ class OctopusGermany:
                                 len(readings),
                             )
                             return readings
-                        else:
-                            _LOGGER.warning(
-                                "No smart meter readings found in measurements for property %s on %s",
-                                property_id,
-                                date,
-                            )
-                            return []
-                    else:
                         _LOGGER.warning(
-                            "No measurements data found for property %s on %s",
+                            "No smart meter readings found in measurements for property %s on %s",
                             property_id,
                             date,
                         )
                         return []
-                else:
-                    _LOGGER.error(
-                        "Invalid response structure for electricity smart meter readings V2"
+                    _LOGGER.warning(
+                        "No measurements data found for property %s on %s",
+                        property_id,
+                        date,
                     )
-                    return None
-            else:
+                    return []
                 _LOGGER.error(
-                    "No data in response for electricity smart meter readings V2"
+                    "Invalid response structure for electricity smart meter readings V2"
                 )
                 return None
+            _LOGGER.error("No data in response for electricity smart meter readings V2")
+            return None
 
         except Exception as e:
             _LOGGER.error("Error fetching electricity smart meter readings V2: %s", e)
@@ -2686,7 +2809,8 @@ class OctopusGermany:
     async def test_historical_smart_meter_data_range(
         self, account_number: str, property_id: str
     ):
-        """Test how far back smart meter data is available.
+        """
+        Test how far back smart meter data is available.
 
         This function tests various historical dates to understand the data availability range.
         """
@@ -2694,7 +2818,7 @@ class OctopusGermany:
             _LOGGER.error("Failed to ensure valid token for historical data range test")
             return None
 
-        from datetime import date, timedelta
+        from datetime import date
 
         today = date.today()
 
@@ -2783,7 +2907,8 @@ class OctopusGermany:
         return available_dates
 
     async def explore_property_schema(self, account_number: str, property_id: str):
-        """Explore the property schema to understand available fields and data structures.
+        """
+        Explore the property schema to understand available fields and data structures.
 
         This helps debug what data is actually available for smart meter readings.
         """
@@ -2819,7 +2944,8 @@ class OctopusGermany:
             return None
 
     async def explore_graphql_schema(self):
-        """Explore the GraphQL schema to understand available types and fields.
+        """
+        Explore the GraphQL schema to understand available types and fields.
 
         This helps understand what data structures are available in the API.
         """

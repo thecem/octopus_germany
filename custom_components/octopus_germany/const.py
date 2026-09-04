@@ -4,12 +4,15 @@ DOMAIN = "octopus_germany"
 
 CONF_EMAIL = "email"
 CONF_PASSWORD = "password"
+CONF_UPDATE_INTERVAL = "update_interval"
+CONF_INTELLIGENT_UPDATE_INTERVAL = "intelligent_update_interval"
 
-# Debug interval settings
-UPDATE_INTERVAL = 1  # Update interval in minutes (set to 1 for faster testing)
+# Default polling intervals in minutes
+UPDATE_INTERVAL = 30
+INTELLIGENT_UPDATE_INTERVAL = 3
 
 # Schema exploration (run once for debugging)
-EXPLORE_SCHEMA_ONCE = True  # Set to True to run schema exploration once
+EXPLORE_SCHEMA_ONCE = False  # Enable only while debugging the OEG schema
 
 # Token management
 TOKEN_REFRESH_MARGIN = (

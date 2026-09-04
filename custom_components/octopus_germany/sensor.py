@@ -1,37 +1,99 @@
 """
-This module provides integration with Octopus Germany for Home Assistant.
+Provide sensors for the Octopus Germany Home Assistant integration.
 
-It defines the coordinator and sensor entities to fetch and display
-electricity price information.
+The entities fetch and display electricity price and account information.
 """
 
+from __future__ import annotations
+
 import logging
-from typing import Any, Dict, Optional
-from datetime import datetime, time, timezone
+from datetime import UTC, datetime, time
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import (
+    RestoreEntity,
+    SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
-    SensorDeviceClass,
-    RestoreEntity,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     PERCENTAGE,
-    STATE_UNKNOWN,
     STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
     UnitOfEnergy,
     UnitOfPower,
 )
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceEntryType
+from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+from .models import has_intelligent_capability
+from .tariff import (
+    format_uk_rates,
+    get_active_timeslot_rate,
+    get_current_forecast_rate,
+    is_time_between,
+    parse_tariff_time,
+)
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _create_device_entities(
+    account_number: str, account_data: dict[str, Any], coordinator: Any
+) -> list[SensorEntity]:
+    """Create device and charging-session entities for an eligible account."""
+    if not has_intelligent_capability(account_data):
+        return []
+
+    devices = account_data.get("devices", [])
+    entities: list[SensorEntity] = []
+    for device in devices:
+        device_id = device.get("id")
+        if not device_id:
+            continue
+        entities.append(
+            OctopusDeviceStatusSensor(account_number, coordinator, device_id)
+        )
+        if device.get("deviceType") == "ELECTRIC_VEHICLES":
+            entities.extend(
+                (
+                    OctopusVehicleLastSessionSocSensor(
+                        account_number, coordinator, device_id
+                    ),
+                    OctopusVehicleBatterySizeSensor(
+                        account_number, coordinator, device_id
+                    ),
+                    OctopusVehicleActivePowerSensor(
+                        account_number, coordinator, device_id
+                    ),
+                )
+            )
+
+    device_sessions: dict[str, list[dict[str, Any]]] = {}
+    for session in account_data.get("charging_sessions") or []:
+        device_name = session.get("device_name")
+        if device_name:
+            device_sessions.setdefault(device_name, []).append(session)
+
+    entities.extend(
+        OctopusSmartChargingSessionsSensor(
+            account_number,
+            coordinator,
+            device.get("name", f"Device_{device.get('id')}"),
+            device.get("id"),
+            device_sessions.get(device.get("name", f"Device_{device.get('id')}"), []),
+        )
+        for device in devices
+    )
+    return entities
 
 
 def get_electricity_meter_device_info(
@@ -146,7 +208,6 @@ async def async_setup_entry(
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
     account_number = data["account_number"]
-    client = data["api"]  # The API client is stored as "api" in __init__.py
 
     # Wait for coordinator refresh if needed
     if coordinator.data is None:
@@ -256,62 +317,16 @@ async def async_setup_entry(
                         OctopusGasContractExpiryDaysSensor(acc_num, coordinator)
                     )
 
-            # Create device status sensors for each device
-            devices = account_data.get("devices", [])
-            if devices:
+            device_entities = _create_device_entities(
+                acc_num, account_data, coordinator
+            )
+            if device_entities:
                 _LOGGER.debug(
-                    "Creating device status sensors for account %s with %d devices",
+                    "Creating %d device entities for account %s",
+                    len(device_entities),
                     acc_num,
-                    len(devices),
                 )
-                for device in devices:
-                    device_id = device.get("id")
-                    if device_id:
-                        entities.append(
-                            OctopusDeviceStatusSensor(acc_num, coordinator, device_id)
-                        )
-
-                        # Create extra vehicle data sensors for each electric vehicle.
-                        if device.get("deviceType") == "ELECTRIC_VEHICLES":
-                            entities.append(
-                                OctopusVehicleLastSessionSocSensor(
-                                    acc_num, coordinator, device_id
-                                )
-                            )
-
-                            entities.append(
-                                OctopusVehicleBatterySizeSensor(
-                                    acc_num, coordinator, device_id
-                                )
-                            )
-
-                            entities.append(
-                                OctopusVehicleActivePowerSensor(
-                                    acc_num, coordinator, device_id
-                                )
-                            )
-
-            # Erzeuge für jedes Gerät eine eigene Smart Charging Sessions Entität
-            charging_sessions = account_data.get("charging_sessions")
-            device_sessions = {}
-            if charging_sessions:
-                for session in charging_sessions:
-                    device_name = session.get("device_name")
-                    if not device_name:
-                        continue
-                    if device_name not in device_sessions:
-                        device_sessions[device_name] = []
-                    device_sessions[device_name].append(session)
-            # Für jedes bekannte device eine Entität anlegen
-            for device in devices:
-                device_name = device.get("name", f"Device_{device.get('id')}")
-                device_id = device.get("id")
-                sessions = device_sessions.get(device_name, [])
-                entities.append(
-                    OctopusSmartChargingSessionsSensor(
-                        acc_num, coordinator, device_name, device_id, sessions
-                    )
-                )
+                entities.extend(device_entities)
 
             # Create heat balance sensor if heat ledger exists and has non-zero balance
             if (
@@ -322,23 +337,20 @@ async def async_setup_entry(
 
             # Create sensors for other ledgers
             other_ledgers = account_data.get("other_ledgers", {})
-            for ledger_type, balance in other_ledgers.items():
-                entities.append(
-                    OctopusLedgerBalanceSensor(acc_num, coordinator, ledger_type)
-                )
+            entities.extend(
+                OctopusLedgerBalanceSensor(acc_num, coordinator, ledger_type)
+                for ledger_type in other_ledgers
+            )
+        elif coordinator.data is None:
+            _LOGGER.error("No coordinator data available")
+        elif acc_num not in coordinator.data:
+            _LOGGER.warning("Account %s missing from coordinator data", acc_num)
+        elif "products" not in coordinator.data[acc_num]:
+            _LOGGER.warning(
+                "No 'products' key in coordinator data for account %s", acc_num
+            )
         else:
-            if coordinator.data is None:
-                _LOGGER.error("No coordinator data available")
-            elif acc_num not in coordinator.data:
-                _LOGGER.warning("Account %s missing from coordinator data", acc_num)
-            elif "products" not in coordinator.data[acc_num]:
-                _LOGGER.warning(
-                    "No 'products' key in coordinator data for account %s", acc_num
-                )
-            else:
-                _LOGGER.warning(
-                    "Unknown issue detecting products for account %s", acc_num
-                )
+            _LOGGER.warning("Unknown issue detecting products for account %s", acc_num)
 
     # Only add entities if we have any
     if entities:
@@ -373,30 +385,13 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
 
     def _parse_time(self, time_str: str) -> time:
         """Parse time string in HH:MM:SS format to time object."""
-        try:
-            hour, minute, second = map(int, time_str.split(":"))
-            return time(hour=hour, minute=minute, second=second)
-        except ValueError, AttributeError:
-            _LOGGER.error(f"Invalid time format: {time_str}")
-            return None
+        return parse_tariff_time(time_str)
 
     def _is_time_between(
         self, current_time: time, time_from: time, time_to: time
     ) -> bool:
         """Check if current_time is between time_from and time_to."""
-        # Handle special case where time_to is 00:00:00 (midnight)
-        if time_to.hour == 0 and time_to.minute == 0 and time_to.second == 0:
-            # If time_from is also midnight, the slot is active all day
-            if time_from.hour == 0 and time_from.minute == 0 and time_from.second == 0:
-                return True
-            # Otherwise, the slot is active from time_from until midnight, or from midnight until time_from
-            return current_time >= time_from or current_time < time_to
-        # Normal case: check if time is between start and end
-        elif time_from <= time_to:
-            return time_from <= current_time < time_to
-        # Handle case where range crosses midnight
-        else:
-            return time_from <= current_time or current_time < time_to
+        return is_time_between(current_time, time_from, time_to)
 
     def _get_active_timeslot_rate(self, product):
         """Get the currently active timeslot rate for a time-of-use product."""
@@ -443,7 +438,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
         if not unit_rate_forecast:
             return None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Find the forecast entry that covers the current time
         for forecast_entry in unit_rate_forecast:
@@ -549,7 +544,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
 
             if current_product.get("isTimeOfUse", False):
                 # For dynamic TimeOfUse tariffs, use unitRateForecast data
-                forecast_rate = self._get_current_forecast_rate(current_product)
+                forecast_rate = get_current_forecast_rate(current_product)
                 if forecast_rate is not None:
                     _LOGGER.debug(
                         "Dynamic forecast price: %.4f EUR/kWh for product %s",
@@ -560,7 +555,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
 
                 # Fallback to timeslot rate if no forecast available
                 if product_type == "TimeOfUse":
-                    active_rate = self._get_active_timeslot_rate(current_product)
+                    active_rate = get_active_timeslot_rate(current_product)
                     if active_rate is not None:
                         _LOGGER.debug(
                             "Fallback timeslot price: %.4f EUR/kWh for product %s",
@@ -755,7 +750,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
             # Add dual format rate data for compatibility
             if current_product.get("isTimeOfUse", False):
                 # UK format for octopus-energy-rates-card compatibility
-                uk_rates = self._format_uk_rates(current_product)
+                uk_rates = format_uk_rates(current_product)
                 product_attributes["rates"] = uk_rates
                 product_attributes["rates_count"] = len(uk_rates)
 
@@ -841,7 +836,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
         self.async_write_ha_state()
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes for the sensor."""
         return self._attributes
 
@@ -1198,7 +1193,7 @@ class OctopusGasTariffSensor(CoordinatorEntity, SensorEntity):
         self.async_write_ha_state()
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes for the sensor."""
         return self._attributes
 
@@ -1382,7 +1377,7 @@ class OctopusGasMeterSensor(CoordinatorEntity, SensorEntity):
         self.async_write_ha_state()
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes for the sensor."""
         return self._attributes
 
@@ -1516,7 +1511,7 @@ class OctopusGasLatestReadingSensor(CoordinatorEntity, SensorEntity):
         self.async_write_ha_state()
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes for the sensor."""
         return self._attributes
 
@@ -1657,7 +1652,7 @@ class OctopusElectricityLatestReadingSensor(CoordinatorEntity, SensorEntity):
         self.async_write_ha_state()
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes for the sensor."""
         return self._attributes
 
@@ -1759,10 +1754,9 @@ class OctopusGasSmartReadingSensor(CoordinatorEntity, SensorEntity):
 
         if smart_reading is None:
             return "Unknown"
-        elif smart_reading:
+        if smart_reading:
             return "Enabled"
-        else:
-            return "Disabled"
+        return "Disabled"
 
     @property
     def available(self) -> bool:
@@ -2087,7 +2081,7 @@ class OctopusDeviceStatusSensor(CoordinatorEntity, SensorEntity):
         self.async_write_ha_state()
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes for the sensor."""
         return self._attributes
 
@@ -2255,7 +2249,7 @@ class OctopusVehicleDataSensor(CoordinatorEntity, SensorEntity):
         )
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional state attributes for the sensor."""
         latest_session = self._get_latest_session() or {}
         return {
@@ -2285,7 +2279,8 @@ class OctopusVehicleLastSessionSocSensor(OctopusVehicleDataSensor):
     _metric_unit = PERCENTAGE
 
     def _get_metric_value(self) -> float | None:
-        """Return latest SoC for this vehicle.
+        """
+        Return latest SoC for this vehicle.
 
         Prefer live SoC from device status and fall back to last charging session.
         """
@@ -2571,7 +2566,7 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
         if self._cached_attributes:
             return self._cached_attributes
         # Fallback: recompute attributes (should rarely happen)
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         current_month = datetime.now().strftime("%Y-%m")
         smart_sessions_sorted = sorted(
@@ -2579,7 +2574,7 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
             key=lambda s: s.get("start") or "",
             reverse=True,
         )
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         min_date = now - timedelta(days=730)
         sessions_list = []
         sessions_by_month = {}
@@ -2632,44 +2627,6 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
                 sessions_by_month[month_key].append(session)
             total_energy += energy_kwh
         # Determine the full range of months from the earliest session to now
-        if sessions_list:
-            from datetime import datetime
-
-            # Find the earliest session start
-            session_months = [
-                (
-                    datetime.fromisoformat(s["start"].replace("Z", "+00:00")).strftime(
-                        "%Y-%m"
-                    )
-                    if s["start"]
-                    else None
-                )
-                for s in sessions_list
-            ]
-            session_months = [m for m in session_months if m]
-            if session_months:
-                first_month = min(session_months)
-                last_month = max(session_months)
-                from dateutil.relativedelta import relativedelta
-
-                months = []
-                current = datetime.strptime(first_month, "%Y-%m")
-                end = datetime.strptime(last_month, "%Y-%m")
-                while current <= end:
-                    months.append(current.strftime("%Y-%m"))
-                    current += relativedelta(months=1)
-                qualified_months = [
-                    m
-                    for m in months
-                    if m in sessions_by_month and len(sessions_by_month[m]) >= 5
-                ]
-                qualified_month_list = months
-            else:
-                qualified_month_list = []
-                qualified_months = []
-        else:
-            qualified_month_list = []
-            qualified_months = []
         current_month_count = len(sessions_by_month.get(current_month, []))
         current_month_qualified = current_month_count >= 5
         attributes = {
@@ -2784,9 +2741,7 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
         # Sessions der letzten 2 Jahre (24 Monate)
         from datetime import timedelta
 
-        from datetime import timezone
-
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         min_date = now - timedelta(days=730)
         sessions_list = []
         for session in smart_sessions_sorted:

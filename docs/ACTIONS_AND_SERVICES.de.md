@@ -57,6 +57,16 @@ Wichtige Einschraenkung:
 
 ## Services
 
+### `octopus_germany.refresh_intelligent_data`
+
+Fordert fuer alle eingerichteten Konten mit Intelligent-Tarif sofort eine Aktualisierung von Geraete- und Dispatch-Daten an. Konten ohne diese Faehigkeit werden ignoriert.
+
+Beispiel:
+
+```yaml
+service: octopus_germany.refresh_intelligent_data
+```
+
 ### `octopus_germany.set_device_preferences`
 
 Setzt Ziel-SoC und Zielzeit fuer ein EV/Charge Point.

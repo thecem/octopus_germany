@@ -1,21 +1,48 @@
 """Binary sensors for the Octopus Germany integration."""
 
-from datetime import datetime
 import logging
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.util.dt import as_local, as_utc, parse_datetime, utcnow
 
 from .const import DOMAIN
+from .models import has_intelligent_capability
 from .sensor import get_account_device_info, get_device_specific_device_info
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _create_intelligent_binary_entities(
+    account_number: str, account_data: dict[str, Any], coordinator: Any
+) -> list[BinarySensorEntity]:
+    """Create Intelligent binary entities for one eligible account."""
+    if not has_intelligent_capability(account_data):
+        return []
+
+    entities: list[BinarySensorEntity] = []
+    for device in account_data.get("devices", []):
+        device_id = device.get("id")
+        if not device_id:
+            continue
+        device_name = device.get("name", f"Device_{device_id}")
+        entities.extend(
+            (
+                OctopusIntelligentDispatchingBinarySensor(
+                    account_number, coordinator, device_id, device_name
+                ),
+                OctopusPluggedInBinarySensor(
+                    account_number, coordinator, device_id, device_name
+                ),
+            )
+        )
+    return entities
 
 
 async def async_setup_entry(
@@ -41,30 +68,21 @@ async def async_setup_entry(
 
     # Create device-specific binary sensors for Intelligent Dispatching
     for acc_num in account_numbers:
-        if (
-            coordinator.data
-            and acc_num in coordinator.data
-            and coordinator.data[acc_num].get("devices")
-        ):
-            devices = coordinator.data[acc_num]["devices"]
-            for device in devices:
-                device_id = device.get("id")
-                device_name = device.get("name", f"Device_{device_id}")
-                if not device_id:
-                    continue
-                _LOGGER.debug(
-                    f"[DISPATCH SENSOR INIT] Creating sensor for account={acc_num}, device_id={device_id}, device_name={device_name}"
-                )
-                entities.append(
-                    OctopusIntelligentDispatchingBinarySensor(
-                        acc_num, coordinator, device_id, device_name
-                    )
-                )
-                entities.append(
-                    OctopusPluggedInBinarySensor(
-                        acc_num, coordinator, device_id, device_name
-                    )
-                )
+        if not coordinator.data or acc_num not in coordinator.data:
+            _LOGGER.debug(
+                f"[DISPATCH SENSOR INIT] No devices data for account={acc_num}"
+            )
+            continue
+        account_entities = _create_intelligent_binary_entities(
+            acc_num, coordinator.data[acc_num], coordinator
+        )
+        if account_entities:
+            _LOGGER.debug(
+                "Creating %d Intelligent binary sensors for account %s",
+                len(account_entities),
+                acc_num,
+            )
+            entities.extend(account_entities)
         else:
             _LOGGER.debug(
                 f"[DISPATCH SENSOR INIT] No devices data for account={acc_num}"
@@ -159,11 +177,10 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
                 f"[DISPATCH SENSOR] Sensor ON for device_id={self._device_id} at {as_local(utcnow()).strftime('%Y-%m-%d %H:%M:%S %Z')} (dispatch: {active_dispatch})"
             )
             return True
-        else:
-            _LOGGER.debug(
-                f"[DISPATCH SENSOR] Sensor OFF for device_id={self._device_id} at {as_local(utcnow()).strftime('%Y-%m-%d %H:%M:%S %Z')}"
-            )
-            return False
+        _LOGGER.debug(
+            f"[DISPATCH SENSOR] Sensor OFF for device_id={self._device_id} at {as_local(utcnow()).strftime('%Y-%m-%d %H:%M:%S %Z')}"
+        )
+        return False
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -551,13 +568,12 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information for the Octopus account (service device)."""
-        from .sensor import get_account_device_info
-
         return get_account_device_info(self._account_number)
 
 
 class OctopusPluggedInBinarySensor(CoordinatorEntity, BinarySensorEntity):
-    """Binary sensor for EV plugged-in state derived from SmartFlex device status.
+    """
+    Binary sensor for EV plugged-in state derived from SmartFlex device status.
 
     Uses SmartFlexDeviceState (currentState) enum values from the API.
     Plugged-in states (device at home and capable of / undergoing smart control):
@@ -634,7 +650,8 @@ class OctopusPluggedInBinarySensor(CoordinatorEntity, BinarySensorEntity):
     def _derive_plugged_state(
         self, current_state: str | None, is_suspended: bool | None
     ) -> bool | None:
-        """Derive plugged boolean from isSuspended + currentState.
+        """
+        Derive plugged boolean from isSuspended + currentState.
 
         - isSuspended=True  → None  (unknown: smart control off, plug state unreliable)
         - isSuspended=False + SMART_CONTROL_NOT_AVAILABLE → False (unplugged/away)
