@@ -2,6 +2,15 @@
 
 Ziel ist eine ressourcenschonende, tarifabhaengige Home-Assistant-Integration fuer `octopus_germany`. Die bestehende Funktionalitaet und alte Entity-Namen sollen erhalten bleiben, sofern keine bewusste Migration vereinbart wird.
 
+## GitHub-Issue-Status
+
+- [x] #92: `accountNumber` beim Einreichen von Zaehlerstaenden an Mutation und Service durchreichen.
+- [x] #94: Kein kuenstliches `TEST_PRODUCT` mehr erzeugen.
+- [x] #95: Polling-Defaults, konfigurierbare Intervalle und reduzierte Smart-Meter-Abfragen umsetzen.
+- [x] #96: Terminale Account-Status filtern und aktiven Strom-Account bevorzugen.
+- [x] #97: Smart-Meter-Serverfehler von leeren Ergebnissen unterscheiden und drei Stunden Backoff verwenden.
+- [ ] PR #90: Upstream-Pull-Request bleibt offen, bis der lokale Stand als Commit/PR veroeffentlicht und dort geprueft wurde.
+
 ## Leitlinien
 
 - Bestehende Entity- und Sensor-Namen kompatibel halten.
@@ -136,6 +145,7 @@ custom_components/octopus_germany/
 - [x] README-Dateien im Repository und in der Integration synchron aktualisieren.
 - [x] Release Notes und Manifest-Version nur zusammen mit einer tatsaechlichen Funktionaenderung aktualisieren.
 - [x] Changelog-Eintrag fuer neue Services und Polling-Optionen verfassen.
+- [x] Offene GitHub-Issues #92, #94, #95, #96 und #97 gegen den lokalen Stand pruefen und die behobenen Punkte dokumentieren.
 
 ## Verifikation pro Umsetzungsschritt
 

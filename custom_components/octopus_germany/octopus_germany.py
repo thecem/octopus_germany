@@ -8,7 +8,7 @@ various data related to electricity usage and tariffs.
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import jwt
@@ -23,6 +23,12 @@ _LOGGER = logging.getLogger(__name__)
 
 GRAPH_QL_ENDPOINT = "https://api.oeg-kraken.energy/v1/graphql/"
 ELECTRICITY_LEDGER = "ELECTRICITY_LEDGER"
+SMART_METER_ERROR_BACKOFF = timedelta(hours=3)
+
+
+class SmartMeterFetchError(RuntimeError):
+    """Raised when the smart-meter endpoint fails instead of returning no data."""
+
 
 # Global dictionary to store token managers for each account (email)
 # This prevents redundant logins while supporting multiple accounts
@@ -818,6 +824,7 @@ query {
   viewer {
     accounts {
       number
+            status
       ledgers {
         balance
         ledgerType
@@ -987,6 +994,7 @@ class OctopusGermany:
 
         self._token_manager = _TOKEN_MANAGERS[email]
         self._capabilities_by_account: dict[str, TariffCapabilities] = {}
+        self._smart_meter_retry_until: datetime | None = None
 
         # Set up the token manager refresh callback
         self._token_manager.set_refresh_callback(self.login)
@@ -1991,6 +1999,7 @@ class OctopusGermany:
         meter_id: str,
         reading_date: str,
         readings: list[dict[str, Any]],
+        account_number: str,
     ) -> dict[str, Any] | None:
         """
         Submit meter readings for a gas or electricity meter.
@@ -2000,6 +2009,7 @@ class OctopusGermany:
             meter_id: The meter ID to submit readings for.
             reading_date: Reading date in YYYY-MM-DD format.
             readings: One or more register readings.
+            account_number: The account that owns the meter.
 
         Returns:
             The API response payload or None if the submission failed.
@@ -2007,6 +2017,10 @@ class OctopusGermany:
         """
         if not await self.ensure_token():
             _LOGGER.error("Failed to ensure valid token for submit_meter_readings")
+            return None
+
+        if not account_number:
+            _LOGGER.error("Account number is required for submit_meter_readings")
             return None
 
         normalized_meter_type = meter_type.strip().lower()
@@ -2067,6 +2081,7 @@ class OctopusGermany:
 
         variables = {
             "input": {
+                "accountNumber": account_number,
                 "meterId": meter_id,
                 "readingDate": reading_date,
                 "readings": normalized_readings,
@@ -2099,7 +2114,11 @@ class OctopusGermany:
                     success = await self.login()
                     if success:
                         return await self.submit_meter_readings(
-                            meter_type, meter_id, reading_date, readings
+                            meter_type,
+                            meter_id,
+                            reading_date,
+                            readings,
+                            account_number,
                         )
 
                 _LOGGER.error("API returned errors: %s", response["errors"])
@@ -2546,6 +2565,14 @@ class OctopusGermany:
             )
             return None
 
+        now = datetime.now(UTC)
+        if self._smart_meter_retry_until and now < self._smart_meter_retry_until:
+            _LOGGER.debug(
+                "Skipping smart-meter request until %s after a previous server error",
+                self._smart_meter_retry_until.isoformat(),
+            )
+            raise SmartMeterFetchError("Smart-meter request is in backoff")
+
         variables = {
             "accountNumber": account_number,
             "propertyId": property_id,
@@ -2566,17 +2593,23 @@ class OctopusGermany:
             )
 
             if response is None:
+                self._smart_meter_retry_until = now + SMART_METER_ERROR_BACKOFF
                 _LOGGER.error(
                     "API returned None response for electricity smart meter readings"
                 )
-                return None
+                raise SmartMeterFetchError("Smart-meter request returned no response")
 
             if "errors" in response:
+                self._smart_meter_retry_until = now + SMART_METER_ERROR_BACKOFF
                 _LOGGER.error(
                     "GraphQL errors in electricity smart meter readings response: %s",
                     response["errors"],
                 )
-                return None
+                raise SmartMeterFetchError("Smart-meter GraphQL request failed")
+
+            if self._smart_meter_retry_until is not None:
+                _LOGGER.info("Smart-meter endpoint recovered")
+                self._smart_meter_retry_until = None
 
             if (
                 "data" in response
@@ -2621,9 +2654,14 @@ class OctopusGermany:
             )
             return None
 
+        except SmartMeterFetchError:
+            raise
         except Exception as e:
+            self._smart_meter_retry_until = now + SMART_METER_ERROR_BACKOFF
             _LOGGER.error("Error fetching electricity smart meter readings: %s", e)
-            return None
+            raise SmartMeterFetchError(
+                "Smart-meter HTTP or response decoding failed"
+            ) from e
 
     async def fetch_electricity_15min_readings(
         self, account_number: str, property_id: str, date: str

@@ -2,7 +2,7 @@
 
 import asyncio
 import unittest
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock
 
 import voluptuous as vol
@@ -39,12 +39,16 @@ from custom_components.octopus_germany.data_processing import (
 from custom_components.octopus_germany.models import (
     TariffCapabilities,
     detect_tariff_capabilities,
+    filter_active_accounts,
     has_intelligent_capability,
+    select_primary_account,
 )
 from custom_components.octopus_germany.octopus_germany import (
+    ACCOUNT_DISCOVERY_QUERY,
     COMPREHENSIVE_QUERY,
     INTELLIGENT_DATA_QUERY,
     OctopusGermany,
+    SmartMeterFetchError,
 )
 from custom_components.octopus_germany.sensor import _create_device_entities
 from custom_components.octopus_germany.services import (
@@ -104,6 +108,34 @@ class TariffCapabilitiesTest(unittest.TestCase):
                 {"tariff_capabilities": {"has_intelligent_dispatches": True}}
             )
         )
+
+    def test_account_filter_excludes_terminal_accounts_and_prefers_electricity(
+        self,
+    ) -> None:
+        accounts = [
+            {
+                "number": "gas",
+                "status": "ACTIVE",
+                "ledgers": [{"ledgerType": "GAS_LEDGER"}],
+            },
+            {
+                "number": "closed",
+                "status": "DORMANT",
+                "ledgers": [{"ledgerType": "ELECTRICITY_LEDGER"}],
+            },
+            {
+                "number": "electricity",
+                "status": "ACTIVE",
+                "ledgers": [{"ledgerType": "ELECTRICITY_LEDGER"}],
+            },
+        ]
+
+        active_accounts = filter_active_accounts(accounts)
+
+        self.assertEqual(
+            [account["number"] for account in active_accounts], ["gas", "electricity"]
+        )
+        self.assertEqual(select_primary_account(active_accounts), "electricity")
 
     def test_device_entity_factory_skips_standard_tariffs(self) -> None:
         self.assertEqual(
@@ -368,6 +400,116 @@ class TariffCapabilitiesTest(unittest.TestCase):
             "account-123",
             include_intelligent=False,
         )
+
+    def test_submit_meter_readings_sends_account_number(self) -> None:
+        api = object.__new__(OctopusGermany)
+        api.ensure_token = AsyncMock(return_value=True)
+        api._get_graphql_client = Mock(
+            return_value=Mock(
+                execute_async=AsyncMock(
+                    return_value={
+                        "data": {
+                            "createElectricityMeterReadings": {
+                                "readingDate": "2026-09-04",
+                                "numberOfReadingsCreated": 1,
+                            }
+                        }
+                    }
+                )
+            )
+        )
+
+        result = asyncio.run(
+            api.submit_meter_readings(
+                "electricity",
+                "meter-1",
+                "2026-09-04",
+                [{"value": 1234, "registerObisCode": "1-0:1.8.0"}],
+                "account-1",
+            )
+        )
+
+        variables = (
+            api._get_graphql_client.return_value.execute_async.await_args.kwargs[
+                "variables"
+            ]
+        )
+        self.assertEqual(variables["input"]["accountNumber"], "account-1")
+        self.assertTrue(result["success"])
+
+    def test_smart_meter_server_error_enters_backoff(self) -> None:
+        api = object.__new__(OctopusGermany)
+        api._smart_meter_retry_until = None
+        api.ensure_token = AsyncMock(return_value=True)
+        client = Mock()
+        client.execute_async = AsyncMock(
+            return_value={"errors": [{"message": "upstream failure"}]}
+        )
+        api._get_graphql_client = Mock(return_value=client)
+
+        with self.assertRaises(SmartMeterFetchError):
+            asyncio.run(
+                api.fetch_electricity_smart_meter_readings(
+                    "account-1", "property-1", "2026-09-04"
+                )
+            )
+        with self.assertRaises(SmartMeterFetchError):
+            asyncio.run(
+                api.fetch_electricity_smart_meter_readings(
+                    "account-1", "property-1", "2026-09-04"
+                )
+            )
+
+        client.execute_async.assert_awaited_once()
+
+    def test_smart_meter_success_clears_previous_backoff(self) -> None:
+        api = object.__new__(OctopusGermany)
+        api._smart_meter_retry_until = datetime.now(UTC)
+        api.ensure_token = AsyncMock(return_value=True)
+        api._get_graphql_client = Mock(
+            return_value=Mock(
+                execute_async=AsyncMock(
+                    return_value={
+                        "data": {
+                            "account": {
+                                "property": {
+                                    "measurements": {
+                                        "edges": [
+                                            {
+                                                "node": {
+                                                    "startAt": "2026-09-04T00:00:00+00:00",
+                                                    "endAt": "2026-09-04T01:00:00+00:00",
+                                                    "value": "1",
+                                                    "unit": "kWh",
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                )
+            )
+        )
+
+        readings = asyncio.run(
+            api.fetch_electricity_smart_meter_readings(
+                "account-1", "property-1", "2026-09-04"
+            )
+        )
+
+        self.assertEqual(len(readings), 1)
+        self.assertIsNone(api._smart_meter_retry_until)
+
+    def test_account_discovery_query_requests_account_status(self) -> None:
+        self.assertIn("status", ACCOUNT_DISCOVERY_QUERY)
+
+    def test_no_fake_product_placeholder_remains(self) -> None:
+        from pathlib import Path
+
+        source = Path("custom_components/octopus_germany/__init__.py").read_text()
+        self.assertNotIn('"code": "TEST_PRODUCT"', source)
 
     def test_intelligent_data_is_skipped_for_standard_tariff(self) -> None:
         api = object.__new__(OctopusGermany)

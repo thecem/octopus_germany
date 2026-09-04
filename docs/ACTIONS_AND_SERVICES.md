@@ -127,6 +127,7 @@ Submit electricity or gas meter readings to the OE API.
 
 Parameters:
 
+- `account_number` (required): Account that owns the meter
 - `meter_type` (required): `electricity` or `gas`
 - `meter_id` (required): OE meter ID from the meter entity attributes
 - `reading_date` (required): `YYYY-MM-DD`

@@ -16,6 +16,37 @@ class TariffCapabilities:
     has_smart_meter: bool = False
 
 
+TERMINAL_ACCOUNT_STATUSES = frozenset({"DORMANT", "VOID", "WITHDRAWN"})
+
+
+def filter_active_accounts(
+    accounts: list[Mapping[str, Any]],
+) -> list[Mapping[str, Any]]:
+    """Exclude accounts that are no longer active for polling."""
+    return [
+        account
+        for account in accounts
+        if account.get("status") not in TERMINAL_ACCOUNT_STATUSES
+    ]
+
+
+def select_primary_account(accounts: list[Mapping[str, Any]]) -> str | None:
+    """Prefer an active account with an electricity ledger."""
+    electricity_account = next(
+        (
+            account
+            for account in accounts
+            if any(
+                ledger.get("ledgerType") == "ELECTRICITY_LEDGER"
+                for ledger in account.get("ledgers", []) or []
+            )
+        ),
+        None,
+    )
+    account = electricity_account or (accounts[0] if accounts else None)
+    return account.get("number") if account else None
+
+
 def has_intelligent_capability(account_data: Mapping[str, Any]) -> bool:
     """Return whether normalized account data supports Intelligent entities."""
     return bool(

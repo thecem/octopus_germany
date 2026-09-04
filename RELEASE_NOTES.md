@@ -1,5 +1,14 @@
 # Release Notes
 
+## Version 0.0.116 (2026-09-04)
+
+### Fixes
+
+- Fixed meter-reading submissions by including the owning `accountNumber` in the mutation input.
+- Removed the fabricated `TEST_PRODUCT` fallback when no electricity product is available.
+- Filtered terminal accounts from polling and preferred an active electricity account as primary.
+- Added three-hour backoff and recovery handling for smart-meter server failures.
+
 ## Version 0.0.115 (2026-09-04)
 
 ### Fixes

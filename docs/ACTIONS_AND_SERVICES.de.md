@@ -126,6 +126,7 @@ Schreibt Strom- oder Gas-Zaehlerstaende in die OE-API.
 
 Parameter:
 
+- `account_number` (required): Konto, dem der Zaehler gehoert
 - `meter_type` (required): `electricity` oder `gas`
 - `meter_id` (required): OE-Meter-ID aus den Attributen des Meter-Entitaets
 - `reading_date` (required): `YYYY-MM-DD`

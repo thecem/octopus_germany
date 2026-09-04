@@ -38,7 +38,11 @@ from .data_processing import (
     normalize_unit_rate_forecast,
     process_ledgers,
 )
-from .models import detect_tariff_capabilities
+from .models import (
+    detect_tariff_capabilities,
+    filter_active_accounts,
+    select_primary_account,
+)
 from .octopus_germany import OctopusGermany
 from .services import (
     async_handle_refresh_intelligent_data,
@@ -144,6 +148,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Enhanced multi-account support with all ledgers
     account_numbers = entry.data.get("account_numbers", [])
+    active_accounts = []
     polling_interval = entry.options.get(
         CONF_UPDATE_INTERVAL,
         entry.data.get(CONF_UPDATE_INTERVAL, UPDATE_INTERVAL),
@@ -156,29 +161,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     intelligent_polling_interval = normalize_update_interval(
         intelligent_polling_interval, INTELLIGENT_UPDATE_INTERVAL
     )
-    if not account_numbers:
-        # Backward compatibility: try single account_number
+    accounts = await api.fetch_accounts()
+    if accounts:
+        active_accounts = filter_active_accounts(accounts)
+        if not active_accounts:
+            _LOGGER.error("No active accounts found for the provided credentials")
+            return False
+        account_numbers = [account["number"] for account in active_accounts]
+        _LOGGER.info("Found %d active accounts", len(account_numbers))
+        if account_numbers != entry.data.get("account_numbers", []):
+            hass.config_entries.async_update_entry(
+                entry, data={**entry.data, "account_numbers": account_numbers}
+            )
+    elif not account_numbers:
         single_account = entry.data.get("account_number")
         if single_account:
             account_numbers = [single_account]
         else:
-            _LOGGER.debug("No account numbers found in entry data, fetching from API")
-            accounts = await api.fetch_accounts()
-            if not accounts:
-                _LOGGER.error("No accounts found for the provided credentials")
-                return False
+            _LOGGER.error("No accounts found for the provided credentials")
+            return False
 
-            # Store all accounts, not just the first one with electricity ledger
-            account_numbers = [acc["number"] for acc in accounts]
-            _LOGGER.info("Found %d accounts: %s", len(account_numbers), account_numbers)
-
-            # Update config entry with all account numbers
-            hass.config_entries.async_update_entry(
-                entry, data={**entry.data, "account_numbers": account_numbers}
-            )
-
-    # For backward compatibility, set primary account_number to first account
-    primary_account_number = account_numbers[0] if account_numbers else None
+    primary_account_number = select_primary_account(active_accounts) or (
+        account_numbers[0] if account_numbers else None
+    )
     if not entry.data.get("account_number"):
         hass.config_entries.async_update_entry(
             entry, data={**entry.data, "account_number": primary_account_number}
@@ -493,19 +498,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
         else:
             _LOGGER.warning("No products found for account %s", account_number)
-            # Add a test product so we at least get a sensor for testing
-            products.append(
-                {
-                    "code": "TEST_PRODUCT",
-                    "description": "Test Product for debugging",
-                    "name": "Test Product",
-                    "grossRate": "30",  # 30 cents as a reasonable default
-                    "type": "Simple",
-                    "validFrom": None,
-                    "validTo": None,
-                    "isTimeOfUse": False,
-                }
-            )
 
         result_data[account_number]["products"] = products
 
@@ -1591,6 +1583,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def handle_submit_meter_readings(call: ServiceCall) -> dict:
         """Handle the submit_meter_readings service call."""
         meter_type = call.data.get(ATTR_METER_TYPE)
+        account_number = call.data.get(ATTR_ACCOUNT_NUMBER)
         meter_id = call.data.get(ATTR_METER_ID)
         reading_date = call.data.get(ATTR_READING_DATE)
         readings_json = call.data.get(ATTR_READINGS_JSON)
@@ -1605,19 +1598,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 translation_domain=DOMAIN,
             )
 
+        if not account_number:
+            from homeassistant.exceptions import ServiceValidationError
+
+            raise ServiceValidationError(
+                "Account number is required",
+                translation_domain=DOMAIN,
+            )
+
         if not meter_id:
             from homeassistant.exceptions import ServiceValidationError
 
             raise ServiceValidationError(
                 "Meter ID is required",
-                translation_domain=DOMAIN,
-            )
-
-        if not reading_date:
-            from homeassistant.exceptions import ServiceValidationError
-
-            raise ServiceValidationError(
-                "Reading date is required",
                 translation_domain=DOMAIN,
             )
 
@@ -1689,6 +1682,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 meter_id,
                 reading_date,
                 readings,
+                account_number,
             )
 
             if result:
