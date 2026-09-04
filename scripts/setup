@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
-set -e
+set -Eeuo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+python3 -m pip install --upgrade pip setuptools wheel
 python3 -m pip install --requirement requirements.txt

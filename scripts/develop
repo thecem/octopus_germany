@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-set -e
+set -Eeuo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 # Create config dir if not present
 if [[ ! -d "${PWD}/config" ]]; then

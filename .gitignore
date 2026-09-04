@@ -8,9 +8,15 @@ __pycache__
 
 # misc
 .coverage
-.vscode
 coverage.xml
 .ruff_cache
+
+# Keep shared VS Code project configuration, ignore personal files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
 
 
 # Home Assistant configuration
