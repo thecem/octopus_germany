@@ -2,13 +2,14 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Run Debug (Home Assistant Core)",
+            "label": "Start Home Assistant (port 8123)",
             "type": "shell",
             "command": "scripts/develop",
+            "isBackground": true,
             "group": "test",
             "presentation": {
                 "reveal": "always",
-                "panel": "new"
+                "panel": "dedicated"
             },
             "problemMatcher": []
         },
@@ -25,3 +26,4 @@
         }
     ]
 }
+
