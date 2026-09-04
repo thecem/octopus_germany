@@ -1,41 +1,41 @@
 {
-    "name": "thecem/octopus_germany",
-    "image": "mcr.microsoft.com/devcontainers/python:1-3.14-bookworm",
-    "postCreateCommand": "sudo rm -f /etc/apt/sources.list.d/yarn.list /etc/apt/sources.list.d/yarn*.list && sudo DEBIAN_FRONTEND=noninteractive apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg libturbojpeg0 libpcap-dev && python -m pip install --upgrade pip setuptools wheel && pip install -r requirements.txt",
-    "forwardPorts": [
-        8123
-    ],
-    "portsAttributes": {
-        "8123": {
-            "label": "Home Assistant",
-            "onAutoForward": "notify"
+  "name": "thecem/octopus_germany",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "postCreateCommand": "python -m pip install --upgrade pip setuptools wheel && pip install -r requirements.txt && scripts/setup",
+  "forwardPorts": [8123],
+  "portsAttributes": {
+    "8123": {
+      "label": "Home Assistant",
+      "onAutoForward": "notify"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "charliermarsh.ruff",
+        "github.vscode-pull-request-github",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ryanluker.vscode-coverage-gutters",
+        "GitHub.copilot",
+        "GitHub.copilot-chat"
+      ],
+      "settings": {
+        "files.eol": "\n",
+        "editor.tabSize": 4,
+        "editor.formatOnPaste": true,
+        "editor.formatOnSave": true,
+        "editor.formatOnType": false,
+        "files.trimTrailingWhitespace": true,
+        "python.analysis.typeCheckingMode": "basic",
+        "python.analysis.autoImportCompletions": true,
+        "[python]": {
+          "editor.defaultFormatter": "charliermarsh.ruff"
         }
-    },
-    "customizations": {
-        "vscode": {
-            "extensions": [
-                "charliermarsh.ruff",
-                "github.vscode-pull-request-github",
-                "ms-python.python",
-                "ms-python.vscode-pylance",
-                "ryanluker.vscode-coverage-gutters",
-                "GitHub.copilot",
-                "GitHub.copilot-chat"
-            ],
-            "settings": {
-                "files.eol": "\n",
-                "editor.tabSize": 4,
-                "editor.formatOnPaste": true,
-                "editor.formatOnSave": true,
-                "editor.formatOnType": false,
-                "files.trimTrailingWhitespace": true,
-                "python.analysis.typeCheckingMode": "basic",
-                "python.analysis.autoImportCompletions": true,
-                "[python]": {
-                    "editor.defaultFormatter": "charliermarsh.ruff"
-                }
-            }
-        }
-    },
-    "remoteUser": "vscode"
+      }
+    }
+  },
+  "remoteUser": "vscode"
 }
