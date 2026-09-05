@@ -39,6 +39,7 @@ from .data_processing import (
     process_ledgers,
 )
 from .models import (
+    account_has_electricity,
     detect_tariff_capabilities,
     filter_active_accounts,
     select_primary_account,
@@ -149,6 +150,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Enhanced multi-account support with all ledgers
     account_numbers = entry.data.get("account_numbers", [])
     active_accounts = []
+    electricity_accounts: set[str] = set()
     polling_interval = entry.options.get(
         CONF_UPDATE_INTERVAL,
         entry.data.get(CONF_UPDATE_INTERVAL, UPDATE_INTERVAL),
@@ -168,6 +170,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.error("No active accounts found for the provided credentials")
             return False
         account_numbers = [account["number"] for account in active_accounts]
+        electricity_accounts = {
+            account["number"]
+            for account in active_accounts
+            if account_has_electricity(account)
+        }
         _LOGGER.info("Found %d active accounts", len(account_numbers))
         if account_numbers != entry.data.get("account_numbers", []):
             hass.config_entries.async_update_entry(
@@ -496,8 +503,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     product.get("code"),
                     product.get("grossRate"),
                 )
-        else:
+        elif account_number in electricity_accounts:
             _LOGGER.warning("No products found for account %s", account_number)
+        else:
+            _LOGGER.debug(
+                "Account %s has no electricity ledger; skipping product warning",
+                account_number,
+            )
 
         result_data[account_number]["products"] = products
 

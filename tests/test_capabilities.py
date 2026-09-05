@@ -38,6 +38,7 @@ from custom_components.octopus_germany.data_processing import (
 )
 from custom_components.octopus_germany.models import (
     TariffCapabilities,
+    account_has_electricity,
     detect_tariff_capabilities,
     filter_active_accounts,
     has_intelligent_capability,
@@ -136,6 +137,14 @@ class TariffCapabilitiesTest(unittest.TestCase):
             [account["number"] for account in active_accounts], ["gas", "electricity"]
         )
         self.assertEqual(select_primary_account(active_accounts), "electricity")
+
+    def test_account_has_electricity_uses_discovery_ledgers(self) -> None:
+        self.assertTrue(
+            account_has_electricity({"ledgers": [{"ledgerType": "ELECTRICITY_LEDGER"}]})
+        )
+        self.assertFalse(
+            account_has_electricity({"ledgers": [{"ledgerType": "GAS_LEDGER"}]})
+        )
 
     def test_device_entity_factory_skips_standard_tariffs(self) -> None:
         self.assertEqual(

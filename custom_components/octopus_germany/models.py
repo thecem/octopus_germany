@@ -17,6 +17,15 @@ class TariffCapabilities:
 
 
 TERMINAL_ACCOUNT_STATUSES = frozenset({"DORMANT", "VOID", "WITHDRAWN"})
+ELECTRICITY_LEDGER = "ELECTRICITY_LEDGER"
+
+
+def account_has_electricity(account: Mapping[str, Any]) -> bool:
+    """Return whether an account carries an electricity supply ledger."""
+    return any(
+        (ledger or {}).get("ledgerType") == ELECTRICITY_LEDGER
+        for ledger in account.get("ledgers", []) or []
+    )
 
 
 def filter_active_accounts(
@@ -33,14 +42,7 @@ def filter_active_accounts(
 def select_primary_account(accounts: list[Mapping[str, Any]]) -> str | None:
     """Prefer an active account with an electricity ledger."""
     electricity_account = next(
-        (
-            account
-            for account in accounts
-            if any(
-                ledger.get("ledgerType") == "ELECTRICITY_LEDGER"
-                for ledger in account.get("ledgers", []) or []
-            )
-        ),
+        (account for account in accounts if account_has_electricity(account)),
         None,
     )
     account = electricity_account or (accounts[0] if accounts else None)

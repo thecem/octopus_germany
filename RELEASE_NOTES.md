@@ -1,5 +1,11 @@
 # Release Notes
 
+## Version 0.0.118 (2026-09-05)
+
+### Fixes
+
+- Suppressed misleading missing-electricity-product warnings for active accounts that only have a gas or other ledger.
+
 ## Version 0.0.117 (2026-09-05)
 
 ### Fixes
