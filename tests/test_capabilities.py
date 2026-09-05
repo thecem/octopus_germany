@@ -357,6 +357,39 @@ class TariffCapabilitiesTest(unittest.TestCase):
 
         self.assertTrue(capabilities.has_intelligent_dispatches)
 
+    def test_devices_enable_intelligent_capability(self) -> None:
+        capabilities = detect_tariff_capabilities(
+            {"devices": [{"id": "vehicle-1"}]}
+        )
+
+        self.assertTrue(capabilities.has_intelligent_dispatches)
+
+    def test_15min_server_error_enters_backoff(self) -> None:
+        api = object.__new__(OctopusGermany)
+        api._15min_retry_until = None
+        api.ensure_token = AsyncMock(return_value=True)
+        client = Mock()
+        client.execute_async = AsyncMock(side_effect=RuntimeError("502 HTML"))
+        api._get_graphql_client = Mock(return_value=client)
+
+        self.assertIsNone(
+            asyncio.run(
+                api.fetch_electricity_15min_readings(
+                    "account-1", "property-1", "2026-09-04"
+                )
+            )
+        )
+        self.assertIsNotNone(api._15min_retry_until)
+
+        self.assertIsNone(
+            asyncio.run(
+                api.fetch_electricity_15min_readings(
+                    "account-1", "property-1", "2026-09-04"
+                )
+            )
+        )
+        client.execute_async.assert_awaited_once()
+
     def test_comprehensive_query_makes_intelligent_fields_conditional(self) -> None:
         self.assertIn(
             "$includeIntelligent: Boolean!",

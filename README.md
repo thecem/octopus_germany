@@ -69,7 +69,7 @@ The integration is configured via the Home Assistant UI:
 
 The default base polling interval is 30 minutes. Accounts with detected Intelligent tariff support use a separate three-minute polling interval for device and dispatch data. Both intervals can be changed from the integration options and are validated between 1 and 60 minutes.
 
-Intelligent device and dispatch entities are created only when the account exposes the required tariff capability. Accounts without that capability do not receive the Intelligent polling coordinator.
+Intelligent device and dispatch entities are created only when the account exposes the required tariff capability or connected Intelligent devices. Accounts without that capability do not receive the Intelligent polling coordinator.
 
 ## Documentation
 

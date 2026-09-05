@@ -834,6 +834,20 @@ query {
 }
 """
 
+ACCOUNT_DISCOVERY_QUERY_LEGACY = """
+query {
+    viewer {
+        accounts {
+            number
+            ledgers {
+                balance
+                ledgerType
+            }
+        }
+    }
+}
+"""
+
 ACCOUNT_CAPABILITIES_QUERY = """
 query AccountCapabilities($accountNumber: String!) {
     account(accountNumber: $accountNumber) {
@@ -853,6 +867,9 @@ query AccountCapabilities($accountNumber: String!) {
                 }
             }
         }
+    }
+    devices(accountNumber: $accountNumber) {
+        id
     }
 }
 """
@@ -995,6 +1012,7 @@ class OctopusGermany:
         self._token_manager = _TOKEN_MANAGERS[email]
         self._capabilities_by_account: dict[str, TariffCapabilities] = {}
         self._smart_meter_retry_until: datetime | None = None
+        self._15min_retry_until: datetime | None = None
 
         # Set up the token manager refresh callback
         self._token_manager.set_refresh_callback(self.login)
@@ -1185,15 +1203,25 @@ class OctopusGermany:
             response = await client.execute_async(query=ACCOUNT_DISCOVERY_QUERY)
             _LOGGER.debug("Fetch accounts with initial data response: %s", response)
 
-            if "data" in response and "viewer" in response["data"]:
-                accounts = response["data"]["viewer"]["accounts"]
-                if not accounts:
-                    _LOGGER.error("No accounts found")
-                    return None
-
-                # Return the accounts data
+            viewer = (response.get("data") or {}).get("viewer")
+            accounts = viewer.get("accounts") if viewer else None
+            if accounts:
                 return accounts
-            _LOGGER.error("Unexpected API response structure: %s", response)
+
+            if not accounts:
+                _LOGGER.warning(
+                    "Account discovery with status failed; retrying compatible query"
+                )
+                response = await client.execute_async(
+                    query=ACCOUNT_DISCOVERY_QUERY_LEGACY
+                )
+                viewer = (response.get("data") or {}).get("viewer")
+                accounts = viewer.get("accounts") if viewer else None
+
+            if accounts:
+                return accounts
+
+            _LOGGER.error("No accounts found")
             return None
         except Exception as e:
             _LOGGER.error("Error fetching accounts with initial data: %s", e)
@@ -1228,7 +1256,13 @@ class OctopusGermany:
                 query=ACCOUNT_CAPABILITIES_QUERY,
                 variables={"accountNumber": account_number},
             )
-            account_data = (response.get("data") or {}).get("account") or {}
+            response_data = response.get("data") or {}
+            account_data = response_data.get("account") or {}
+            if response_data.get("devices"):
+                account_data = {
+                    **account_data,
+                    "devices": response_data["devices"],
+                }
             capabilities = detect_tariff_capabilities(account_data)
         except Exception as err:
             _LOGGER.warning(
@@ -2682,6 +2716,14 @@ class OctopusGermany:
             _LOGGER.error("Failed to ensure valid token for 15min readings")
             return None
 
+        now = datetime.now(UTC)
+        if self._15min_retry_until and now < self._15min_retry_until:
+            _LOGGER.debug(
+                "Skipping 15min smart-meter request until %s after a previous server error",
+                self._15min_retry_until.isoformat(),
+            )
+            return None
+
         variables = {
             "accountNumber": account_number,
             "propertyId": property_id,
@@ -2696,13 +2738,19 @@ class OctopusGermany:
             )
 
             if response is None:
+                self._15min_retry_until = now + SMART_METER_ERROR_BACKOFF
                 return None
 
             if "errors" in response:
+                self._15min_retry_until = now + SMART_METER_ERROR_BACKOFF
                 _LOGGER.error(
                     "GraphQL errors in 15min readings: %s", response["errors"]
                 )
                 return None
+
+            if self._15min_retry_until is not None:
+                _LOGGER.info("15min smart-meter endpoint recovered")
+                self._15min_retry_until = None
 
             measurements = (
                 response.get("data", {})
@@ -2734,6 +2782,7 @@ class OctopusGermany:
             return []
 
         except Exception as e:
+            self._15min_retry_until = now + SMART_METER_ERROR_BACKOFF
             _LOGGER.error("Error fetching 15min readings: %s", e)
             return None
 

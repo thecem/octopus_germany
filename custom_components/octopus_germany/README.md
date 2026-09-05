@@ -65,7 +65,7 @@ The integration is configured via the Home Assistant UI:
 
 Base account and meter data are polled every 30 minutes by default. When Intelligent tariff support is detected, device and dispatch data use a separate three-minute coordinator. Both intervals can be configured in the integration options from 1 to 60 minutes.
 
-Smart-meter readings are requested only for accounts reporting smart-meter support, and Intelligent entities are created only when the corresponding capability is available.
+Smart-meter readings are requested only for accounts reporting smart-meter support, and Intelligent entities are created only when the corresponding capability or connected Intelligent devices are available.
 
 ## Documentation Structure
 

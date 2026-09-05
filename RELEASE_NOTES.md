@@ -1,5 +1,13 @@
 # Release Notes
 
+## Version 0.0.117 (2026-09-05)
+
+### Fixes
+
+- Kept account discovery working when the API does not support the optional account status field.
+- Restored Intelligent device entities when the account exposes EV devices but product capability data is incomplete.
+- Added backoff for repeated 15-minute smart-meter endpoint failures such as HTTP 502 responses.
+
 ## Version 0.0.116 (2026-09-04)
 
 ### Fixes
