@@ -80,10 +80,13 @@ def detect_tariff_capabilities(account_data: Mapping[str, Any]) -> TariffCapabil
         for field in ("code", "description", "fullName")
     ).lower()
     has_dynamic_prices = any(bool(product.get("isTimeOfUse")) for product in products)
-    has_intelligent_dispatches = any(
-        marker in product_text for marker in ("intelligent", "smart flex", "smartflex")
-    ) or bool(account_data.get("intelligentDispatches")) or bool(
-        account_data.get("devices")
+    has_intelligent_dispatches = (
+        any(
+            marker in product_text
+            for marker in ("intelligent", "smart flex", "smartflex")
+        )
+        or bool(account_data.get("intelligentDispatches"))
+        or bool(account_data.get("devices"))
     )
 
     return TariffCapabilities(

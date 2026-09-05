@@ -358,9 +358,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
         self.assertTrue(capabilities.has_intelligent_dispatches)
 
     def test_devices_enable_intelligent_capability(self) -> None:
-        capabilities = detect_tariff_capabilities(
-            {"devices": [{"id": "vehicle-1"}]}
-        )
+        capabilities = detect_tariff_capabilities({"devices": [{"id": "vehicle-1"}]})
 
         self.assertTrue(capabilities.has_intelligent_dispatches)
 
