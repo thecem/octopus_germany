@@ -115,14 +115,12 @@ def get_electricity_meter_device_info(
             name=f"Electricity Meter ({meter_number})",
             manufacturer="Octopus Energy Germany",
             model=meter_type,
-            via_device=(DOMAIN, account_number),
         )
     return DeviceInfo(
         identifiers={(DOMAIN, f"electricity_meter_{account_number}")},
         name=f"Electricity Meter ({account_number})",
         manufacturer="Octopus Energy Germany",
         model="Smart Meter",
-        via_device=(DOMAIN, account_number),
     )
 
 
@@ -143,14 +141,12 @@ def get_gas_meter_device_info(
             name=f"Gas Meter ({gas_meter_number})",
             manufacturer="Octopus Energy Germany",
             model=gas_meter_type,
-            via_device=(DOMAIN, account_number),
         )
     return DeviceInfo(
         identifiers={(DOMAIN, f"gas_meter_{account_number}")},
         name=f"Gas Meter ({account_number})",
         manufacturer="Octopus Energy Germany",
         model="Gas Meter",
-        via_device=(DOMAIN, account_number),
     )
 
 
@@ -189,7 +185,6 @@ def get_device_specific_device_info(
                     name=f"{device_name} ({device_type})",
                     manufacturer=device_provider,
                     model=device_model,
-                    via_device=(DOMAIN, account_number),
                 )
 
     # Fallback if device not found
@@ -198,7 +193,6 @@ def get_device_specific_device_info(
         name=f"Device ({device_id})",
         manufacturer="Octopus Energy Germany",
         model="Unknown Device",
-        via_device=(DOMAIN, account_number),
     )
 
 

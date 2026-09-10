@@ -1623,24 +1623,26 @@ class OctopusGermany:
                                 # Mark as explored to prevent repeated exploration
                                 self._schema_explored = True
 
-                            # Meter readings are published with a delay; query yesterday once.
+                            # Meter readings are published with a delay; check the most recent available dates.
                             from datetime import timedelta
 
-                            yesterday = datetime.now().astimezone().date() - timedelta(
-                                days=1
-                            )
-                            test_dates = [(yesterday.isoformat(), "yesterday")]
+                            now_date = datetime.now(UTC).date()
+                            test_dates = [
+                                (now_date - timedelta(days=1), "yesterday"),
+                                (now_date - timedelta(days=2), "two_days_ago"),
+                            ]
 
                             _LOGGER.debug(
-                                "Fetching smart meter readings for the previous day: %s",
-                                yesterday.isoformat(),
+                                "Fetching smart meter readings for recent dates: %s",
+                                [date.isoformat() for date, _ in test_dates],
                             )
 
                             smart_meter_readings = None
                             successful_date = None
 
-                            # Test each date until we find data
-                            for date_str, date_label in test_dates:
+                            # Test each date until we find data.
+                            for date_value, date_label in test_dates:
+                                date_str = date_value.isoformat()
                                 _LOGGER.debug(
                                     "Fetching electricity smart meter readings for property %s on %s (%s)",
                                     property_id,

@@ -1,5 +1,16 @@
 # Release Notes
 
+## Version 0.0.122 (2026-09-10)
+
+### Fixes
+
+- Fixed the local-time bug in forecast rate evaluation so price calculations respect the configured HA timezone instead of UTC-only offsets.
+- Prevented the intelligent merge listener from resetting the base coordinator refresh timer, which caused the 30-minute poll to be rearmed every 3 minutes.
+- Removed deprecated `via_device` device metadata so device registration remains compatible with current Home Assistant versions.
+- Broadened recent smart-meter date checks to include the previous two days, covering the delayed publication window that caused warnings and stale consumption sensors.
+- Kept smart-charging session sensors reading the live coordinator state instead of stale initialization snapshots.
+- Corrected JWT expiry comparisons to use timezone-safe epoch values consistently across refresh checks.
+
 ## Version 0.0.121 (2026-09-07)
 
 ### Fixes

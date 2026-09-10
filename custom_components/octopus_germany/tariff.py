@@ -87,16 +87,24 @@ def get_current_forecast_rate(
     """Return the current forecast rate in EUR per kWh."""
     if not product:
         return None
-    current_time = current_time or datetime.now(UTC)
+    current_time = current_time or local_now()
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=UTC)
+    current_time_utc = current_time.astimezone(UTC)
+
     for forecast in product.get("unitRateForecast", []):
         valid_from = forecast.get("validFrom")
         valid_to = forecast.get("validTo")
         if not valid_from or not valid_to:
             continue
         try:
-            start = datetime.fromisoformat(valid_from)
-            end = datetime.fromisoformat(valid_to)
-            if not start <= current_time < end:
+            start = datetime.fromisoformat(valid_from.replace("Z", "+00:00"))
+            end = datetime.fromisoformat(valid_to.replace("Z", "+00:00"))
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=UTC)
+            if end.tzinfo is None:
+                end = end.replace(tzinfo=UTC)
+            if not start.astimezone(UTC) <= current_time_utc < end.astimezone(UTC):
                 continue
             rate_info = forecast.get("unitRateInformation", {})
             rates = rate_info.get("rates", [])

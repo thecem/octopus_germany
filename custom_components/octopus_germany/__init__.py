@@ -103,6 +103,28 @@ async def _async_fetch_account_data(
     return all_accounts_data
 
 
+def _merge_intelligent_coordinator_data(
+    coordinator: OctopusDataCoordinator,
+    intelligent_coordinator: OctopusDataCoordinator | None,
+) -> None:
+    """Merge Intelligent data without resetting the base coordinator refresh schedule."""
+    if coordinator is None or intelligent_coordinator is None:
+        return
+    if not coordinator.data or not intelligent_coordinator.data:
+        return
+
+    merged_data = dict(coordinator.data)
+    for account_num, intelligent_data in intelligent_coordinator.data.items():
+        if account_num in merged_data:
+            merged_data[account_num] = merge_normalized_account_data(
+                merged_data[account_num], intelligent_data
+            )
+
+    coordinator.data = merged_data
+    coordinator.last_update_success = True
+    coordinator.async_update_listeners()
+
+
 # Service schemas
 SERVICE_SET_DEVICE_PREFERENCES = "set_device_preferences"
 SERVICE_GET_SMART_METER_READINGS = "get_smart_meter_readings"
@@ -951,24 +973,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             update_interval_minutes=intelligent_polling_interval,
         )
         await intelligent_coordinator.async_config_entry_first_refresh()
-        merged_data = dict(coordinator.data or {})
-        for account_num, intelligent_data in intelligent_coordinator.data.items():
-            if account_num in merged_data:
-                merged_data[account_num] = merge_normalized_account_data(
-                    merged_data[account_num], intelligent_data
-                )
-        coordinator.async_set_updated_data(merged_data)
+        _merge_intelligent_coordinator_data(coordinator, intelligent_coordinator)
 
         def _merge_intelligent_update() -> None:
-            if not coordinator.data or not intelligent_coordinator.data:
-                return
-            merged_data = dict(coordinator.data)
-            for account_num, intelligent_data in intelligent_coordinator.data.items():
-                if account_num in merged_data:
-                    merged_data[account_num] = merge_normalized_account_data(
-                        merged_data[account_num], intelligent_data
-                    )
-            coordinator.async_set_updated_data(merged_data)
+            _merge_intelligent_coordinator_data(coordinator, intelligent_coordinator)
 
         intelligent_coordinator.async_add_listener(_merge_intelligent_update)
 

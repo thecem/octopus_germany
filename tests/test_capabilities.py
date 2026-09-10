@@ -271,6 +271,23 @@ class TariffCapabilitiesTest(unittest.TestCase):
 
         self.assertEqual(rate, 0.2)
 
+    def test_forecast_rate_uses_home_assistant_local_time(self) -> None:
+        product = {
+            "unitRateForecast": [
+                {
+                    "validFrom": "2025-12-31T23:00:00+00:00",
+                    "validTo": "2026-01-01T00:40:00+00:00",
+                    "unitRateInformation": {"latestGrossUnitRateCentsPerKwh": "20"},
+                }
+            ]
+        }
+
+        with patch(
+            "custom_components.octopus_germany.tariff.local_now",
+            return_value=datetime.fromisoformat("2026-01-01T00:30:00+01:00"),
+        ):
+            self.assertEqual(get_current_forecast_rate(product), 0.2)
+
     def test_token_validity_uses_epoch_safe_utc_time(self) -> None:
         manager = TokenManager()
         manager.set_token("test-token", datetime.now(UTC).timestamp() + 3600)
