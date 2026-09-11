@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+
+from .models import CoordinatorData
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -23,7 +25,7 @@ def normalize_update_interval(value: object, default: int) -> int:
     return max(1, min(60, interval))
 
 
-class OctopusDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
+class OctopusDataCoordinator(DataUpdateCoordinator[CoordinatorData]):
     """Coordinate normalized account data for one config entry."""
 
     def __init__(
@@ -31,7 +33,7 @@ class OctopusDataCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         hass: HomeAssistant,
         logger: Logger,
         name: str,
-        update_method: Callable[[], Awaitable[dict[str, Any]]],
+        update_method: Callable[[], Awaitable[CoordinatorData]],
         update_interval_minutes: int,
     ) -> None:
         """Initialize the normalized account data coordinator."""

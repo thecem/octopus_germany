@@ -1,10 +1,10 @@
 """Config flow for Octopus Germany integration."""
 
 import logging
+from typing import TYPE_CHECKING
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_EMAIL,
@@ -16,6 +16,11 @@ from .const import (
     UPDATE_INTERVAL,
 )
 from .octopus_germany import OctopusGermany
+
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.core import HomeAssistant
+    from homeassistant.data_entry_flow import FlowResult
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -74,11 +79,11 @@ class OctopusGermanyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
 
     @staticmethod
-    def async_get_options_flow(config_entry):
+    def async_get_options_flow(config_entry: ConfigEntry) -> OctopusGermanyOptionsFlow:
         """Get the options flow for this handler."""
         return OctopusGermanyOptionsFlow()
 
-    async def async_step_user(self, user_input: dict | None = None):
+    async def async_step_user(self, user_input: dict | None = None) -> FlowResult:
         """Handle the initial step."""
         errors = {}
 
@@ -114,7 +119,9 @@ class OctopusGermanyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_reconfigure(self, user_input: dict | None = None):
+    async def async_step_reconfigure(
+        self, user_input: dict | None = None
+    ) -> FlowResult:
         """Handle reconfiguration of the integration."""
         errors = {}
 
@@ -181,7 +188,7 @@ class OctopusGermanyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class OctopusGermanyOptionsFlow(config_entries.OptionsFlow):
     """Handle an options flow for Octopus Germany."""
 
-    async def async_step_init(self, user_input: dict | None = None):
+    async def async_step_init(self, user_input: dict | None = None) -> FlowResult:
         """Manage the options."""
         errors = {}
 

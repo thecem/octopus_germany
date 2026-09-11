@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.util.dt import as_utc, parse_datetime, utcnow
 
+if TYPE_CHECKING:
+    from .models import AccountData
 
-def create_empty_account_data(account_number: str) -> dict[str, dict[str, Any]]:
+
+def create_empty_account_data(account_number: str) -> dict[str, AccountData]:
     """Create the stable normalized account data structure."""
     return {
         account_number: {
@@ -128,6 +131,50 @@ def normalize_unit_rate_forecast(forecast: Any) -> list[dict[str, Any]]:
     if not isinstance(forecast, list):
         return []
     return [entry for entry in forecast if isinstance(entry, dict)]
+
+
+def normalize_agreement_products(
+    account_data: dict[str, Any], malo_key: str
+) -> list[dict[str, Any]]:
+    """Normalize electricity or gas products from account agreements."""
+    products: list[dict[str, Any]] = []
+    for property_data in account_data.get("allProperties", []) or []:
+        for malo in property_data.get(malo_key, []) or []:
+            for agreement in malo.get("agreements", []) or []:
+                product = agreement.get("product") or {}
+                unit_rate_info = agreement.get("unitRateInformation") or {}
+                product_type = get_product_type(unit_rate_info)
+                normalized = {
+                    "code": product.get("code", "Unknown"),
+                    "description": product.get("description", ""),
+                    "name": product.get("fullName", "Unknown"),
+                    "type": product_type,
+                    "validFrom": agreement.get("validFrom"),
+                    "validTo": agreement.get("validTo"),
+                    "isTimeOfUse": product.get("isTimeOfUse", False),
+                }
+                if product_type == "Simple":
+                    agreement_rate = extract_gross_rate(
+                        agreement.get("unitRateGrossRateInformation")
+                    )
+                    normalized["grossRate"] = extract_gross_rate(
+                        unit_rate_info.get("grossRateInformation"),
+                        unit_rate_info.get(
+                            "latestGrossUnitRateCentsPerKwh", agreement_rate
+                        ),
+                    )
+                elif "rates" in unit_rate_info:
+                    normalized["grossRate"] = "0"
+                    normalized["timeslots"] = normalize_timeslots(
+                        unit_rate_info["rates"]
+                    )
+                else:
+                    continue
+                normalized["unitRateForecast"] = normalize_unit_rate_forecast(
+                    agreement.get("unitRateForecast")
+                )
+                products.append(normalized)
+    return products
 
 
 def get_product_type(rate_info: Any) -> str:

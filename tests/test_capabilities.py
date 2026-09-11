@@ -31,6 +31,7 @@ from custom_components.octopus_germany.data_processing import (
     get_product_type,
     merge_graphql_responses,
     merge_normalized_account_data,
+    normalize_agreement_products,
     normalize_direct_products,
     normalize_timeslots,
     normalize_unit_rate_forecast,
@@ -97,22 +98,20 @@ class TariffCapabilitiesTest(unittest.TestCase):
 
         capabilities = detect_tariff_capabilities(account_data)
 
-        self.assertTrue(capabilities.has_dynamic_prices)
-        self.assertTrue(capabilities.has_smart_meter)
-        self.assertFalse(capabilities.has_intelligent_dispatches)
+        assert capabilities.has_dynamic_prices
+        assert capabilities.has_smart_meter
+        assert not capabilities.has_intelligent_dispatches
 
     def test_normalize_update_interval_applies_default_and_bounds(self) -> None:
-        self.assertEqual(normalize_update_interval("invalid", 30), 30)
-        self.assertEqual(normalize_update_interval(0, 30), 1)
-        self.assertEqual(normalize_update_interval(90, 30), 60)
-        self.assertEqual(normalize_update_interval("5", 30), 5)
+        assert normalize_update_interval("invalid", 30) == 30
+        assert normalize_update_interval(0, 30) == 1
+        assert normalize_update_interval(90, 30) == 60
+        assert normalize_update_interval("5", 30) == 5
 
     def test_intelligent_entity_gate_requires_capability(self) -> None:
-        self.assertFalse(has_intelligent_capability({"devices": [{"id": "x"}]}))
-        self.assertTrue(
-            has_intelligent_capability(
-                {"tariff_capabilities": {"has_intelligent_dispatches": True}}
-            )
+        assert not has_intelligent_capability({"devices": [{"id": "x"}]})
+        assert has_intelligent_capability(
+            {"tariff_capabilities": {"has_intelligent_dispatches": True}}
         )
 
     def test_account_filter_excludes_terminal_accounts_and_prefers_electricity(
@@ -138,51 +137,40 @@ class TariffCapabilitiesTest(unittest.TestCase):
 
         active_accounts = filter_active_accounts(accounts)
 
-        self.assertEqual(
-            [account["number"] for account in active_accounts], ["gas", "electricity"]
-        )
-        self.assertEqual(select_primary_account(active_accounts), "electricity")
+        assert [account["number"] for account in active_accounts] == [
+            "gas",
+            "electricity",
+        ]
+        assert select_primary_account(active_accounts) == "electricity"
 
     def test_account_has_electricity_uses_discovery_ledgers(self) -> None:
-        self.assertTrue(
-            account_has_electricity({"ledgers": [{"ledgerType": "ELECTRICITY_LEDGER"}]})
+        assert account_has_electricity(
+            {"ledgers": [{"ledgerType": "ELECTRICITY_LEDGER"}]}
         )
-        self.assertFalse(
-            account_has_electricity({"ledgers": [{"ledgerType": "GAS_LEDGER"}]})
-        )
+        assert not account_has_electricity({"ledgers": [{"ledgerType": "GAS_LEDGER"}]})
 
     def test_device_entity_factory_skips_standard_tariffs(self) -> None:
-        self.assertEqual(
+        assert (
             _create_device_entities(
-                "account-1",
-                {"devices": [{"id": "device-1"}]},
-                Mock(),
-            ),
-            [],
+                "account-1", {"devices": [{"id": "device-1"}]}, Mock()
+            )
+            == []
         )
 
     def test_binary_entity_factory_skips_standard_tariffs(self) -> None:
-        self.assertEqual(
+        assert (
             _create_intelligent_binary_entities(
-                "account-1",
-                {"devices": [{"id": "device-1"}]},
-                Mock(),
-            ),
-            [],
+                "account-1", {"devices": [{"id": "device-1"}]}, Mock()
+            )
+            == []
         )
 
     def test_switch_device_gate_skips_standard_tariffs(self) -> None:
-        self.assertEqual(
-            _get_intelligent_devices({"devices": [{"id": "device-1"}]}),
-            [],
-        )
+        assert _get_intelligent_devices({"devices": [{"id": "device-1"}]}) == []
 
     def test_tariff_helpers_calculate_simple_and_timeslot_rates(self) -> None:
-        self.assertEqual(
-            get_active_timeslot_rate({"type": "Simple", "grossRate": "25"}),
-            0.25,
-        )
-        self.assertEqual(
+        assert get_active_timeslot_rate({"type": "Simple", "grossRate": "25"}) == 0.25
+        assert (
             get_active_timeslot_rate(
                 {
                     "type": "TimeOfUse",
@@ -196,8 +184,8 @@ class TariffCapabilitiesTest(unittest.TestCase):
                     ],
                 },
                 parse_tariff_time("02:00:00"),
-            ),
-            0.1,
+            )
+            == 0.1
         )
 
     def test_product_validity_compares_instants_not_iso_strings(self) -> None:
@@ -206,17 +194,11 @@ class TariffCapabilitiesTest(unittest.TestCase):
             "validTo": "2026-09-07T22:00:00+00:00",
         }
 
-        self.assertTrue(
-            is_product_current(
-                product,
-                datetime.fromisoformat("2026-09-07T21:00:00+00:00"),
-            )
+        assert is_product_current(
+            product, datetime.fromisoformat("2026-09-07T21:00:00+00:00")
         )
-        self.assertFalse(
-            is_product_current(
-                product,
-                datetime.fromisoformat("2026-09-07T23:00:00+00:00"),
-            )
+        assert not is_product_current(
+            product, datetime.fromisoformat("2026-09-07T23:00:00+00:00")
         )
 
     def test_timeslot_default_uses_home_assistant_local_time(self) -> None:
@@ -237,7 +219,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
             "custom_components.octopus_germany.tariff.local_now",
             return_value=local_time,
         ):
-            self.assertEqual(get_active_timeslot_rate(product), 0.1)
+            assert get_active_timeslot_rate(product) == 0.1
 
     def test_tariff_helper_reads_current_forecast_rate(self) -> None:
         rate = get_current_forecast_rate(
@@ -253,7 +235,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
             datetime.fromisoformat("2026-01-01T00:30:00+00:00"),
         )
 
-        self.assertEqual(rate, 0.2)
+        assert rate == 0.2
 
     def test_forecast_rate_path_keeps_utc_clock_available(self) -> None:
         rate = get_current_forecast_rate(
@@ -269,7 +251,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
             datetime.fromisoformat("2026-01-01T00:30:00+00:00"),
         )
 
-        self.assertEqual(rate, 0.2)
+        assert rate == 0.2
 
     def test_forecast_rate_uses_home_assistant_local_time(self) -> None:
         product = {
@@ -286,13 +268,13 @@ class TariffCapabilitiesTest(unittest.TestCase):
             "custom_components.octopus_germany.tariff.local_now",
             return_value=datetime.fromisoformat("2026-01-01T00:30:00+01:00"),
         ):
-            self.assertEqual(get_current_forecast_rate(product), 0.2)
+            assert get_current_forecast_rate(product) == 0.2
 
     def test_token_validity_uses_epoch_safe_utc_time(self) -> None:
         manager = TokenManager()
         manager.set_token("test-token", datetime.now(UTC).timestamp() + 3600)
 
-        self.assertTrue(manager.is_valid)
+        assert manager.is_valid
 
     def test_token_refresh_retries_after_transient_failure(self) -> None:
         manager = TokenManager()
@@ -324,13 +306,13 @@ class TariffCapabilitiesTest(unittest.TestCase):
             "account-1", coordinator, "Car", "device-1", []
         )
 
-        self.assertEqual(sensor.native_value, 1)
-        self.assertEqual(sensor.extra_state_attributes["smart_sessions_count"], 1)
+        assert sensor.native_value == 1
+        assert sensor.extra_state_attributes["smart_sessions_count"] == 1
 
         coordinator.data["account-1"]["charging_sessions"] = []
 
-        self.assertEqual(sensor.native_value, 0)
-        self.assertEqual(sensor.extra_state_attributes["smart_sessions_count"], 0)
+        assert sensor.native_value == 0
+        assert sensor.extra_state_attributes["smart_sessions_count"] == 0
 
     def test_format_uk_rates_preserves_card_compatibility_shape(self) -> None:
         rates = format_uk_rates(
@@ -345,16 +327,13 @@ class TariffCapabilitiesTest(unittest.TestCase):
             }
         )
 
-        self.assertEqual(
-            rates,
-            [
-                {
-                    "start": "2026-01-01T01:00:00+00:00",
-                    "end": "2026-01-01T02:00:00+00:00",
-                    "value_inc_vat": 0.2,
-                }
-            ],
-        )
+        assert rates == [
+            {
+                "start": "2026-01-01T01:00:00+00:00",
+                "end": "2026-01-01T02:00:00+00:00",
+                "value_inc_vat": 0.2,
+            }
+        ]
 
     def test_options_schema_applies_defaults_and_coerces_intervals(self) -> None:
         schema = build_options_schema("user@example.test", 30, 3)
@@ -367,8 +346,8 @@ class TariffCapabilitiesTest(unittest.TestCase):
             }
         )
 
-        self.assertEqual(validated[CONF_UPDATE_INTERVAL], 15)
-        self.assertEqual(validated[CONF_INTELLIGENT_UPDATE_INTERVAL], 5)
+        assert validated[CONF_UPDATE_INTERVAL] == 15
+        assert validated[CONF_INTELLIGENT_UPDATE_INTERVAL] == 5
 
     def test_options_schema_rejects_intervals_outside_bounds(self) -> None:
         schema = build_options_schema("user@example.test", 30, 3)
@@ -396,8 +375,8 @@ class TariffCapabilitiesTest(unittest.TestCase):
             }
         )
 
-        self.assertEqual(validated[CONF_UPDATE_INTERVAL], 30)
-        self.assertEqual(validated[CONF_INTELLIGENT_UPDATE_INTERVAL], 3)
+        assert validated[CONF_UPDATE_INTERVAL] == 30
+        assert validated[CONF_INTELLIGENT_UPDATE_INTERVAL] == 3
 
     def test_refresh_service_updates_only_intelligent_coordinators(self) -> None:
         intelligent = Mock()
@@ -433,7 +412,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
 
         refreshed = asyncio.run(async_request_intelligent_refresh(hass, "account-1"))
 
-        self.assertEqual(refreshed, 1)
+        assert refreshed == 1
         intelligent.async_request_refresh.assert_awaited_once_with()
 
     def test_fetch_account_data_keeps_successful_accounts_when_one_fails(self) -> None:
@@ -459,9 +438,9 @@ class TariffCapabilitiesTest(unittest.TestCase):
             )
         )
 
-        self.assertIn("account-1", result)
-        self.assertNotIn("account-2", result)
-        self.assertIn("account-1", capabilities_by_account)
+        assert "account-1" in result
+        assert "account-2" not in result
+        assert "account-1" in capabilities_by_account
 
     def test_intelligent_product_enables_dispatches(self) -> None:
         account_data = {
@@ -485,12 +464,12 @@ class TariffCapabilitiesTest(unittest.TestCase):
 
         capabilities = detect_tariff_capabilities(account_data)
 
-        self.assertTrue(capabilities.has_intelligent_dispatches)
+        assert capabilities.has_intelligent_dispatches
 
     def test_devices_enable_intelligent_capability(self) -> None:
         capabilities = detect_tariff_capabilities({"devices": [{"id": "vehicle-1"}]})
 
-        self.assertTrue(capabilities.has_intelligent_dispatches)
+        assert capabilities.has_intelligent_dispatches
 
     def test_15min_server_error_enters_backoff(self) -> None:
         api = object.__new__(OctopusGermany)
@@ -500,34 +479,33 @@ class TariffCapabilitiesTest(unittest.TestCase):
         client.execute_async = AsyncMock(side_effect=RuntimeError("502 HTML"))
         api._get_graphql_client = Mock(return_value=client)
 
-        self.assertIsNone(
+        assert (
             asyncio.run(
                 api.fetch_electricity_15min_readings(
                     "account-1", "property-1", "2026-09-04"
                 )
             )
+            is None
         )
-        self.assertIsNotNone(api._15min_retry_until)
+        assert api._15min_retry_until is not None
 
-        self.assertIsNone(
+        assert (
             asyncio.run(
                 api.fetch_electricity_15min_readings(
                     "account-1", "property-1", "2026-09-04"
                 )
             )
+            is None
         )
         client.execute_async.assert_awaited_once()
 
     def test_comprehensive_query_makes_intelligent_fields_conditional(self) -> None:
-        self.assertIn(
-            "$includeIntelligent: Boolean!",
-            COMPREHENSIVE_QUERY,
+        assert "$includeIntelligent: Boolean!" in COMPREHENSIVE_QUERY
+        assert (
+            "completedDispatches(accountNumber: $accountNumber)"
+            in INTELLIGENT_DATA_QUERY
         )
-        self.assertIn(
-            "completedDispatches(accountNumber: $accountNumber)",
-            INTELLIGENT_DATA_QUERY,
-        )
-        self.assertIn("devices(accountNumber: $accountNumber)", INTELLIGENT_DATA_QUERY)
+        assert "devices(accountNumber: $accountNumber)" in INTELLIGENT_DATA_QUERY
 
     def test_capability_api_error_disables_intelligent_features(self) -> None:
         api = object.__new__(OctopusGermany)
@@ -543,9 +521,9 @@ class TariffCapabilitiesTest(unittest.TestCase):
 
         capabilities = asyncio.run(api.fetch_tariff_capabilities("account-123"))
 
-        self.assertFalse(capabilities.has_intelligent_dispatches)
-        self.assertFalse(capabilities.has_dynamic_prices)
-        self.assertFalse(capabilities.has_smart_meter)
+        assert not capabilities.has_intelligent_dispatches
+        assert not capabilities.has_dynamic_prices
+        assert not capabilities.has_smart_meter
 
     def test_data_fetch_uses_cached_capability_to_select_fields(self) -> None:
         api = object.__new__(OctopusGermany)
@@ -556,7 +534,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
 
         result = asyncio.run(api.fetch_data_for_account("account-123"))
 
-        self.assertEqual(result, {"account": {}})
+        assert result == {"account": {}}
         api.fetch_all_data.assert_awaited_once_with(
             "account-123",
             include_intelligent=False,
@@ -595,8 +573,8 @@ class TariffCapabilitiesTest(unittest.TestCase):
                 "variables"
             ]
         )
-        self.assertEqual(variables["input"]["accountNumber"], "account-1")
-        self.assertTrue(result["success"])
+        assert variables["input"]["accountNumber"] == "account-1"
+        assert result["success"]
 
     def test_smart_meter_server_error_enters_backoff(self) -> None:
         api = object.__new__(OctopusGermany)
@@ -660,17 +638,17 @@ class TariffCapabilitiesTest(unittest.TestCase):
             )
         )
 
-        self.assertEqual(len(readings), 1)
-        self.assertIsNone(api._smart_meter_retry_until)
+        assert len(readings) == 1
+        assert api._smart_meter_retry_until is None
 
     def test_account_discovery_query_requests_account_status(self) -> None:
-        self.assertIn("status", ACCOUNT_DISCOVERY_QUERY)
+        assert "status" in ACCOUNT_DISCOVERY_QUERY
 
     def test_no_fake_product_placeholder_remains(self) -> None:
         from pathlib import Path
 
         source = Path("custom_components/octopus_germany/__init__.py").read_text()
-        self.assertNotIn('"code": "TEST_PRODUCT"', source)
+        assert '"code": "TEST_PRODUCT"' not in source
 
     def test_intelligent_data_is_skipped_for_standard_tariff(self) -> None:
         api = object.__new__(OctopusGermany)
@@ -680,7 +658,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
 
         result = asyncio.run(api.fetch_intelligent_data("account-123"))
 
-        self.assertIsNone(result)
+        assert result is None
 
     def test_merge_graphql_responses_adds_intelligent_data(self) -> None:
         base_response = {"data": {"account": {"id": "account-1"}}}
@@ -693,10 +671,10 @@ class TariffCapabilitiesTest(unittest.TestCase):
 
         merged = merge_graphql_responses(base_response, intelligent_response)
 
-        self.assertEqual(merged["data"]["account"], {"id": "account-1"})
-        self.assertEqual(merged["data"]["devices"], [{"id": "device-1"}])
-        self.assertNotIn("errors", merged)
-        self.assertNotIn("devices", base_response["data"])
+        assert merged["data"]["account"] == {"id": "account-1"}
+        assert merged["data"]["devices"] == [{"id": "device-1"}]
+        assert "errors" not in merged
+        assert "devices" not in base_response["data"]
 
     def test_merge_graphql_responses_preserves_errors(self) -> None:
         merged = merge_graphql_responses(
@@ -704,10 +682,10 @@ class TariffCapabilitiesTest(unittest.TestCase):
             {"data": {}, "errors": [{"message": "intelligent"}]},
         )
 
-        self.assertEqual(
-            [error["message"] for error in merged["errors"]],
-            ["base", "intelligent"],
-        )
+        assert [error["message"] for error in merged["errors"]] == [
+            "base",
+            "intelligent",
+        ]
 
     def test_merge_normalized_account_data_preserves_base_fields(self) -> None:
         merged = merge_normalized_account_data(
@@ -723,19 +701,19 @@ class TariffCapabilitiesTest(unittest.TestCase):
             },
         )
 
-        self.assertEqual(merged["account_number"], "account-1")
-        self.assertEqual(merged["electricity_balance"], 12.5)
-        self.assertEqual(merged["devices"], [{"id": "device-1"}])
-        self.assertEqual(merged["charging_sessions"], [{"device_id": "device-1"}])
+        assert merged["account_number"] == "account-1"
+        assert merged["electricity_balance"] == 12.5
+        assert merged["devices"] == [{"id": "device-1"}]
+        assert merged["charging_sessions"] == [{"device_id": "device-1"}]
 
     def test_empty_account_data_preserves_sensor_data_contract(self) -> None:
         account_data = create_empty_account_data("account-123")["account-123"]
 
-        self.assertEqual(account_data["account_number"], "account-123")
-        self.assertEqual(account_data["products"], [])
-        self.assertEqual(account_data["devices"], [])
-        self.assertIsNone(account_data["meter"])
-        self.assertIsNone(account_data["gas_meter"])
+        assert account_data["account_number"] == "account-123"
+        assert account_data["products"] == []
+        assert account_data["devices"] == []
+        assert account_data["meter"] is None
+        assert account_data["gas_meter"] is None
 
     def test_process_ledgers_converts_and_groups_balances(self) -> None:
         balances = process_ledgers(
@@ -747,10 +725,10 @@ class TariffCapabilitiesTest(unittest.TestCase):
             ]
         )
 
-        self.assertEqual(balances["electricity_balance"], 12.34)
-        self.assertEqual(balances["gas_balance"], 5)
-        self.assertEqual(balances["heat_balance"], -0.75)
-        self.assertEqual(balances["other_ledgers"], {"OTHER_LEDGER": 0.25})
+        assert balances["electricity_balance"] == 12.34
+        assert balances["gas_balance"] == 5
+        assert balances["heat_balance"] == -0.75
+        assert balances["other_ledgers"] == {"OTHER_LEDGER": 0.25}
 
     def test_normalize_direct_products_preserves_rate_and_identity(self) -> None:
         products = normalize_direct_products(
@@ -764,9 +742,53 @@ class TariffCapabilitiesTest(unittest.TestCase):
             ]
         )
 
-        self.assertEqual(products[0]["code"], "DYNAMIC-DE")
-        self.assertEqual(products[0]["grossRate"], "27.3")
-        self.assertTrue(products[0]["isTimeOfUse"])
+        assert products[0]["code"] == "DYNAMIC-DE"
+        assert products[0]["grossRate"] == "27.3"
+        assert products[0]["isTimeOfUse"]
+
+    def test_normalize_agreement_products_handles_electricity_and_gas_shapes(
+        self,
+    ) -> None:
+        account_data = {
+            "allProperties": [
+                {
+                    "electricityMalos": [
+                        {
+                            "agreements": [
+                                {
+                                    "product": {"code": "ELEC"},
+                                    "unitRateInformation": {
+                                        "__typename": "SimpleProductUnitRateInformation",
+                                        "latestGrossUnitRateCentsPerKwh": "25",
+                                    },
+                                    "validFrom": "2026-01-01T00:00:00+00:00",
+                                }
+                            ]
+                        }
+                    ],
+                    "gasMalos": [
+                        {
+                            "agreements": [
+                                {
+                                    "product": {"code": "GAS"},
+                                    "unitRateInformation": {
+                                        "__typename": "SimpleProductUnitRateInformation",
+                                        "grossRateInformation": {"grossRate": "8"},
+                                    },
+                                    "validFrom": "2026-01-01T00:00:00+00:00",
+                                }
+                            ]
+                        }
+                    ],
+                }
+            ]
+        }
+
+        electricity = normalize_agreement_products(account_data, "electricityMalos")
+        gas = normalize_agreement_products(account_data, "gasMalos")
+
+        assert electricity[0]["grossRate"] == "25"
+        assert gas[0]["grossRate"] == "8"
 
     def test_normalize_timeslots_preserves_rates_and_activation_rules(self) -> None:
         timeslots = normalize_timeslots(
@@ -785,29 +807,29 @@ class TariffCapabilitiesTest(unittest.TestCase):
             ]
         )
 
-        self.assertEqual(extract_gross_rate({"grossRate": "1.5"}), "1.5")
-        self.assertEqual(timeslots[0]["rate"], "12.5")
-        self.assertEqual(timeslots[0]["activation_rules"][0]["from_time"], "00:00:00")
-        self.assertEqual(timeslots[1]["rate"], "30.0")
+        assert extract_gross_rate({"grossRate": "1.5"}) == "1.5"
+        assert timeslots[0]["rate"] == "12.5"
+        assert timeslots[0]["activation_rules"][0]["from_time"] == "00:00:00"
+        assert timeslots[1]["rate"] == "30.0"
 
     def test_normalize_unit_rate_forecast_filters_invalid_entries(self) -> None:
         forecast = normalize_unit_rate_forecast(
             [{"validFrom": "2026-01-01"}, "invalid", None]
         )
 
-        self.assertEqual(forecast, [{"validFrom": "2026-01-01"}])
-        self.assertEqual(normalize_unit_rate_forecast(None), [])
+        assert forecast == [{"validFrom": "2026-01-01"}]
+        assert normalize_unit_rate_forecast(None) == []
 
     def test_get_product_type_handles_simple_and_time_of_use_rates(self) -> None:
-        self.assertEqual(
-            get_product_type({"__typename": "SimpleProductUnitRateInformation"}),
-            "Simple",
+        assert (
+            get_product_type({"__typename": "SimpleProductUnitRateInformation"})
+            == "Simple"
         )
-        self.assertEqual(
-            get_product_type({"__typename": "TimeOfUseProductUnitRateInformation"}),
-            "TimeOfUse",
+        assert (
+            get_product_type({"__typename": "TimeOfUseProductUnitRateInformation"})
+            == "TimeOfUse"
         )
-        self.assertEqual(get_product_type({}), "Simple")
+        assert get_product_type({}) == "Simple"
 
     def test_extract_meter_data_preserves_electricity_and_gas_fields(self) -> None:
         meter_data = extract_meter_data(
@@ -842,19 +864,13 @@ class TariffCapabilitiesTest(unittest.TestCase):
             }
         )
 
-        self.assertEqual(meter_data["property_ids"], ["property-1"])
-        self.assertEqual(meter_data["malo_number"], "DE0001")
-        self.assertEqual(meter_data["melo_number"], "DE0002")
-        self.assertEqual(
-            meter_data["meter"],
-            {"id": "meter-1", "meloNumber": "DE0002"},
-        )
-        self.assertEqual(meter_data["gas_malo_number"], "DE0003")
-        self.assertEqual(meter_data["gas_melo_number"], "DE0004")
-        self.assertEqual(
-            meter_data["gas_meter"],
-            {"id": "meter-2", "meloNumber": "DE0004"},
-        )
+        assert meter_data["property_ids"] == ["property-1"]
+        assert meter_data["malo_number"] == "DE0001"
+        assert meter_data["melo_number"] == "DE0002"
+        assert meter_data["meter"] == {"id": "meter-1", "meloNumber": "DE0002"}
+        assert meter_data["gas_malo_number"] == "DE0003"
+        assert meter_data["gas_melo_number"] == "DE0004"
+        assert meter_data["gas_meter"] == {"id": "meter-2", "meloNumber": "DE0004"}
 
     def test_extract_device_data_uses_first_valid_battery_size(self) -> None:
         device_data = extract_device_data(
@@ -866,8 +882,8 @@ class TariffCapabilitiesTest(unittest.TestCase):
             }
         )
 
-        self.assertEqual(device_data["devices"][0]["id"], "vehicle-1")
-        self.assertEqual(device_data["vehicle_battery_size_in_kwh"], 54.5)
+        assert device_data["devices"][0]["id"] == "vehicle-1"
+        assert device_data["vehicle_battery_size_in_kwh"] == 54.5
 
     def test_calculate_dispatch_state_skips_invalid_dates(self) -> None:
         state = calculate_dispatch_state(
@@ -880,10 +896,10 @@ class TariffCapabilitiesTest(unittest.TestCase):
             ]
         )
 
-        self.assertIsNone(state["current_start"])
-        self.assertIsNone(state["current_end"])
-        self.assertIsNotNone(state["next_start"])
-        self.assertIsNotNone(state["next_end"])
+        assert state["current_start"] is None
+        assert state["current_end"] is None
+        assert state["next_start"] is not None
+        assert state["next_end"] is not None
 
     def test_extract_charging_sessions_adds_compatibility_fields(self) -> None:
         sessions = extract_charging_sessions(
@@ -906,18 +922,17 @@ class TariffCapabilitiesTest(unittest.TestCase):
             ]
         )
 
-        self.assertEqual(len(sessions), 1)
-        self.assertEqual(sessions[0]["soc_final"], 80)
-        self.assertEqual(sessions[0]["soc_change"], 20)
-        self.assertEqual(sessions[0]["device_id"], "vehicle-1")
-        self.assertIn(
+        assert len(sessions) == 1
+        assert sessions[0]["soc_final"] == 80
+        assert sessions[0]["soc_change"] == 20
+        assert sessions[0]["device_id"] == "vehicle-1"
+        assert (
             "completedDispatches(accountNumber: $accountNumber) "
-            "@include(if: $includeIntelligent)",
-            COMPREHENSIVE_QUERY,
+            "@include(if: $includeIntelligent)" in COMPREHENSIVE_QUERY
         )
-        self.assertIn(
-            "devices(accountNumber: $accountNumber) @include(if: $includeIntelligent)",
-            COMPREHENSIVE_QUERY,
+        assert (
+            "devices(accountNumber: $accountNumber) @include(if: $includeIntelligent)"
+            in COMPREHENSIVE_QUERY
         )
 
 

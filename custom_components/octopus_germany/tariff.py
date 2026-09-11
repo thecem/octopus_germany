@@ -13,7 +13,7 @@ def parse_product_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except TypeError, ValueError:
         return None
     if parsed.tzinfo is None:
@@ -98,8 +98,8 @@ def get_current_forecast_rate(
         if not valid_from or not valid_to:
             continue
         try:
-            start = datetime.fromisoformat(valid_from.replace("Z", "+00:00"))
-            end = datetime.fromisoformat(valid_to.replace("Z", "+00:00"))
+            start = datetime.fromisoformat(valid_from)
+            end = datetime.fromisoformat(valid_to)
             if start.tzinfo is None:
                 start = start.replace(tzinfo=UTC)
             if end.tzinfo is None:

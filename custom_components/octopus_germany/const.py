@@ -1,9 +1,11 @@
 """Constants for the Octopus Germany integration."""
 
+from homeassistant.const import CONF_PASSWORD as HA_CONF_PASSWORD
+
 DOMAIN = "octopus_germany"
 
 CONF_EMAIL = "email"
-CONF_PASSWORD = "password"
+CONF_PASSWORD = HA_CONF_PASSWORD
 CONF_UPDATE_INTERVAL = "update_interval"
 CONF_INTELLIGENT_UPDATE_INTERVAL = "intelligent_update_interval"
 

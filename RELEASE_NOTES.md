@@ -1,5 +1,15 @@
 # Release Notes
 
+## Version 0.0.124 (2026-09-11)
+
+### Fixes
+
+- Fixed undefined Smart Meter fallback dates and removed dead session code.
+- Removed duplicate binary sensor attributes and unused product validity variables.
+- Removed the remaining unused duplicate tariff calculation methods from the sensor module.
+- Split authentication, GraphQL query documents, and normalized coordinator contracts into dedicated modules.
+- Moved shared electricity and gas agreement normalization out of the config-entry lifecycle.
+
 ## Version 0.0.122 (2026-09-10)
 
 ### Fixes

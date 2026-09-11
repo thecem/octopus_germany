@@ -48,14 +48,14 @@ custom_components/octopus_germany/
 └── __init__.py         # Setup und optionale Services
 ```
 
-- [ ] API-Kommunikation, Datenmodelle, Tariflogik, Coordinator und Entities voneinander trennen.
-- [ ] Architektur wie im Referenzprojekt [octopus_energy_de](https://github.com/thecem/octopus_energy_de) in fachliche Module zerlegen; Queries und API-Transport duerfen nicht in Entity-Dateien liegen.
-- [ ] `octopus_germany.py` schrittweise in `api/auth.py`, `api/queries.py` und fachliche API-Methoden aufteilen; das Modul soll keine Entity- oder Normalisierungslogik enthalten.
-- [ ] `__init__.py` auf Config-Entry-Lifecycle, Coordinator-Erzeugung und Service-Registrierung begrenzen; Datenverarbeitung in eigene Module verschieben.
-- [ ] `sensor.py`, `binary_sensor.py` und `switch.py` auf Entity-Lifecycle und Darstellung begrenzen; keine GraphQL-Abfragen, Produktselektion oder komplexe Normalisierung dort implementieren.
-- [ ] Gemeinsame Zeit-, Produkt- und Tarifregeln in `tariff.py`/`time_utils.py` zentralisieren; keine parallelen privaten Implementierungen in Entity-Klassen.
-- [ ] Pro Modul eine klare Eingabe-/Ausgabegrenze definieren und zyklische Abhängigkeiten vermeiden. Entity-Module duerfen nur Modelle, Coordinator-Daten und kleine Formatter importieren.
-- [ ] Zielgroessen festlegen: kein neues fachliches Verhalten in Dateien ueber 1.000 Zeilen; `octopus_germany.py`, `__init__.py` und `sensor.py` in jeweils testbare Teilmodule unter 500-800 Zeilen zerlegen.
+- [x] API-Kommunikation, Datenmodelle, Tariflogik, Coordinator und Entities voneinander trennen.
+- [x] Architektur wie im Referenzprojekt [octopus_energy_de](https://github.com/thecem/octopus_energy_de) in fachliche Module zerlegen; Queries und API-Transport duerfen nicht in Entity-Dateien liegen.
+- [x] `octopus_germany.py` schrittweise in `api/auth.py`, `api/queries.py` und fachliche API-Methoden aufteilen; das Modul soll keine Entity- oder Normalisierungslogik enthalten.
+- [x] `__init__.py` auf Config-Entry-Lifecycle, Coordinator-Erzeugung und Service-Registrierung begrenzen; Datenverarbeitung in eigene Module verschieben.
+- [x] `sensor.py`, `binary_sensor.py` und `switch.py` auf Entity-Lifecycle und Darstellung begrenzen; keine GraphQL-Abfragen, Produktselektion oder komplexe Normalisierung dort implementieren.
+- [x] Gemeinsame Zeit-, Produkt- und Tarifregeln in `tariff.py`/`time_utils.py` zentralisieren; keine parallelen privaten Implementierungen in Entity-Klassen.
+- [x] Pro Modul eine klare Eingabe-/Ausgabegrenze definieren und zyklische Abhängigkeiten vermeiden. Entity-Module duerfen nur Modelle, Coordinator-Daten und kleine Formatter importieren.
+- [x] Zielgroessen festlegen: kein neues fachliches Verhalten in Dateien ueber 1.000 Zeilen; `octopus_germany.py`, `__init__.py` und `sensor.py` in jeweils testbare Teilmodule unter 500-800 Zeilen zerlegen.
 - [x] Einen kleinen Initial-Query fuer Account, Agreements und Tarifmerkmale definieren.
 - [x] Aus den Tarifdaten explizite Faehigkeiten ableiten, z. B. `has_dynamic_prices`, `has_intelligent_dispatches` und `has_smart_meter`.
 - [x] Tarif-Faehigkeiten aus echten API-Daten bestimmen und nicht pauschal annehmen.
@@ -97,11 +97,11 @@ custom_components/octopus_germany/
 
 ## Phase 2: API und dynamische Queries
 
-- [ ] API-Client in eine zentrale Request-Methode und fachliche Query-Methoden aufteilen.
-- [ ] Die bisherige grosse Sammelabfrage in fachliche Query-Bausteine zerlegen.
-- [ ] Query-Konstanten aus `octopus_germany.py` nach `queries.py` verschieben; jede Query bekommt einen anonymisierten Antwort-Fixture-Test.
-- [ ] Login/Token-Management von GraphQL-Abfragen trennen; Token-Refresh-Retry und Backoff als eigene testbare Komponente behandeln.
-- [ ] Produkt-/Tarif-Normalisierung vollstaendig aus `process_api_data` auslagern.
+- [x] API-Client in eine zentrale Request-Methode und fachliche Query-Methoden aufteilen.
+- [x] Die bisherige grosse Sammelabfrage in fachliche Query-Bausteine zerlegen.
+- [x] Query-Konstanten aus `octopus_germany.py` nach `queries.py` verschieben; jede Query bekommt einen anonymisierten Antwort-Fixture-Test.
+- [x] Login/Token-Management von GraphQL-Abfragen trennen; Token-Refresh-Retry und Backoff als eigene testbare Komponente behandeln.
+- [x] Produkt-/Tarif-Normalisierung vollstaendig aus `process_api_data` auslagern.
 - [ ] Strom-/Gas-Produktselektion und `is_product_current()` in eine gemeinsame Tarif-/Produktlogik verschieben; vier duplizierte Sensor-/Setup-Pfade entfernen.
 - [ ] Zeitkontrakte dokumentieren und testen: `validFrom`/`validTo` und Forecasts als Instant, TOU-Aktivierungsregeln als lokale Wandzeit.
 - [x] Direkte Produktdaten in eine testbare Normalisierungsfunktion auslagern.
@@ -142,8 +142,8 @@ custom_components/octopus_germany/
 - [x] Nach Tarif-Erkennung nur die benoetigten Coordinators starten.
 - [x] Bei nicht verfuegbarem Intelligent-Tarif keine Dispatch-, Fahrzeug- oder Intelligent-Schalter-Entities erzeugen.
 - [x] Verhalten bei Tarifwechsel oder erneuter Einrichtung festlegen: Capability-Cache wird bei einem erneuten Config-Entry-Setup neu aufgebaut.
-- [ ] Coordinator-Datenvertrag als typisierte Struktur statt losem verschachteltem Dictionary definieren oder schrittweise mit TypedDicts absichern.
-- [ ] Session-, Dispatch- und Geraete-Entities ausschliesslich aus dem aktuellen Coordinator-Datenvertrag lesen; keine Initial-Snapshots als dauerhafte Quelle zulassen.
+- [x] Coordinator-Datenvertrag als typisierte Struktur statt losem verschachteltem Dictionary definieren oder schrittweise mit TypedDicts absichern.
+- [x] Session-, Dispatch- und Geraete-Entities ausschliesslich aus dem aktuellen Coordinator-Datenvertrag lesen; keine Initial-Snapshots als dauerhafte Quelle zulassen.
 - [ ] Automatische Refresh-Tasks mit kontrollierter Cancellation, Retry und sichtbarem Fehlerstatus versehen.
 
 ## Phase 4: On-Demand-Refresh und Services
@@ -183,7 +183,7 @@ custom_components/octopus_germany/
 
 ## Verifikation pro Umsetzungsschritt
 
-- [ ] Ruff/Lint vollstaendig bereinigen; der verbleibende Bestand betrifft historische Grossfunktionen.
+- [ ] Ruff/Lint vollstaendig bereinigen; verbleibend sind 106 Produktionsmeldungen, vor allem E501, Exception-/Komplexitaets- und Legacy-Service-Regeln.
 - [x] Ruff fuer die neuen Daten-, Coordinator-, Modell- und Service-Module ausfuehren.
 - [x] Alle verbliebenen Python-3-Exception-Klauseln syntaktisch korrigieren.
 - [x] Betroffene Python-Dateien syntaktisch pruefen.
