@@ -61,7 +61,7 @@ get_smart_meter_readings:
 
 export_smart_meter_csv:
   name: Export Smart Meter Data to CSV
-  description: Export smart meter data for a month or year to CSV file (table layout with days as columns and 15-minute rows). Results are returned in the service response and as event `octopus_germany_csv_export_result`.
+  description: Export smart meter data for a month or year to CSV. Choose 15-minute or hourly readings and wide or tall layout. Results are returned in the service response and as event `octopus_germany_csv_export_result`.
   fields:
     account_number:
       name: Account Number
@@ -125,6 +125,16 @@ export_smart_meter_csv:
           options:
             - "wide"
             - "tall"
+    resolution:
+      name: Resolution
+      description: "Reading resolution: 15-minute readings or hourly readings"
+      required: false
+      default: "15min"
+      selector:
+        select:
+          options:
+            - "15min"
+            - "hour"
     summary:
       name: Add Summary
       description: "Add a per-day summary section (total kWh and optional GO/Standard split)"

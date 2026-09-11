@@ -33,6 +33,8 @@ _MAX_MONTH = 12
 _MINUTES_PER_QUARTER_HOUR = 15
 _DEFAULT_PERIOD = "month"
 _DEFAULT_LAYOUT = "wide"
+_DEFAULT_RESOLUTION = "15min"
+_SUPPORTED_RESOLUTIONS = frozenset({"15min", "hour"})
 _TIME_PARTS_MIN = 2
 _MAX_HOUR = 23
 _MAX_MINUTE = 59
@@ -123,6 +125,7 @@ ATTR_YEAR = "year"
 ATTR_MONTH = "month"
 ATTR_FILENAME = "filename"
 ATTR_LAYOUT = "layout"
+ATTR_RESOLUTION = "resolution"
 ATTR_SUMMARY = "summary"
 ATTR_GO_WINDOW_START = "go_window_start"
 ATTR_GO_WINDOW_END = "go_window_end"
@@ -311,12 +314,16 @@ async def async_register_services(
         month = call.data.get(ATTR_MONTH)
         filename = call.data.get(ATTR_FILENAME)
         layout = call.data.get(ATTR_LAYOUT, _DEFAULT_LAYOUT)
+        resolution = call.data.get(ATTR_RESOLUTION, _DEFAULT_RESOLUTION)
         add_summary = call.data.get(ATTR_SUMMARY, False)
         go_window_start = call.data.get(ATTR_GO_WINDOW_START)
         go_window_end = call.data.get(ATTR_GO_WINDOW_END)
 
         if period == "month" and not month:
             _raise_validation_error("Month is required for monthly export")
+
+        if resolution not in _SUPPORTED_RESOLUTIONS:
+            _raise_validation_error("Resolution must be either 15min or hour")
 
         # Validate month
         if month and (month < _MIN_MONTH or month > _MAX_MONTH):
@@ -366,9 +373,16 @@ async def async_register_services(
             while current_date <= end_date:
                 date_str = current_date.strftime("%Y-%m-%d")
                 try:
-                    readings = await client.fetch_electricity_smart_meter_readings_v2(
-                        account_number, property_id, date_str
-                    )
+                    if resolution == "15min":
+                        readings = await client.fetch_electricity_15min_readings(
+                            account_number, property_id, date_str
+                        )
+                    else:
+                        readings = (
+                            await client.fetch_electricity_smart_meter_readings_v2(
+                                account_number, property_id, date_str
+                            )
+                        )
                     if readings:
                         all_readings[date_str] = readings
                         _LOGGER.debug(
@@ -390,10 +404,13 @@ async def async_register_services(
             if not filename:
                 if period == "month":
                     # Format: octopus_A-12FD99BC_2025_01.csv
-                    filename = f"octopus_{account_number}_{year}_{month:02d}"
+                    filename = (
+                        f"octopus_{account_number}_{year}_{month:02d}_"
+                        f"{layout}_{resolution}"
+                    )
                 else:  # year
                     # Format: octopus_A-12FD99BC_2025.csv
-                    filename = f"octopus_{account_number}_{year}"
+                    filename = f"octopus_{account_number}_{year}_{layout}_{resolution}"
 
             # Ensure filename ends with .csv
             if not filename.endswith(".csv"):
@@ -405,14 +422,14 @@ async def async_register_services(
             # Create CSV writing function to run in executor
             def write_csv() -> None:
                 """Write CSV file (to be run in executor to avoid blocking)."""
-                with output_path.open("w", newline="", encoding="utf-8") as csvfile:
+                with output_path.open("w", newline="", encoding="utf-8-sig") as csvfile:
                     writer = csv.writer(csvfile, delimiter=";")
 
-                    # Create time slots (15-minute intervals)
+                    slot_minutes = 15 if resolution == "15min" else 60
                     time_slots = [
                         f"{hour:02d}:{minute:02d}"
                         for hour in range(24)
-                        for minute in [0, 15, 30, 45]
+                        for minute in range(0, 60, slot_minutes)
                     ]
 
                     # Prepare data structures
@@ -454,8 +471,8 @@ async def async_register_services(
                                     reading_time = datetime.fromisoformat(start_at)
                                     minute = reading_time.minute
                                     rounded_minute = (
-                                        minute // _MINUTES_PER_QUARTER_HOUR
-                                    ) * _MINUTES_PER_QUARTER_HOUR
+                                        minute // slot_minutes
+                                    ) * slot_minutes
                                     time_key = (
                                         f"{reading_time.hour:02d}:{rounded_minute:02d}"
                                     )

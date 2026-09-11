@@ -1,5 +1,13 @@
 # Release Notes
 
+## Version 0.0.125 (2026-09-11)
+
+### New Features
+
+- Added selectable smart-meter CSV resolution: 15-minute or hourly readings.
+- Kept `wide` as the default layout and included layout plus resolution in generated filenames.
+- Added UTF-8 BOM output for better spreadsheet compatibility with German CSV settings.
+
 ## Version 0.0.124 (2026-09-11)
 
 ### Fixes
