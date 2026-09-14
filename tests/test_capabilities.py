@@ -37,6 +37,9 @@ from custom_components.octopus_germany.data_processing import (
     normalize_unit_rate_forecast,
     process_ledgers,
 )
+from custom_components.octopus_germany.lifecycle import (
+    _migrate_legacy_device_entity_ids,
+)
 from custom_components.octopus_germany.models import (
     TariffCapabilities,
     account_has_electricity,
@@ -61,7 +64,11 @@ from custom_components.octopus_germany.services import (
     async_handle_refresh_intelligent_data,
     async_request_intelligent_refresh,
 )
-from custom_components.octopus_germany.switch import _get_intelligent_devices
+from custom_components.octopus_germany.switch import (
+    BoostChargeSwitch,
+    OctopusSwitch,
+    _get_intelligent_devices,
+)
 from custom_components.octopus_germany.tariff import (
     format_uk_rates,
     get_active_timeslot_rate,
@@ -313,6 +320,123 @@ class TariffCapabilitiesTest(unittest.TestCase):
 
         assert sensor.native_value == 0
         assert sensor.extra_state_attributes["smart_sessions_count"] == 0
+
+    def test_same_named_devices_have_distinct_switch_unique_ids(self) -> None:
+        coordinator = Mock()
+        coordinator.data = {"account-1": {"devices": []}}
+        api = Mock()
+        entry = Mock()
+
+        first = {
+            "id": "device-1",
+            "name": "Tesla Model Y",
+            "status": {"isSuspended": False},
+        }
+        second = {**first, "id": "device-2"}
+
+        first_smart_control = OctopusSwitch(api, first, coordinator, entry, "account-1")
+        second_smart_control = OctopusSwitch(
+            api, second, coordinator, entry, "account-1"
+        )
+        first_boost = BoostChargeSwitch(
+            coordinator, api, "device-1", "Tesla Model Y", "account-1"
+        )
+        second_boost = BoostChargeSwitch(
+            coordinator, api, "device-2", "Tesla Model Y", "account-1"
+        )
+
+        assert first_smart_control.unique_id != second_smart_control.unique_id
+        assert first_boost.unique_id != second_boost.unique_id
+        assert "device-1" in first_smart_control.unique_id
+        assert "device-2" in second_smart_control.unique_id
+
+    def test_entity_id_migration_reuses_existing_id_after_duplicate_upgrade(
+        self,
+    ) -> None:
+        class FakeRegistry:
+            class FakeEntity(dict):
+                @property
+                def config_entry_id(self):
+                    return self["config_entry_id"]
+
+                @property
+                def entity_id(self):
+                    return self["entity_id"]
+
+            def __init__(self) -> None:
+                self.entities = {
+                    "sensor.octopus_energy_germany_account_car_status": self.FakeEntity({
+                        "entity_id": "sensor.octopus_energy_germany_account_car_status",
+                        "unique_id": "octopus_account_car_status",
+                        "config_entry_id": "entry-1",
+                    }),
+                    "sensor.octopus_energy_germany_account_car_status_2": self.FakeEntity({
+                        "entity_id": "sensor.octopus_energy_germany_account_car_status_2",
+                        "unique_id": "octopus_account_device-1_status",
+                        "config_entry_id": "entry-1",
+                    }),
+                }
+
+            def async_get_entity_id(
+                self, domain: str, platform: str, unique_id: str
+            ) -> str | None:
+                del platform
+                return next(
+                    (
+                        entity_id
+                        for entity_id, entity in self.entities.items()
+                        if entity_id.startswith(f"{domain}.")
+                        and entity["unique_id"] == unique_id
+                    ),
+                    None,
+                )
+
+            def async_get(self, entity_id: str) -> dict | None:
+                return self.entities.get(entity_id)
+
+            def async_remove(self, entity_id: str) -> None:
+                del self.entities[entity_id]
+
+            def async_update_entity(
+                self, entity_id: str, *, new_entity_id=None, new_unique_id=None
+            ) -> None:
+                entity = self.entities.pop(entity_id)
+                if new_entity_id:
+                    entity["entity_id"] = new_entity_id
+                    entity_id = new_entity_id
+                if new_unique_id:
+                    entity["unique_id"] = new_unique_id
+                self.entities[entity_id] = entity
+
+        registry = FakeRegistry()
+        hass = Mock()
+        entry = Mock(entry_id="entry-1")
+        account_data = {
+            "devices": [
+                {"id": "device-1", "name": "Car"},
+            ]
+        }
+
+        with patch(
+            "custom_components.octopus_germany.lifecycle.er.async_get",
+            return_value=registry,
+        ):
+            _migrate_legacy_device_entity_ids(
+                hass,
+                entry,
+                {"account": account_data},
+                ["account"],
+            )
+
+        assert list(registry.entities) == [
+            "sensor.octopus_energy_germany_account_car_status"
+        ]
+        assert (
+            registry.entities["sensor.octopus_energy_germany_account_car_status"][
+                "unique_id"
+            ]
+            == "octopus_account_device-1_status"
+        )
 
     def test_format_uk_rates_preserves_card_compatibility_shape(self) -> None:
         rates = format_uk_rates(

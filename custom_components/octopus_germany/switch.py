@@ -191,42 +191,11 @@ class OctopusSwitch(CoordinatorEntity, SwitchEntity):
         self._pending_state = None
         self._pending_until = None
 
-        # Normalisiere device name für unique_id
-        norm_name = self._device_name.lower().replace(" ", "_")
-        for ch in [
-            "/",
-            "\\",
-            ",",
-            ".",
-            ":",
-            ";",
-            "|",
-            "[",
-            "]",
-            "{",
-            "}",
-            "(",
-            ")",
-            "'",
-            '"',
-            "#",
-            "?",
-            "!",
-            "@",
-            "=",
-            "+",
-            "*",
-            "%",
-            "&",
-            "<",
-            ">",
-        ]:
-            norm_name = norm_name.replace(ch, "_")
         self._attr_name = (
             f"Octopus {self._account_number} {self._device_name} Smart Control"
         )
         self._attr_unique_id = (
-            f"octopus_{self._account_number}_{norm_name}_smart_control"
+            f"octopus_{self._account_number}_{self._device_id}_smart_control"
         )
         self._update_attributes()
 
@@ -461,37 +430,7 @@ class BoostChargeSwitch(CoordinatorEntity, SwitchEntity):
         self.device_id = device_id
         self.device_name = device_name
         self.account_number = account_number
-        norm_name = device_name.lower().replace(" ", "_")
-        for ch in [
-            "/",
-            "\\",
-            ",",
-            ".",
-            ":",
-            ";",
-            "|",
-            "[",
-            "]",
-            "{",
-            "}",
-            "(",
-            ")",
-            "'",
-            '"',
-            "#",
-            "?",
-            "!",
-            "@",
-            "=",
-            "+",
-            "*",
-            "%",
-            "&",
-            "<",
-            ">",
-        ]:
-            norm_name = norm_name.replace(ch, "_")
-        self._attr_unique_id = f"{DOMAIN}_{account_number}_{norm_name}_boost_charge"
+        self._attr_unique_id = f"{DOMAIN}_{account_number}_{device_id}_boost_charge"
         self._attr_name = f"Octopus {account_number} {device_name} Boost Charge"
         self._attr_icon = "mdi:lightning-bolt"
 

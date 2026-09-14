@@ -8,7 +8,7 @@ This page explains how to control EV charging entities and how to call the integ
 
 ### Smart Charging Control Switch
 
-- Entity pattern: `switch.octopus_<account_number>_<device_name>_smart_control`
+- Entity pattern: `switch.octopus_<account_number>_<device_id>_smart_control`
 - Purpose: Enable or suspend SmartFlex smart control for a device
 
 Behavior:
@@ -27,7 +27,7 @@ Requirements:
 
 ### Boost Charge Switch
 
-- Entity pattern: `switch.octopus_germany_<account_number>_<device_name>_boost_charge`
+- Entity pattern: `switch.octopus_germany_<account_number>_<device_id>_boost_charge`
 - Purpose: Trigger immediate charging boost
 
 Behavior:
@@ -42,7 +42,7 @@ Requirements:
 
 ### Plugged-In Binary Sensor
 
-- Entity pattern: `binary_sensor.octopus_<account_number>_<device_name>_plugged`
+- Entity pattern: `binary_sensor.octopus_<account_number>_<device_id>_plugged`
 - Purpose: Best-effort plugged state derived from SmartFlex API status
 
 Decision logic:

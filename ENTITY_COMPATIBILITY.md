@@ -17,17 +17,17 @@ Diese Liste beschreibt die bestehenden `unique_id`-Muster. Sie gelten als kompat
 
 ## Fahrzeug- und Geraete-Entities
 
-Bestehende geraetebezogene IDs verwenden den normalisierten Anzeigenamen:
+Geraetebezogene IDs verwenden die stabile API-Geraete-ID:
 
-- `octopus_<account>_<device_name>_status`
-- `octopus_<account>_<device_name>_soc`
-- `octopus_<account>_<device_name>_battery_size`
-- `octopus_<account>_<device_name>_active_power`
-- `octopus_<account>_<device_name>_plugged`
-- `octopus_<account>_<device_name>_smart_control`
-- `octopus_<account>_<device_name>_boost_charge`
+- `octopus_<account>_<device_id>_status`
+- `octopus_<account>_<device_id>_soc`
+- `octopus_<account>_<device_id>_battery_size`
+- `octopus_<account>_<device_id>_active_power`
+- `octopus_<account>_<device_id>_plugged`
+- `octopus_<account>_<device_id>_smart_control`
+- `octopus_<account>_<device_id>_boost_charge`
 
-Eine Umstellung auf stabile API-Gerate-IDs waere langfristig besser, darf aber erst zusammen mit einer Home-Assistant-Entity-Registry-Migration erfolgen. Bis dahin bleiben bestehende IDs unveraendert.
+Nach dem Upgrade werden die neuen UUID-basierten IDs als neue Home-Assistant-Entities angelegt; bestehende name-basierte IDs koennen als veraltete Registry-Eintraege bestehen bleiben.
 
 ## Bewusste Entscheidungen
 

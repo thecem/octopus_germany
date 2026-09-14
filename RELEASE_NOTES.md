@@ -1,5 +1,14 @@
 # Release Notes
 
+## Version 0.0.126 (2026-09-14)
+
+### Fixes
+
+- Fixed the Smart Control and related Intelligent entities so their stable `unique_id` uses the Octopus device UUID instead of the display name. Multiple vehicles with the same name are now independently represented and controlled.
+- Prevented charging sessions for same-named devices from being associated with the wrong vehicle.
+- Added an upgrade migration that reuses existing Home Assistant entity IDs where the legacy device name is unambiguous; reinstalling the integration is not required.
+- When multiple devices intentionally share a display name, Home Assistant may retain an `_2` suffix on the human-readable `entity_id`. This does not indicate a device collision: UUID-based `unique_id` values keep the entities and commands separate.
+
 ## Version 0.0.125 (2026-09-11)
 
 ### New Features

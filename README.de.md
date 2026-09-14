@@ -60,10 +60,10 @@ Fuer eine kompakte Startseite sind die Details aufgeteilt:
 
 ## Actions auf einen Blick
 
-- switch.octopus_<account_number>_<device_name>_smart_control
+- switch.octopus_<account_number>_<device_id>_smart_control
   - on: Smart Control aktivieren
   - off: Smart Control pausieren
-- switch.octopus_germany_<account_number>_<device_name>_boost_charge
+- switch.octopus_germany_<account_number>_<device_id>_boost_charge
   - Sofortiges Boost-Laden starten/stoppen
 - octopus_germany.set_device_preferences
   - Ziel-SoC und Zielzeit fuer ein Geraet setzen

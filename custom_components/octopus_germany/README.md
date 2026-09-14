@@ -244,7 +244,7 @@ using the example, replace `a_xxxxxxxx` with your lower-case account number and
 
 #### Device Status Sensor
 
-- **Entity ID**: `sensor.octopus_<account_number>_<device_name>_status`
+- **Entity ID**: `sensor.octopus_<account_number>_<device_id>_status`
 - **Description**: Current status of your smart charging device (e.g., "PLUGGED_IN", "CHARGING", "FINISHED", etc.)
 - **Attributes**:
   - `device_id`: Internal ID of the connected device
@@ -258,14 +258,14 @@ using the example, replace `a_xxxxxxxx` with your lower-case account number and
 
 #### Vehicle Sensors
 
-- **Entity ID**: `sensor.octopus_<account_number>_<device_name>_soc`
+- **Entity ID**: `sensor.octopus_<account_number>_<device_id>_soc`
 - **Description**: Latest vehicle state of charge (SoC) in percent
 - **State Source**:
   - Primary: live device status (`stateOfCharge.value`)
   - Fallback: latest charging session (`stateOfChargeFinal`)
 - **Unit**: `%`
 
-- **Entity ID**: `sensor.octopus_<account_number>_<device_name>_battery_size`
+- **Entity ID**: `sensor.octopus_<account_number>_<device_id>_battery_size`
 - **Description**: Vehicle battery size reported by the provider
 - **Unit**: `kWh`
 
@@ -274,7 +274,7 @@ using the example, replace `a_xxxxxxxx` with your lower-case account number and
 ### Switches
 
 #### Smart Charging Control
-- **Entity ID**: `switch.octopus_<account_number>_<device_name>_smart_control`
+- **Entity ID**: `switch.octopus_<account_number>_<device_id>_smart_control`
 - **Description**: Controls smart charging functionality for electric vehicles/charge points
 - **Requirements**: Device must be connected and capable of smart control
 - **Actions**:
@@ -289,7 +289,7 @@ using the example, replace `a_xxxxxxxx` with your lower-case account number and
   - `is_suspended`: Whether device is suspended
 
 #### Boost Charge
-- **Entity ID**: `switch.octopus_germany_<account_number>_<device_name>_boost_charge`
+- **Entity ID**: `switch.octopus_germany_<account_number>_<device_id>_boost_charge`
 - **Description**: Instant charge boost for immediate charging needs
 - **Requirements**:
   - **Smart charging must be enabled** (Smart Charging Control switch = ON)
@@ -311,6 +311,8 @@ using the example, replace `a_xxxxxxxx` with your lower-case account number and
 1. Smart charging is enabled for the device
 2. The device supports smart control capabilities
 3. The device is online and not suspended
+
+Per-device entity IDs use the stable Octopus device UUID. Display names remain human-readable, so identical names do not cause entity collisions.
 
 ## Services
 

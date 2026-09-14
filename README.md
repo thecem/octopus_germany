@@ -82,10 +82,10 @@ To keep this start page compact, detailed documentation is split across focused 
 
 ### Quick Action Overview
 
-- `switch.octopus_<account_number>_<device_name>_smart_control`
+- `switch.octopus_<account_number>_<device_id>_smart_control`
   - ON: smart control enabled
   - OFF: smart control suspended
-- `switch.octopus_germany_<account_number>_<device_name>_boost_charge`
+- `switch.octopus_germany_<account_number>_<device_id>_boost_charge`
   - Starts/stops immediate boost charging (if available)
 - `octopus_germany.set_device_preferences`
   - Set target SoC (%) and target time for a specific device
@@ -96,6 +96,8 @@ To keep this start page compact, detailed documentation is split across focused 
 - `octopus_germany.submit_meter_readings`
   - Submit electricity or gas meter readings to the OE API
   - [Daily upload automation example](docs/UPLOAD_DAILY_METER_READING_AUTOMATION.md)
+
+Per-device entity IDs use the stable Octopus device UUID. Display names remain human-readable, so devices with identical names remain independently controllable.
 
 ### iMSys / SMGW HAN Hinweis
 

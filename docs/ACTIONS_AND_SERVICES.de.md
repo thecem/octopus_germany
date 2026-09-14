@@ -8,7 +8,7 @@ Diese Seite erklaert die wichtigsten EV-Aktionen und wie die Services der Integr
 
 ### Smart Charging Control Switch
 
-- Entitaetsmuster: `switch.octopus_<account_number>_<device_name>_smart_control`
+- Entitaetsmuster: `switch.octopus_<account_number>_<device_id>_smart_control`
 - Zweck: SmartFlex Smart Control fuer ein Geraet aktivieren oder pausieren
 
 Verhalten:
@@ -26,7 +26,7 @@ Voraussetzungen:
 
 ### Boost Charge Switch
 
-- Entitaetsmuster: `switch.octopus_germany_<account_number>_<device_name>_boost_charge`
+- Entitaetsmuster: `switch.octopus_germany_<account_number>_<device_id>_boost_charge`
 - Zweck: Sofortiges Laden manuell starten
 
 Verhalten:
@@ -41,7 +41,7 @@ Voraussetzungen:
 
 ### Plugged Binary Sensor
 
-- Entitaetsmuster: `binary_sensor.octopus_<account_number>_<device_name>_plugged`
+- Entitaetsmuster: `binary_sensor.octopus_<account_number>_<device_id>_plugged`
 - Zweck: Best-effort Steckstatus aus SmartFlex API-Zustaenden
 
 Entscheidungslogik:

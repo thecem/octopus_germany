@@ -275,7 +275,10 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
             session
             for session in account_data.get("charging_sessions", []) or []
             if session.get("device_id") == self._device_id
-            or session.get("device_name") == self._device_name
+            or (
+                not session.get("device_id")
+                and session.get("device_name") == self._device_name
+            )
         ]
 
     @property
@@ -357,41 +360,11 @@ class OctopusSmartChargingSessionsSensor(CoordinatorEntity, SensorEntity):
         self._account_number = account_number
         self._device_name = device_name
         self._device_id = device_id
-        norm_name = device_name.lower().replace(" ", "_")
-        for ch in [
-            "/",
-            "\\",
-            ",",
-            ".",
-            ":",
-            ";",
-            "|",
-            "[",
-            "]",
-            "{",
-            "}",
-            "(",
-            ")",
-            "'",
-            '"',
-            "#",
-            "?",
-            "!",
-            "@",
-            "=",
-            "+",
-            "*",
-            "%",
-            "&",
-            "<",
-            ">",
-        ]:
-            norm_name = norm_name.replace(ch, "_")
         self._attr_name = (
             f"Octopus {account_number} {device_name} Smart Charging Sessions"
         )
         self._attr_unique_id = (
-            f"octopus_{account_number}_{norm_name}_smart_charging_sessions"
+            f"octopus_{account_number}_{device_id}_smart_charging_sessions"
         )
         self._attr_icon = "mdi:ev-station"
         self._attr_state_class = SensorStateClass.MEASUREMENT

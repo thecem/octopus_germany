@@ -12,7 +12,9 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import Platform
+from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from .const import (
     CONF_INTELLIGENT_UPDATE_INTERVAL,
@@ -56,6 +58,153 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR, Platform.SWITCH]
 
 API_URL = "https://api.octopus.energy/v1/graphql/"
+
+
+def _normalize_legacy_device_name(device_name: str) -> str:
+    """Return the name format used by pre-UUID entity unique IDs."""
+    normalized = device_name.lower().replace(" ", "_")
+    for character in [
+        "/",
+        "\\",
+        ",",
+        ".",
+        ":",
+        ";",
+        "|",
+        "[",
+        "]",
+        "{",
+        "}",
+        "(",
+        ")",
+        "'",
+        '"',
+        "#",
+        "?",
+        "!",
+        "@",
+        "=",
+        "+",
+        "*",
+        "%",
+        "&",
+        "<",
+        ">",
+    ]:
+        normalized = normalized.replace(character, "_")
+    return normalized
+
+
+@callback
+def _migrate_legacy_device_entity_ids(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator_data: CoordinatorData,
+    account_numbers: list[str],
+) -> None:
+    """Keep existing entity IDs when switching device identities to UUIDs."""
+    entity_registry = er.async_get(hass)
+    migrated = 0
+
+    for account_number in account_numbers:
+        devices = coordinator_data.get(account_number, {}).get("devices", [])
+        normalized_names = [
+            _normalize_legacy_device_name(device.get("name", f"Device_{device['id']}"))
+            for device in devices
+            if device.get("id")
+        ]
+
+        for device in devices:
+            device_id = device.get("id")
+            if not device_id:
+                continue
+            device_name = device.get("name", f"Device_{device_id}")
+            normalized_name = _normalize_legacy_device_name(device_name)
+
+            # A name-based registry entry cannot be safely assigned when several
+            # devices share that name; UUID entities handle that case directly.
+            if normalized_names.count(normalized_name) != 1:
+                continue
+
+            entity_ids = (
+                (
+                    "sensor",
+                    f"octopus_{account_number}_{normalized_name}_status",
+                    f"octopus_{account_number}_{device_id}_status",
+                ),
+                (
+                    "sensor",
+                    f"octopus_{account_number}_{normalized_name}_soc",
+                    f"octopus_{account_number}_{device_id}_soc",
+                ),
+                (
+                    "sensor",
+                    f"octopus_{account_number}_{normalized_name}_battery_size",
+                    f"octopus_{account_number}_{device_id}_battery_size",
+                ),
+                (
+                    "sensor",
+                    f"octopus_{account_number}_{normalized_name}_active_power",
+                    f"octopus_{account_number}_{device_id}_active_power",
+                ),
+                (
+                    "sensor",
+                    f"octopus_{account_number}_{normalized_name}_smart_charging_sessions",
+                    f"octopus_{account_number}_{device_id}_smart_charging_sessions",
+                ),
+                (
+                    "binary_sensor",
+                    f"octopus_{account_number}_{normalized_name}_intelligent_dispatching",
+                    f"octopus_{account_number}_{device_id}_intelligent_dispatching",
+                ),
+                (
+                    "binary_sensor",
+                    f"octopus_{account_number}_{normalized_name}_plugged",
+                    f"octopus_{account_number}_{device_id}_plugged",
+                ),
+                (
+                    "switch",
+                    f"octopus_{account_number}_{normalized_name}_smart_control",
+                    f"octopus_{account_number}_{device_id}_smart_control",
+                ),
+                (
+                    "switch",
+                    f"{DOMAIN}_{account_number}_{normalized_name}_boost_charge",
+                    f"{DOMAIN}_{account_number}_{device_id}_boost_charge",
+                ),
+            )
+            for domain, old_unique_id, new_unique_id in entity_ids:
+                entity_id = entity_registry.async_get_entity_id(
+                    domain, DOMAIN, old_unique_id
+                )
+                legacy_entity = (
+                    entity_registry.async_get(entity_id) if entity_id else None
+                )
+                if not legacy_entity or legacy_entity.config_entry_id != entry.entry_id:
+                    continue
+                new_entity_id = entity_registry.async_get_entity_id(
+                    domain, DOMAIN, new_unique_id
+                )
+                if new_entity_id:
+                    new_entity = entity_registry.async_get(new_entity_id)
+                    if (
+                        new_entity
+                        and new_entity.config_entry_id == entry.entry_id
+                        and new_entity_id != legacy_entity.entity_id
+                    ):
+                        entity_registry.async_remove(legacy_entity.entity_id)
+                        entity_registry.async_update_entity(
+                            new_entity_id, new_entity_id=legacy_entity.entity_id
+                        )
+                        migrated += 1
+                    continue
+                entity_registry.async_update_entity(
+                    entity_id, new_unique_id=new_unique_id
+                )
+                migrated += 1
+
+    if migrated:
+        _LOGGER.info("Migrated %d device entity identities to stable UUIDs", migrated)
 
 
 async def _async_fetch_account_data(
@@ -714,6 +863,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             **account_device_info,
         )
         _LOGGER.debug("Registered account service device for %s", account_number)
+
+    _migrate_legacy_device_entity_ids(
+        hass, entry, coordinator.data or {}, account_numbers
+    )
 
     # Forward setup to platforms - no need to wait for another refresh
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

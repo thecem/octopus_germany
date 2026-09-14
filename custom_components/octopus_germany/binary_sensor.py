@@ -138,41 +138,11 @@ class OctopusIntelligentDispatchingBinarySensor(CoordinatorEntity, BinarySensorE
         self._account_number = account_number
         self._device_id = device_id
         self._device_name = device_name
-        norm_name = device_name.lower().replace(" ", "_")
-        for ch in [
-            "/",
-            "\\",
-            ",",
-            ".",
-            ":",
-            ";",
-            "|",
-            "[",
-            "]",
-            "{",
-            "}",
-            "(",
-            ")",
-            "'",
-            '"',
-            "#",
-            "?",
-            "!",
-            "@",
-            "=",
-            "+",
-            "*",
-            "%",
-            "&",
-            "<",
-            ">",
-        ]:
-            norm_name = norm_name.replace(ch, "_")
         self._attr_name = (
             f"Octopus {account_number} {device_name} Intelligent Dispatching"
         )
         self._attr_unique_id = (
-            f"octopus_{account_number}_{norm_name}_intelligent_dispatching"
+            f"octopus_{account_number}_{device_id}_intelligent_dispatching"
         )
         self._attr_device_class = None
         self._attr_has_entity_name = False
@@ -657,39 +627,8 @@ class OctopusPluggedInBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._device_id = device_id
         self._device_name = device_name
 
-        norm_name = device_name.lower().replace(" ", "_")
-        for ch in [
-            "/",
-            "\\",
-            ",",
-            ".",
-            ":",
-            ";",
-            "|",
-            "[",
-            "]",
-            "{",
-            "}",
-            "(",
-            ")",
-            "'",
-            '"',
-            "#",
-            "?",
-            "!",
-            "@",
-            "=",
-            "+",
-            "*",
-            "%",
-            "&",
-            "<",
-            ">",
-        ]:
-            norm_name = norm_name.replace(ch, "_")
-
         self._attr_name = f"Octopus {account_number} {device_name} Plugged"
-        self._attr_unique_id = f"octopus_{account_number}_{norm_name}_plugged"
+        self._attr_unique_id = f"octopus_{account_number}_{device_id}_plugged"
         self._attr_icon = "mdi:power-plug"
         self._attr_has_entity_name = False
 

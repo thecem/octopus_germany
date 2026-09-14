@@ -93,38 +93,8 @@ class OctopusDeviceStatusSensor(CoordinatorEntity, SensorEntity):
                     break
         if not device_name:
             device_name = f"Device_{device_id}"
-        norm_name = device_name.lower().replace(" ", "_")
-        for ch in [
-            "/",
-            "\\",
-            ",",
-            ".",
-            ":",
-            ";",
-            "|",
-            "[",
-            "]",
-            "{",
-            "}",
-            "(",
-            ")",
-            "'",
-            '"',
-            "#",
-            "?",
-            "!",
-            "@",
-            "=",
-            "+",
-            "*",
-            "%",
-            "&",
-            "<",
-            ">",
-        ]:
-            norm_name = norm_name.replace(ch, "_")
         self._attr_name = f"Octopus {account_number} {device_name} Status"
-        self._attr_unique_id = f"octopus_{account_number}_{norm_name}_status"
+        self._attr_unique_id = f"octopus_{account_number}_{device_id}_status"
         self._attr_has_entity_name = False
         self._attributes = {}
 
@@ -254,42 +224,11 @@ class OctopusVehicleDataSensor(CoordinatorEntity, SensorEntity):
         self._account_number = account_number
         self._device_id = device_id
         self._device_name = self._resolve_device_name()
-        norm_name = self._device_name.lower().replace(" ", "_")
-        for ch in [
-            "/",
-            "\\",
-            ",",
-            ".",
-            ":",
-            ";",
-            "|",
-            "[",
-            "]",
-            "{",
-            "}",
-            "(",
-            ")",
-            "'",
-            '"',
-            "#",
-            "?",
-            "!",
-            "@",
-            "=",
-            "+",
-            "*",
-            "%",
-            "&",
-            "<",
-            ">",
-        ]:
-            norm_name = norm_name.replace(ch, "_")
-
         self._attr_name = (
             f"Octopus {account_number} {self._device_name} {self._metric_name}"
         )
         self._attr_unique_id = (
-            f"octopus_{account_number}_{norm_name}_{self._metric_unique_id}"
+            f"octopus_{account_number}_{device_id}_{self._metric_unique_id}"
         )
         self._attr_has_entity_name = False
         self._attr_icon = self._metric_icon

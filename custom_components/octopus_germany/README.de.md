@@ -27,9 +27,9 @@ Die Einrichtung erfolgt in Home Assistant ueber:
 
 ### Binary Sensors
 
-- binary_sensor.octopus_<account_number>_<device_name>_intelligent_dispatching
+- binary_sensor.octopus_<account_number>_<device_id>_intelligent_dispatching
   - on waehrend aktivem Dispatch
-- binary_sensor.octopus_<account_number>_<device_name>_plugged
+- binary_sensor.octopus_<account_number>_<device_id>_plugged
   - abgeleiteter Steckstatus
 
 Plugged-Logik:
@@ -57,8 +57,10 @@ Hinweis:
 
 ### Switches
 
-- switch.octopus_<account_number>_<device_name>_smart_control
-- switch.octopus_germany_<account_number>_<device_name>_boost_charge
+- switch.octopus_<account_number>_<device_id>_smart_control
+- switch.octopus_germany_<account_number>_<device_id>_boost_charge
+
+Geraetebezogene Entitaets-IDs verwenden die stabile Octopus-Geraete-UUID. Der Anzeigename bleibt lesbar, sodass gleiche Namen nicht zu Kollisionen fuehren.
 
 ## Services
 
