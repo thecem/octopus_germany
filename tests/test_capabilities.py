@@ -365,16 +365,20 @@ class TariffCapabilitiesTest(unittest.TestCase):
 
             def __init__(self) -> None:
                 self.entities = {
-                    "sensor.octopus_energy_germany_account_car_status": self.FakeEntity({
-                        "entity_id": "sensor.octopus_energy_germany_account_car_status",
-                        "unique_id": "octopus_account_car_status",
-                        "config_entry_id": "entry-1",
-                    }),
-                    "sensor.octopus_energy_germany_account_car_status_2": self.FakeEntity({
-                        "entity_id": "sensor.octopus_energy_germany_account_car_status_2",
-                        "unique_id": "octopus_account_device-1_status",
-                        "config_entry_id": "entry-1",
-                    }),
+                    "sensor.octopus_energy_germany_account_car_status": self.FakeEntity(
+                        {
+                            "entity_id": "sensor.octopus_energy_germany_account_car_status",
+                            "unique_id": "octopus_account_car_status",
+                            "config_entry_id": "entry-1",
+                        }
+                    ),
+                    "sensor.octopus_energy_germany_account_car_status_2": self.FakeEntity(
+                        {
+                            "entity_id": "sensor.octopus_energy_germany_account_car_status_2",
+                            "unique_id": "octopus_account_device-1_status",
+                            "config_entry_id": "entry-1",
+                        }
+                    ),
                 }
 
             def async_get_entity_id(
