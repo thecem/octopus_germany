@@ -26,7 +26,7 @@ This custom component integrates Octopus Germany services with Home Assistant, p
   - Dynamic tariffs (with real-time pricing using unit rate forecasts)
   - Heat tariffs (for heat pumps)
 - **Section 14a Grid Fees**: OE-reported module and current variable grid fee with the complete daily schedule
-- **Agreement History**: Past, active and scheduled electricity agreements with gross/net prices and VAT in electricity price sensor attributes
+- **Agreement History**: All agreements returned by OE, including past, active and scheduled entries, with available gross/net prices and VAT in electricity price sensor attributes
 - **Multi-Ledger Support**: Electricity, Gas, Heat, and other ledger types
 - **Device Control**: Smart charging control for electric vehicles and charge points
 - **Boost Charging**: Instant charge boost functionality (requires smart charging enabled)

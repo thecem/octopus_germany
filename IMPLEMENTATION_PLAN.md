@@ -106,7 +106,7 @@ custom_components/octopus_germany/
 - [ ] Zeitkontrakte dokumentieren und testen: `validFrom`/`validTo` und Forecasts als Instant, TOU-Aktivierungsregeln als lokale Wandzeit.
 - [x] Direkte Produktdaten in eine testbare Normalisierungsfunktion auslagern.
 - [x] Gemeinsame Gross-Rate- und Time-of-Use-Slot-Normalisierung fuer Strom und Gas einfuehren.
-- [x] Alle vergangenen, aktuellen und zukuenftigen Agreements mit Status, Laufzeit sowie Brutto-, Netto- und MwSt.-Preisstufen im Strompreis-Sensor bereitstellen.
+- [x] Alle von OE gelieferten vergangenen, aktuellen und zukuenftigen Agreements mit Status, Laufzeit sowie verfuegbaren Brutto-, Netto- und MwSt.-Preisstufen im Strompreis-Sensor bereitstellen.
 - [x] Gross-Rate-Fallbacks in Simple-Agreement-Produkten zentralisieren.
 - [x] Optionale Forecast-Listen normalisieren und ungueltige Eintraege herausfiltern.
 - [x] Simple-/Time-of-Use-Produkt-Typ-Erkennung fuer Strom und Gas zentralisieren.
@@ -226,7 +226,7 @@ custom_components/octopus_germany/
 - [x] Keine separaten Entities fuer jedes statische Zeitfenster erzeugen. `OFFPEAK`, `STANDARD` und `PEAK` bleiben Tarifstufen im Zeitplan; nur der aktuell wirksame Wert ist Sensorzustand.
 - [x] Zustandswechsel an Intervallgrenzen lokal ausloesen, ohne dafuer eine neue GraphQL-Abfrage zu senden; nach Coordinator-Refresh den naechsten Wechsel neu planen.
 - [ ] Tests fuer alle Tarifstufen, exakte Intervallgrenzen, Mitternacht, Gueltigkeitswechsel, nicht unterstuetzte Accounts und die Unterscheidung zwischen Netzentgelt und Gesamtstrompreis ergaenzen.
-- [ ] Beide README-Dateien, Uebersetzungen, Entity-Kompatibilitaet und Release Notes erst zusammen mit der tatsaechlichen Implementierung aktualisieren; dann auch die Manifest-Version erhoehen.
+- [x] Beide README-Dateien, Entity-Kompatibilitaet und Release Notes zusammen mit der Implementierung aktualisieren; die Entity-Namen sind derzeit direkt im Python-Code definiert und benoetigen keine neuen Uebersetzungsschluessel.
 
 ## Phase 8: Saldo- und Buchungshistorie
 

@@ -1391,6 +1391,30 @@ class TariffCapabilitiesTest(unittest.TestCase):
         assert agreements[1]["code"] == "FUTURE"
         assert agreements[1]["prices"][0]["gross_eur_per_kwh"] == 0.336651
 
+    def test_price_sensor_keeps_agreements_without_current_product(self) -> None:
+        products = [
+            {
+                "code": "FUTURE",
+                "name": "Future Agreement",
+                "type": "Simple",
+                "validFrom": "2027-01-01T00:00:00+01:00",
+                "validTo": "2028-01-01T00:00:00+01:00",
+                "prices": [{"gross_eur_per_kwh": 0.3}],
+            }
+        ]
+        coordinator = Mock(
+            last_update_success=True,
+            data={"account-1": {"products": products, "meter": {}}},
+        )
+
+        with patch(
+            "custom_components.octopus_germany.entities.electricity.is_product_current",
+            return_value=False,
+        ):
+            sensor = OctopusElectricityPriceSensor("account-1", coordinator)
+
+        assert sensor.extra_state_attributes["agreements"][0]["code"] == "FUTURE"
+
     def test_normalize_agreement_prices_handles_missing_values(self) -> None:
         prices = normalize_agreement_prices([{"timeslotName": "STANDARD"}])
 

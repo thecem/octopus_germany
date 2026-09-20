@@ -93,7 +93,7 @@ using the example, replace `a_xxxxxxxx` with your lower-case account number and
 ### Binary Sensors
 
 #### Intelligent Dispatching
-- **Entity ID**: `binary_sensor.octopus_<account_number>_<device_name>_intelligent_dispatching`
+- **Entity ID pattern**: `binary_sensor.octopus_<account_number>_<device_id>_intelligent_dispatching`
 - **Description**: Shows whether Octopus Intelligent is currently dispatching (active charging schedule)
 - **State**: `on` when dispatching is active, `off` when inactive
 - **Attributes**:
@@ -112,7 +112,7 @@ using the example, replace `a_xxxxxxxx` with your lower-case account number and
   - `meter`: Meter information
 
 #### Plugged-In
-- **Entity ID**: `binary_sensor.octopus_<account_number>_<device_name>_plugged`
+- **Entity ID pattern**: `binary_sensor.octopus_<account_number>_<device_id>_plugged`
 - **Description**: Inferred plugged-in status of the SmartFlex device
 - **State**:
   - `on`: Smart control active and `currentState != SMART_CONTROL_NOT_AVAILABLE`
@@ -160,9 +160,11 @@ using the example, replace `a_xxxxxxxx` with your lower-case account number and
   - `unit_rate_forecast`: (For Dynamic tariffs) Native German API unit rate forecast data
   - `agreement_is_active`, `agreement_is_revoked`, `agreement_is_terminated`: Status of the currently selected agreement
   - `agreement_prices`: Gross, net and VAT details for every price tier in the current agreement
-  - `agreements`: All past, current and scheduled electricity agreements with validity, status and complete price tiers
+  - `agreements`: All electricity agreements returned by OE, including past, current and scheduled entries, with validity, status and available price tiers
 
 Agreement price entries expose the original gross/net values in cents per kWh, normalized values in EUR per kWh, VAT percentage, price validity and Time-of-Use activation windows where available.
+
+Each item in `agreements` contains `code`, `name`, `type`, `is_active`, `is_revoked`, `is_terminated`, `valid_from`, `valid_to` and `prices`. Each price entry can contain `name`, `gross_cents_per_kwh`, `gross_eur_per_kwh`, `net_cents_per_kwh`, `net_eur_per_kwh`, `vat_percent`, `price_valid_from`, `price_valid_to` and `activation_rules`.
 
 #### Electricity Latest Reading Sensor
 
@@ -192,7 +194,7 @@ Agreement price entries expose the original gross/net values in cents per kWh, n
   - Shows only the currently active grid fee component in EUR/kWh, not the complete electricity price
   - Attributes include rate type, current interval, next change, validity, grid operator and the complete daily schedule
 
-The underlying schedule is fetched at most once per local day. State changes at tariff boundaries are calculated locally without another API request. Sensors are only created when the OE backend returns grid fee data.
+A successful schedule response is cached for the local day. State changes at tariff boundaries are calculated locally without another API request. Sensors are only created when the OE backend returns grid fee data.
 
 #### Gas Sensors
 

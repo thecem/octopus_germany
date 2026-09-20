@@ -117,12 +117,15 @@ Die Service-Antwort enthaelt `measurement_metadata` mit `sources`, `reading_qual
 Parameter:
 
 - `account_number` (required)
+- `property_id` (optional): verwendet ohne Angabe die erste Strom-Property
 - `period` (required): `month` oder `year`
 - `year` (required)
 - `month` (optional bei `period: month`)
 - `filename` (optional)
 - `layout` (optional): `wide` oder `tall`
+- `resolution` (optional): `15min` oder `hour`; Standard ist `15min`
 - `summary` (optional): `true/false`
+- `go_window_start` und `go_window_end` (optional): lokale `HH:MM`-Grenzen fuer die Aufteilung in der Zusammenfassung
 
 ### `octopus_germany.submit_meter_readings`
 

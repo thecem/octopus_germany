@@ -3,10 +3,11 @@
 ## Architecture Overview
 
 ### Core Components
-- **Main Coordinator**: Central data coordinator using `DataUpdateCoordinator` with shared token management
-- **API Client** (`octopus_germany.py`): Handles GraphQL authentication, token refresh, and all API calls
-- **Platforms**: binary_sensor, sensor, switch - all sharing the main coordinator
-- **Token Management**: Automatic refresh with 59-minute intervals, robust error handling
+- **Base Coordinator**: Account, tariff, meter and optional grid-fee data using `DataUpdateCoordinator`
+- **Intelligent Coordinator**: Optional device and dispatch polling for eligible accounts
+- **API Client** (`octopus_germany.py` plus `api/` mixins): Handles GraphQL authentication, token refresh, and endpoint-specific API calls
+- **Platforms**: binary_sensor, sensor and switch consume the shared coordinator data
+- **Token Management**: Automatic refresh with 50-minute intervals, robust error handling
 
 ### Key Implementation Details
 
@@ -21,15 +22,15 @@
 
 #### Token Management & Authentication
 - **Shared Token Strategy**: All platforms use `hass.data[DOMAIN][entry.entry_id]["coordinator"]`
-- **Auto-Refresh**: Background task refreshes tokens every 59 minutes
+- **Auto-Refresh**: Background task refreshes tokens every 50 minutes
 - **Error Handling**: 5 retry attempts with exponential backoff on login failures
-- **GraphQL Client**: Centralized `_get_graphql_client()` method for consistent authentication
+- **GraphQL Clients**: `_get_graphql_client()` for Kraken and `_get_oe_backend_graphql_client()` for OE backend operations, both using shared authentication
 
 #### Data Flow Architecture
 ```
 API Client (octopus_germany.py)
     ↓ (GraphQL + Token Management)
-Main Coordinator (DataUpdateCoordinator)
+Base Coordinator + optional Intelligent Coordinator
     ↓ (Shared Data)
 ├── Binary Sensor (intelligent dispatching)
 ├── Sensors (price, balance, meter readings, device status)
@@ -44,13 +45,13 @@ Main Coordinator (DataUpdateCoordinator)
    data = hass.data[DOMAIN][entry.entry_id]
    coordinator = data["coordinator"]
 
-   # WRONG - Never create separate coordinators for platforms
+   # WRONG - Never create separate coordinators inside platforms
    # coordinator = SeparateCoordinator(hass, client, account)
    ```
 
 2. **Token Sharing**:
    - Never create separate GraphQL clients in platform entities
-   - Always use `self.client._get_graphql_client()` for mutations
+   - Use the API client's endpoint-specific GraphQL client; platform entities must not create clients
    - Let the main API client handle all token management
 
 3. **Data Structure**:

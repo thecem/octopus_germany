@@ -534,6 +534,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
                 "meter_id": meter_id,
                 "meter_number": meter_number,
                 "meter_type": meter_type,
+                "agreements": _agreement_attributes(products),
             }
 
     def _format_uk_rates(self, product: dict[str, Any]) -> list[dict[str, Any]]:

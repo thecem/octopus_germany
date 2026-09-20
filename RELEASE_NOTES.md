@@ -1,10 +1,19 @@
 # Release Notes
 
+## Version 0.0.131 (2026-09-20)
+
+### Improvements
+
+- Refreshed both OEG Kraken schema snapshots from the live endpoint. The schema now contains 2,201 types and 204 query fields, including 27 newly exposed queries compared with the previous snapshot.
+- Verified that all GraphQL fields required by the integration remain available after the schema update.
+- Kept agreement history attributes available even when no agreement is currently valid.
+- Corrected documentation for UUID-based entity IDs, token refresh timing, GraphQL endpoints and complete CSV service parameters.
+
 ## Version 0.0.130 (2026-09-20)
 
 ### Improvements
 
-- The electricity price sensor now exposes all past, active and scheduled agreements in its `agreements` attribute.
+- The electricity price sensor now exposes all agreements returned by OE, including past, active and scheduled entries, in its `agreements` attribute.
 - Agreement attributes include active, revoked and terminated status, validity dates, and every available Time-of-Use price tier.
 - Gross and net prices are retained in cents per kWh and normalized to EUR per kWh, together with the API-provided VAT percentage and price validity.
 
@@ -14,7 +23,7 @@
 
 - Added a diagnostic sensor for the section 14a module reported by the OE backend.
 - Added a variable grid fee sensor showing the currently active grid fee component in EUR/kWh, with rate type, validity, next change, grid operator and full daily schedule attributes.
-- Variable grid fee conditions are fetched from the dedicated OE backend at most once per local day; tariff boundary changes are calculated locally without additional API requests.
+- Successful variable grid fee responses are cached per local day; tariff boundary changes are calculated locally without additional API requests.
 - Added a separate introspection schema snapshot for the OE backend; the existing OEG Kraken schema remains unchanged because the endpoints expose different Query roots.
 
 ### Notes

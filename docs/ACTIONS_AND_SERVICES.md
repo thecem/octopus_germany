@@ -118,12 +118,15 @@ The service response contains `measurement_metadata` with `sources`, `reading_qu
 Parameters:
 
 - `account_number` (required)
+- `property_id` (optional): uses the first electricity property when omitted
 - `period` (required): `month` or `year`
 - `year` (required)
 - `month` (optional for period `month`)
 - `filename` (optional)
 - `layout` (optional): `wide` or `tall`
+- `resolution` (optional): `15min` or `hour`; defaults to `15min`
 - `summary` (optional): `true/false`
+- `go_window_start` and `go_window_end` (optional): local `HH:MM` boundaries used for the summary split
 
 ### `octopus_germany.submit_meter_readings`
 
