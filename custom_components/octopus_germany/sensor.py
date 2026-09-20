@@ -38,7 +38,11 @@ from .entities.devices import (
     OctopusVehicleBatterySizeSensor,
     OctopusVehicleLastSessionSocSensor,
 )
-from .entities.electricity import OctopusElectricityPriceSensor
+from .entities.electricity import (
+    OctopusElectricityPriceSensor,
+    OctopusSection14aModuleSensor,
+    OctopusVariableGridFeeSensor,
+)
 from .entities.gas import (
     OctopusGasBalanceSensor,
     OctopusGasContractEndSensor,
@@ -269,6 +273,14 @@ async def async_setup_entry(
                 if account_data.get("malo_number"):
                     entities.append(
                         OctopusElectricitySmartMeterReadingsSensor(acc_num, coordinator)
+                    )
+
+                if account_data.get("variable_grid_fees"):
+                    entities.extend(
+                        (
+                            OctopusSection14aModuleSensor(acc_num, coordinator),
+                            OctopusVariableGridFeeSensor(acc_num, coordinator),
+                        )
                     )
 
             # Create electricity balance sensor for electricity-enabled accounts

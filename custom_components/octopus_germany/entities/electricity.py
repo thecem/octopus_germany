@@ -12,15 +12,18 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceEntryType
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.dt import now as local_now
 
 from custom_components.octopus_germany.const import DOMAIN
 from custom_components.octopus_germany.tariff import (
     format_uk_rates,
+    get_active_grid_fee,
     get_active_timeslot_rate,
     get_current_forecast_rate,
+    get_next_grid_fee_change,
     is_product_current,
     is_time_between,
     parse_tariff_time,
@@ -32,6 +35,190 @@ if TYPE_CHECKING:
     from custom_components.octopus_germany.coordinator import OctopusDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _account_device_info(account_number: str) -> DeviceInfo:
+    """Return the account service device shared by electricity entities."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, account_number)},
+        name=f"Octopus Energy Germany ({account_number})",
+        manufacturer="Octopus Energy Germany",
+        configuration_url="https://my.octopusenergy.de/",
+        entry_type=DeviceEntryType.SERVICE,
+    )
+
+
+def _agreement_attributes(products: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return compact attributes for all historical and scheduled agreements."""
+    return [
+        {
+            "code": product.get("code"),
+            "name": product.get("name"),
+            "type": product.get("type"),
+            "is_active": product.get("isActive"),
+            "is_revoked": product.get("isRevoked"),
+            "is_terminated": product.get("isTerminated"),
+            "valid_from": product.get("validFrom"),
+            "valid_to": product.get("validTo"),
+            "prices": product.get("prices") or [],
+        }
+        for product in products
+    ]
+
+
+class OctopusSection14aModuleSensor(CoordinatorEntity, SensorEntity):
+    """Expose the section 14a module reported by the OE backend."""
+
+    def __init__(
+        self, account_number: str, coordinator: OctopusDataCoordinator
+    ) -> None:
+        """Initialize the module sensor."""
+        super().__init__(coordinator)
+        self._account_number = account_number
+        self._attr_name = f"Octopus {account_number} Section 14a Module"
+        self._attr_unique_id = f"octopus_{account_number}_14a_module"
+        self._attr_icon = "mdi:transmission-tower"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_has_entity_name = False
+
+    def _data(self) -> dict[str, Any]:
+        """Return the current normalized grid fee data."""
+        if not self.coordinator.data:
+            return {}
+        return (
+            self.coordinator.data.get(self._account_number, {}).get(
+                "variable_grid_fees"
+            )
+            or {}
+        )
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the module exactly as reported by OE."""
+        return self._data().get("module")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the source and grid operator information."""
+        data = self._data()
+        return {
+            "source": "OE backend",
+            "grid_operator_code": data.get("grid_operator_code"),
+            "grid_operator_name": data.get("grid_operator_name"),
+            "rate_count": len(data.get("rates") or []),
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return whether OE supplied a module value."""
+        return bool(self._data().get("module"))
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return account device information."""
+        return _account_device_info(self._account_number)
+
+
+class OctopusVariableGridFeeSensor(CoordinatorEntity, SensorEntity):
+    """Expose the currently active variable grid fee component."""
+
+    def __init__(
+        self, account_number: str, coordinator: OctopusDataCoordinator
+    ) -> None:
+        """Initialize the variable grid fee sensor."""
+        super().__init__(coordinator)
+        self._account_number = account_number
+        self._attr_name = f"Octopus {account_number} Variable Grid Fee"
+        self._attr_unique_id = f"octopus_{account_number}_variable_grid_fee"
+        self._attr_device_class = SensorDeviceClass.MONETARY
+        self._attr_native_unit_of_measurement = "€/kWh"
+        self._attr_icon = "mdi:transmission-tower-export"
+        self._attr_suggested_display_precision = 4
+        self._attr_has_entity_name = False
+        self._cancel_boundary_update = None
+
+    def _data(self) -> dict[str, Any]:
+        """Return the current normalized grid fee data."""
+        if not self.coordinator.data:
+            return {}
+        return (
+            self.coordinator.data.get(self._account_number, {}).get(
+                "variable_grid_fees"
+            )
+            or {}
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the currently active grid fee in EUR per kWh."""
+        active_rate = get_active_grid_fee(self._data())
+        return active_rate.get("rate_eur_per_kwh") if active_rate else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return active period and complete daily grid fee schedule."""
+        data = self._data()
+        active_rate = get_active_grid_fee(data)
+        next_change = get_next_grid_fee_change(data)
+        return {
+            "module": data.get("module"),
+            "rate_type": active_rate.get("rate_type") if active_rate else None,
+            "interval_start": active_rate.get("start_time") if active_rate else None,
+            "interval_end": active_rate.get("end_time") if active_rate else None,
+            "next_change": next_change.isoformat() if next_change else None,
+            "valid_from": active_rate.get("valid_from") if active_rate else None,
+            "valid_to": active_rate.get("valid_to") if active_rate else None,
+            "grid_operator_code": data.get("grid_operator_code"),
+            "grid_operator_name": data.get("grid_operator_name"),
+            "rates": data.get("rates") or [],
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return whether a grid fee is active."""
+        return get_active_grid_fee(self._data()) is not None
+
+    async def async_added_to_hass(self) -> None:
+        """Schedule the first local tariff-boundary update."""
+        await super().async_added_to_hass()
+        self._schedule_boundary_update()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Cancel the local tariff-boundary update."""
+        if self._cancel_boundary_update:
+            self._cancel_boundary_update()
+            self._cancel_boundary_update = None
+        await super().async_will_remove_from_hass()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Refresh state and reschedule the next tariff boundary."""
+        self._schedule_boundary_update()
+        self.async_write_ha_state()
+
+    @callback
+    def _handle_boundary_update(self, _now: Any) -> None:
+        """Write state when the locally calculated tariff period changes."""
+        self._cancel_boundary_update = None
+        self.async_write_ha_state()
+        self._schedule_boundary_update()
+
+    @callback
+    def _schedule_boundary_update(self) -> None:
+        """Schedule an update at the end of the active tariff period."""
+        if self._cancel_boundary_update:
+            self._cancel_boundary_update()
+            self._cancel_boundary_update = None
+        next_change = get_next_grid_fee_change(self._data())
+        if next_change and self.hass:
+            self._cancel_boundary_update = async_track_point_in_time(
+                self.hass, self._handle_boundary_update, next_change
+            )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return account device information."""
+        return _account_device_info(self._account_number)
 
 
 class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
@@ -172,6 +359,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
             "meter_number": "Unknown",
             "meter_type": "Unknown",
             "account_number": self._account_number,
+            "agreements": [],
         }
 
         # Check if coordinator has valid data
@@ -256,6 +444,11 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
                 "meter_type": meter_type,
                 "account_number": self._account_number,
                 "active_tariff_type": current_product.get("type", "Unknown"),
+                "agreement_is_active": current_product.get("isActive"),
+                "agreement_is_revoked": current_product.get("isRevoked"),
+                "agreement_is_terminated": current_product.get("isTerminated"),
+                "agreement_prices": current_product.get("prices") or [],
+                "agreements": _agreement_attributes(products),
             }
 
             # Add time-of-use specific information if available

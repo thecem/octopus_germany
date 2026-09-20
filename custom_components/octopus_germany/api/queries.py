@@ -166,6 +166,9 @@ query ComprehensiveDataQuery($accountNumber: String!, $includeIntelligent: Boole
       id
       electricityMalos {
         agreements {
+          isActive
+          isRevoked
+          isTerminated
           product {
             code
             description
@@ -225,6 +228,10 @@ query ComprehensiveDataQuery($accountNumber: String!, $includeIntelligent: Boole
           validTo
         }
         maloNumber
+        dno {
+          code
+          name
+        }
                 meters {
           id
           meterType
@@ -237,6 +244,9 @@ query ComprehensiveDataQuery($accountNumber: String!, $includeIntelligent: Boole
       }
       gasMalos {
         agreements {
+          isActive
+          isRevoked
+          isTerminated
           product {
             code
             description
@@ -732,6 +742,85 @@ query getSmartMeter15Min($accountNumber: String!, $propertyId: ID!, $date: Date!
           }
         }
       }
+    }
+  }
+}
+"""
+
+ELECTRICITY_MEASUREMENTS_RANGE_QUERY = """
+query getAccountMeasurements(
+  $propertyId: ID!
+  $first: Int!
+  $after: String
+  $utilityFilters: [UtilityFiltersInput!]!
+  $startAt: DateTime!
+  $endAt: DateTime!
+  $timezone: String!
+) {
+  property(id: $propertyId) {
+    measurements(
+      first: $first
+      after: $after
+      utilityFilters: $utilityFilters
+      startAt: $startAt
+      endAt: $endAt
+      timezone: $timezone
+    ) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      edges {
+        node {
+          __typename
+          source
+          value
+          unit
+          ... on IntervalMeasurementType {
+            startAt
+            endAt
+            durationInSeconds
+          }
+          metaData {
+            utilityFilters {
+              __typename
+              ... on ElectricityFiltersOutput {
+                marketSupplyPointId
+                deviceId
+                registerId
+                readingDirection
+                readingFrequencyType
+                readingQuality
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+VARIABLE_GRID_FEES_QUERY = """
+query VariableGridFees(
+  $accountNumber: String!
+  $gridOperatorCode: String!
+  $date: Date
+) {
+  variableGridFees(
+    accountNumber: $accountNumber
+    gridOperatorCode: $gridOperatorCode
+    date: $date
+  ) {
+    module
+    gridFees {
+      gridFeeKwhRateType
+      rateTypeIntervalStart
+      rateTypeIntervalEnd
+      validFrom
+      validTo
+      gridOperatorCode
+      gridFeeInCentsPerKwh
     }
   }
 }

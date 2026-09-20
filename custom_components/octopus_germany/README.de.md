@@ -50,10 +50,15 @@ Wichtig:
 - Fahrzeugdaten (SoC, Battery Size)
 - Smart Charging Sessions
 - Historische Smart-Meter-Verbrauchswerte
+- Von OE gemeldetes Paragraph-14a-Modul
+- Aktuell wirksamer variabler Netzentgeltanteil in EUR/kWh mit vollstaendigem Tagesplan als Attribut
+- Der Strompreis-Sensor enthaelt unter `agreements` alle vergangenen, aktuellen und zukuenftigen Stromvertraege mit Status, Laufzeit sowie allen Brutto-, Netto- und MwSt.-Preisstufen. `agreement_prices` enthaelt die Preisstufen des aktuell ausgewaehlten Vertrags.
 
 Hinweis:
 
 - SoC Change und SoC Limit wurden entfernt.
+- `MODULE_1` wird neutral als OE-Backend-Wert angezeigt und beweist allein nicht, dass Modul 3 als Abrechnungsoption gewaehlt wurde.
+- Die Netzentgelt-Konditionen werden hoechstens einmal pro lokalem Tag geladen; Zeitfensterwechsel werden lokal berechnet.
 
 ### Switches
 
@@ -67,6 +72,8 @@ Geraetebezogene Entitaets-IDs verwenden die stabile Octopus-Geraete-UUID. Der An
 - octopus_germany.set_device_preferences
 - octopus_germany.get_smart_meter_readings
 - octopus_germany.export_smart_meter_csv
+
+CSV-Exporte laden Smart-Meter-Werte ueber paginierte Monatsabfragen in der konfigurierten Home-Assistant-Zeitzone. Die API-Schicht behaelt Quellen-, Qualitaets-, Geraete- und Registerdaten bei, sofern OE sie liefert; auch intern konsistente Intervalle koennen geschaetzt sein.
 
 Fuer Parameter, Beispiele und Event-Outputs siehe:
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.util.dt import as_utc, parse_datetime, utcnow
@@ -31,6 +32,9 @@ def create_empty_account_data(account_number: str) -> dict[str, AccountData]:
             "malo_number": None,
             "melo_number": None,
             "meter": None,
+            "grid_operator_code": None,
+            "grid_operator_name": None,
+            "variable_grid_fees": None,
             "gas_malo_number": None,
             "gas_melo_number": None,
             "gas_meter": None,
@@ -102,6 +106,57 @@ def extract_gross_rate(rate_info: Any, default: Any = "0") -> Any:
     return default
 
 
+def _first_gross_rate_info(rate: dict[str, Any]) -> dict[str, Any]:
+    """Return the first gross-rate information object from supported shapes."""
+    gross_info = rate.get("grossRateInformation") or {}
+    if isinstance(gross_info, list):
+        return gross_info[0] if gross_info else {}
+    return gross_info if isinstance(gross_info, dict) else {}
+
+
+def _eur_per_kwh(value: Any) -> float | None:
+    """Convert a cents-per-kWh API value to EUR per kWh."""
+    if value is None:
+        return None
+    try:
+        return float(Decimal(str(value)) / Decimal(100))
+    except InvalidOperation, TypeError:
+        return None
+
+
+def normalize_agreement_prices(
+    rates: list[dict[str, Any]], agreement_gross_rate: Any = None
+) -> list[dict[str, Any]]:
+    """Normalize gross, net and VAT details for agreement rates."""
+    prices = []
+    for rate in rates:
+        gross_info = _first_gross_rate_info(rate)
+        gross_rate = rate.get("latestGrossUnitRateCentsPerKwh")
+        if gross_rate is None:
+            gross_rate = gross_info.get("grossRate", agreement_gross_rate)
+        net_rate = rate.get("netUnitRateCentsPerKwh")
+        prices.append(
+            {
+                "name": rate.get("timeslotName"),
+                "gross_cents_per_kwh": gross_rate,
+                "gross_eur_per_kwh": _eur_per_kwh(gross_rate),
+                "net_cents_per_kwh": net_rate,
+                "net_eur_per_kwh": _eur_per_kwh(net_rate),
+                "vat_percent": gross_info.get("vatRate"),
+                "price_valid_from": gross_info.get("date"),
+                "price_valid_to": gross_info.get("rateValidToDate"),
+                "activation_rules": [
+                    {
+                        "from_time": rule.get("activeFromTime"),
+                        "to_time": rule.get("activeToTime"),
+                    }
+                    for rule in rate.get("timeslotActivationRules") or []
+                ],
+            }
+        )
+    return prices
+
+
 def normalize_timeslots(rates: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Normalize time-of-use rates and their activation rules."""
     timeslots = []
@@ -120,6 +175,8 @@ def normalize_timeslots(rates: list[dict[str, Any]]) -> list[dict[str, Any]]:
             {
                 "name": rate.get("timeslotName", "Unknown"),
                 "rate": gross_rate,
+                "net_rate": rate.get("netUnitRateCentsPerKwh"),
+                "vat_rate": _first_gross_rate_info(rate).get("vatRate"),
                 "activation_rules": activation_rules,
             }
         )
@@ -152,6 +209,9 @@ def normalize_agreement_products(
                     "validFrom": agreement.get("validFrom"),
                     "validTo": agreement.get("validTo"),
                     "isTimeOfUse": product.get("isTimeOfUse", False),
+                    "isActive": agreement.get("isActive"),
+                    "isRevoked": agreement.get("isRevoked"),
+                    "isTerminated": agreement.get("isTerminated"),
                 }
                 if product_type == "Simple":
                     agreement_rate = extract_gross_rate(
@@ -163,9 +223,15 @@ def normalize_agreement_products(
                             "latestGrossUnitRateCentsPerKwh", agreement_rate
                         ),
                     )
+                    normalized["prices"] = normalize_agreement_prices(
+                        [unit_rate_info], agreement_rate
+                    )
                 elif "rates" in unit_rate_info:
                     normalized["grossRate"] = "0"
                     normalized["timeslots"] = normalize_timeslots(
+                        unit_rate_info["rates"]
+                    )
+                    normalized["prices"] = normalize_agreement_prices(
                         unit_rate_info["rates"]
                     )
                 else:
@@ -216,6 +282,22 @@ def extract_meter_data(account_data: dict[str, Any]) -> dict[str, Any]:
                 malo.get("maloNumber")
                 for malo in electricity_malos
                 if malo.get("maloNumber")
+            ),
+            None,
+        ),
+        "grid_operator_code": next(
+            (
+                (malo.get("dno") or {}).get("code")
+                for malo in electricity_malos
+                if (malo.get("dno") or {}).get("code")
+            ),
+            None,
+        ),
+        "grid_operator_name": next(
+            (
+                (malo.get("dno") or {}).get("name")
+                for malo in electricity_malos
+                if (malo.get("dno") or {}).get("name")
             ),
             None,
         ),

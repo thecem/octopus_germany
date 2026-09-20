@@ -2,7 +2,7 @@
 
 import asyncio
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock, Mock, patch
 
 import voluptuous as vol
@@ -31,11 +31,17 @@ from custom_components.octopus_germany.data_processing import (
     get_product_type,
     merge_graphql_responses,
     merge_normalized_account_data,
+    normalize_agreement_prices,
     normalize_agreement_products,
     normalize_direct_products,
     normalize_timeslots,
     normalize_unit_rate_forecast,
     process_ledgers,
+)
+from custom_components.octopus_germany.entities.electricity import (
+    OctopusElectricityPriceSensor,
+    OctopusSection14aModuleSensor,
+    OctopusVariableGridFeeSensor,
 )
 from custom_components.octopus_germany.lifecycle import (
     _migrate_legacy_device_entity_ids,
@@ -60,6 +66,11 @@ from custom_components.octopus_germany.sensor import (
     OctopusSmartChargingSessionsSensor,
     _create_device_entities,
 )
+from custom_components.octopus_germany.service_handlers import (
+    _group_readings_by_local_date,
+    _measurement_range_bounds,
+    _summarize_measurement_metadata,
+)
 from custom_components.octopus_germany.services import (
     async_handle_refresh_intelligent_data,
     async_request_intelligent_refresh,
@@ -71,9 +82,12 @@ from custom_components.octopus_germany.switch import (
 )
 from custom_components.octopus_germany.tariff import (
     format_uk_rates,
+    get_active_grid_fee,
     get_active_timeslot_rate,
     get_current_forecast_rate,
+    get_next_grid_fee_change,
     is_product_current,
+    normalize_variable_grid_fees,
     parse_tariff_time,
 )
 
@@ -570,6 +584,50 @@ class TariffCapabilitiesTest(unittest.TestCase):
         assert "account-2" not in result
         assert "account-1" in capabilities_by_account
 
+    def test_fetch_account_data_adds_optional_variable_grid_fees(self) -> None:
+        api = Mock()
+        api.fetch_tariff_capabilities = AsyncMock(return_value=TariffCapabilities())
+        api.fetch_data_for_account = AsyncMock(return_value={"account": {}})
+        api.fetch_variable_grid_fees = AsyncMock(
+            return_value={
+                "module": "MODULE_1",
+                "gridFees": [
+                    {
+                        "gridFeeKwhRateType": "STANDARD",
+                        "rateTypeIntervalStart": "06:00:00",
+                        "rateTypeIntervalEnd": "23:00:00",
+                        "validFrom": "2026-01-01T00:00:00+01:00",
+                        "validTo": None,
+                        "gridOperatorCode": "operator-1",
+                        "gridFeeInCentsPerKwh": "5.480000",
+                    }
+                ],
+            }
+        )
+
+        async def process_api_data(data, account_number, api_client):
+            return {
+                account_number: {
+                    "account_number": account_number,
+                    "grid_operator_code": "operator-1",
+                    "grid_operator_name": "Grid Operator",
+                }
+            }
+
+        result = asyncio.run(
+            _async_fetch_account_data(
+                api,
+                ["account-1"],
+                process_api_data,
+                {},
+            )
+        )
+
+        grid_fees = result["account-1"]["variable_grid_fees"]
+        assert grid_fees["module"] == "MODULE_1"
+        assert grid_fees["rates"][0]["rate_eur_per_kwh"] == 0.0548
+        api.fetch_variable_grid_fees.assert_awaited_once()
+
     def test_intelligent_product_enables_dispatches(self) -> None:
         account_data = {
             "allProperties": [
@@ -607,28 +665,338 @@ class TariffCapabilitiesTest(unittest.TestCase):
         client.execute_async = AsyncMock(side_effect=RuntimeError("502 HTML"))
         api._get_graphql_client = Mock(return_value=client)
 
-        assert (
+        with self.assertRaises(SmartMeterFetchError):
             asyncio.run(
                 api.fetch_electricity_15min_readings(
                     "account-1", "property-1", "2026-09-04"
                 )
             )
-            is None
-        )
         assert api._15min_retry_until is not None
 
-        assert (
+        with self.assertRaises(SmartMeterFetchError):
             asyncio.run(
                 api.fetch_electricity_15min_readings(
                     "account-1", "property-1", "2026-09-04"
                 )
             )
-            is None
-        )
         client.execute_async.assert_awaited_once()
+
+    def test_15min_rate_limit_is_not_reported_as_no_data(self) -> None:
+        api = object.__new__(OctopusGermany)
+        api._15min_retry_until = None
+        api.ensure_token = AsyncMock(return_value=True)
+        api._get_graphql_client = Mock(
+            return_value=Mock(
+                execute_async=AsyncMock(
+                    return_value={
+                        "errors": [
+                            {
+                                "message": "Too many requests.",
+                                "extensions": {"errorCode": "KT-CT-1199"},
+                            }
+                        ]
+                    }
+                )
+            )
+        )
+
+        with self.assertRaisesRegex(SmartMeterFetchError, "rate limit"):
+            asyncio.run(
+                api.fetch_electricity_15min_readings(
+                    "account-1", "property-1", "2026-09-04"
+                )
+            )
+
+        assert api._15min_retry_until is not None
+
+    def test_measurement_range_paginates_and_preserves_metadata(self) -> None:
+        api = object.__new__(OctopusGermany)
+        api._15min_retry_until = None
+        api.ensure_token = AsyncMock(return_value=True)
+        client = Mock()
+        client.execute_async = AsyncMock(
+            side_effect=[
+                {
+                    "data": {
+                        "property": {
+                            "measurements": {
+                                "edges": [
+                                    {
+                                        "node": {
+                                            "__typename": "IntervalMeasurementType",
+                                            "source": "meter",
+                                            "value": "0E-18",
+                                            "unit": "kwh",
+                                            "startAt": "2026-09-19T00:00:00+02:00",
+                                            "endAt": "2026-09-19T00:15:00+02:00",
+                                            "durationInSeconds": 900,
+                                            "metaData": {
+                                                "utilityFilters": {
+                                                    "marketSupplyPointId": "malo-1",
+                                                    "deviceId": "meter-1",
+                                                    "registerId": "register-1",
+                                                    "readingDirection": "CONSUMPTION",
+                                                    "readingFrequencyType": (
+                                                        "RAW_INTERVAL"
+                                                    ),
+                                                    "readingQuality": "ACTUAL",
+                                                }
+                                            },
+                                        }
+                                    }
+                                ],
+                                "pageInfo": {
+                                    "hasNextPage": True,
+                                    "endCursor": "cursor-1",
+                                },
+                            }
+                        }
+                    }
+                },
+                {
+                    "data": {
+                        "property": {
+                            "measurements": {
+                                "edges": [],
+                                "pageInfo": {
+                                    "hasNextPage": False,
+                                    "endCursor": "cursor-1",
+                                },
+                            }
+                        }
+                    }
+                },
+            ]
+        )
+        api._get_graphql_client = Mock(return_value=client)
+
+        readings = asyncio.run(
+            api.fetch_electricity_measurements_range(
+                "property-1",
+                "malo-1",
+                "2026-09-18T22:00:00+00:00",
+                "2026-09-19T22:00:00+00:00",
+                "Europe/Berlin",
+                "15min",
+            )
+        )
+
+        assert len(readings) == 1
+        assert readings[0]["value"] == "0E-18"
+        assert readings[0]["device_id"] == "meter-1"
+        assert readings[0]["reading_quality"] == "ACTUAL"
+        assert client.execute_async.await_count == 2
+        assert client.execute_async.await_args_list[1].kwargs["variables"]["after"] == (
+            "cursor-1"
+        )
+
+    def test_measurement_range_reports_rate_limit(self) -> None:
+        api = object.__new__(OctopusGermany)
+        api._15min_retry_until = None
+        api.ensure_token = AsyncMock(return_value=True)
+        api._get_graphql_client = Mock(
+            return_value=Mock(
+                execute_async=AsyncMock(
+                    return_value={
+                        "errors": [
+                            {
+                                "message": "Too many requests.",
+                                "extensions": {"errorCode": "KT-CT-1199"},
+                            }
+                        ]
+                    }
+                )
+            )
+        )
+
+        with self.assertRaisesRegex(SmartMeterFetchError, "rate limit"):
+            asyncio.run(
+                api.fetch_electricity_measurements_range(
+                    "property-1",
+                    "malo-1",
+                    "2026-09-18T22:00:00+00:00",
+                    "2026-09-19T22:00:00+00:00",
+                    "Europe/Berlin",
+                    "15min",
+                )
+            )
+
+        assert api._15min_retry_until is not None
+
+    def test_measurement_range_uses_local_midnights_across_dst(self) -> None:
+        assert _measurement_range_bounds(
+            date(2026, 10, 25), date(2026, 10, 25), "Europe/Berlin"
+        ) == ("2026-10-24T22:00:00+00:00", "2026-10-25T23:00:00+00:00")
+
+    def test_measurements_are_grouped_by_local_start_date(self) -> None:
+        grouped = _group_readings_by_local_date(
+            [
+                {
+                    "start_time": "2026-09-18T22:00:00+00:00",
+                    "value": "0E-18",
+                }
+            ],
+            "Europe/Berlin",
+        )
+
+        assert list(grouped) == ["2026-09-19"]
+
+    def test_measurement_metadata_reports_missing_optional_ids(self) -> None:
+        summary = _summarize_measurement_metadata(
+            [
+                {
+                    "source": "meter",
+                    "reading_quality": "ACTUAL",
+                    "reading_frequency": "RAW_INTERVAL",
+                    "device_id": "meter-1",
+                    "register_id": None,
+                },
+                {
+                    "source": "estimated",
+                    "reading_quality": "ESTIMATED",
+                    "reading_frequency": "RAW_INTERVAL",
+                    "device_id": None,
+                    "register_id": None,
+                },
+            ]
+        )
+
+        assert summary["measurement_count"] == 2
+        assert summary["sources"] == ["estimated", "meter"]
+        assert summary["reading_qualities"] == ["ACTUAL", "ESTIMATED"]
+        assert summary["device_ids"] == ["meter-1"]
+        assert summary["missing_device_id_count"] == 1
+        assert summary["missing_register_id_count"] == 2
+
+    def test_variable_grid_fees_use_oe_backend_and_daily_cache(self) -> None:
+        api = object.__new__(OctopusGermany)
+        api._variable_grid_fees_cache = {}
+        api.ensure_token = AsyncMock(return_value=True)
+        client = Mock(
+            execute_async=AsyncMock(
+                return_value={
+                    "data": {
+                        "variableGridFees": {
+                            "module": "MODULE_1",
+                            "gridFees": [
+                                {
+                                    "gridFeeKwhRateType": "OFFPEAK",
+                                    "gridFeeInCentsPerKwh": "1.64",
+                                }
+                            ],
+                        }
+                    }
+                }
+            )
+        )
+        api._get_oe_backend_graphql_client = Mock(return_value=client)
+
+        first = asyncio.run(
+            api.fetch_variable_grid_fees("account-1", "operator-1", date(2026, 9, 20))
+        )
+        second = asyncio.run(
+            api.fetch_variable_grid_fees("account-1", "operator-1", date(2026, 9, 20))
+        )
+
+        assert first == second
+        client.execute_async.assert_awaited_once()
+        variables = client.execute_async.await_args.kwargs["variables"]
+        assert variables == {
+            "accountNumber": "account-1",
+            "gridOperatorCode": "operator-1",
+            "date": "2026-09-20",
+        }
+
+    def test_variable_grid_fees_normalize_and_select_local_rate(self) -> None:
+        grid_fees = normalize_variable_grid_fees(
+            {
+                "module": "MODULE_1",
+                "gridFees": [
+                    {
+                        "gridFeeKwhRateType": "PEAK",
+                        "rateTypeIntervalStart": "17:00:00",
+                        "rateTypeIntervalEnd": "22:00:00",
+                        "validFrom": "2026-01-01T00:00:00+01:00",
+                        "validTo": None,
+                        "gridOperatorCode": "operator-1",
+                        "gridFeeInCentsPerKwh": "10.520000",
+                    },
+                    {
+                        "gridFeeKwhRateType": "OFFPEAK",
+                        "rateTypeIntervalStart": "23:00:00",
+                        "rateTypeIntervalEnd": "00:00:00",
+                        "validFrom": "2026-01-01T00:00:00+01:00",
+                        "validTo": None,
+                        "gridOperatorCode": "operator-1",
+                        "gridFeeInCentsPerKwh": "1.640000",
+                    },
+                ],
+            },
+            "Grid Operator",
+        )
+
+        assert grid_fees["module"] == "MODULE_1"
+        assert grid_fees["grid_operator_code"] == "operator-1"
+        assert grid_fees["grid_operator_name"] == "Grid Operator"
+        assert grid_fees["rates"][0]["rate_eur_per_kwh"] == 0.1052
+        assert (
+            get_active_grid_fee(
+                grid_fees, datetime.fromisoformat("2026-09-20T18:00:00+02:00")
+            )["rate_type"]
+            == "PEAK"
+        )
+        assert (
+            get_active_grid_fee(
+                grid_fees, datetime.fromisoformat("2026-09-20T23:30:00+02:00")
+            )["rate_type"]
+            == "OFFPEAK"
+        )
+        assert get_next_grid_fee_change(
+            grid_fees, datetime.fromisoformat("2026-09-20T23:30:00+02:00")
+        ) == datetime.fromisoformat("2026-09-21T00:00:00+02:00")
+
+    def test_section_14a_sensors_expose_reported_module_and_active_fee(self) -> None:
+        coordinator = Mock()
+        coordinator.last_update_success = True
+        coordinator.data = {
+            "account-1": {
+                "variable_grid_fees": {
+                    "module": "MODULE_1",
+                    "grid_operator_name": "Grid Operator",
+                    "rates": [
+                        {
+                            "rate_type": "PEAK",
+                            "start_time": "17:00:00",
+                            "end_time": "22:00:00",
+                            "valid_from": "2026-01-01T00:00:00+01:00",
+                            "valid_to": None,
+                            "grid_operator_code": "operator-1",
+                            "rate_cents_per_kwh": "10.520000",
+                            "rate_eur_per_kwh": 0.1052,
+                        }
+                    ],
+                }
+            }
+        }
+        module_sensor = OctopusSection14aModuleSensor("account-1", coordinator)
+        fee_sensor = OctopusVariableGridFeeSensor("account-1", coordinator)
+
+        with patch(
+            "custom_components.octopus_germany.tariff.local_now",
+            return_value=datetime.fromisoformat("2026-09-20T18:00:00+02:00"),
+        ):
+            assert module_sensor.native_value == "MODULE_1"
+            assert module_sensor.extra_state_attributes["rate_count"] == 1
+            assert fee_sensor.native_value == 0.1052
+            assert fee_sensor.extra_state_attributes["rate_type"] == "PEAK"
 
     def test_comprehensive_query_makes_intelligent_fields_conditional(self) -> None:
         assert "$includeIntelligent: Boolean!" in COMPREHENSIVE_QUERY
+        assert "isActive" in COMPREHENSIVE_QUERY
+        assert "isRevoked" in COMPREHENSIVE_QUERY
+        assert "isTerminated" in COMPREHENSIVE_QUERY
+        assert "netUnitRateCentsPerKwh" in COMPREHENSIVE_QUERY
+        assert "vatRate" in COMPREHENSIVE_QUERY
         assert (
             "completedDispatches(accountNumber: $accountNumber)"
             in INTELLIGENT_DATA_QUERY
@@ -917,6 +1285,117 @@ class TariffCapabilitiesTest(unittest.TestCase):
 
         assert electricity[0]["grossRate"] == "25"
         assert gas[0]["grossRate"] == "8"
+
+    def test_agreements_preserve_status_and_gross_net_vat_prices(self) -> None:
+        products = normalize_agreement_products(
+            {
+                "allProperties": [
+                    {
+                        "electricityMalos": [
+                            {
+                                "agreements": [
+                                    {
+                                        "isActive": True,
+                                        "isRevoked": False,
+                                        "isTerminated": True,
+                                        "validFrom": "2025-07-01T00:00:00+02:00",
+                                        "validTo": "2026-12-23T00:00:00+01:00",
+                                        "product": {
+                                            "code": "TOU",
+                                            "fullName": "Time of Use",
+                                            "isTimeOfUse": True,
+                                        },
+                                        "unitRateInformation": {
+                                            "__typename": (
+                                                "TimeOfUseProductUnitRateInformation"
+                                            ),
+                                            "rates": [
+                                                {
+                                                    "timeslotName": "GO",
+                                                    "latestGrossUnitRateCentsPerKwh": (
+                                                        "15.0654"
+                                                    ),
+                                                    "netUnitRateCentsPerKwh": "12.6600",
+                                                    "grossRateInformation": {
+                                                        "grossRate": "15.0654",
+                                                        "vatRate": "19",
+                                                    },
+                                                    "timeslotActivationRules": [
+                                                        {
+                                                            "activeFromTime": (
+                                                                "00:00:00"
+                                                            ),
+                                                            "activeToTime": "05:00:00",
+                                                        }
+                                                    ],
+                                                }
+                                            ],
+                                        },
+                                    },
+                                    {
+                                        "isActive": False,
+                                        "isRevoked": False,
+                                        "isTerminated": True,
+                                        "validFrom": "2026-12-23T00:00:00+01:00",
+                                        "validTo": "2027-12-23T00:00:00+01:00",
+                                        "product": {
+                                            "code": "FUTURE",
+                                            "fullName": "Future Agreement",
+                                        },
+                                        "unitRateInformation": {
+                                            "__typename": (
+                                                "SimpleProductUnitRateInformation"
+                                            ),
+                                            "latestGrossUnitRateCentsPerKwh": (
+                                                "33.6651"
+                                            ),
+                                            "netUnitRateCentsPerKwh": "28.2900",
+                                            "grossRateInformation": {
+                                                "grossRate": "33.6651",
+                                                "vatRate": "19",
+                                            },
+                                        },
+                                    },
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            "electricityMalos",
+        )
+
+        assert len(products) == 2
+        assert products[0]["isActive"] is True
+        assert products[0]["isTerminated"] is True
+        assert products[0]["prices"][0]["gross_eur_per_kwh"] == 0.150654
+        assert products[0]["prices"][0]["net_eur_per_kwh"] == 0.1266
+        assert products[0]["prices"][0]["vat_percent"] == "19"
+
+        coordinator = Mock(last_update_success=True)
+        coordinator.data = {
+            "account-1": {
+                "products": products,
+                "meter": {},
+            }
+        }
+        with patch(
+            "custom_components.octopus_germany.entities.electricity.is_product_current",
+            side_effect=lambda product: product.get("code") == "TOU",
+        ):
+            sensor = OctopusElectricityPriceSensor("account-1", coordinator)
+
+        agreements = sensor.extra_state_attributes["agreements"]
+        assert len(agreements) == 2
+        assert agreements[0]["is_active"] is True
+        assert agreements[1]["code"] == "FUTURE"
+        assert agreements[1]["prices"][0]["gross_eur_per_kwh"] == 0.336651
+
+    def test_normalize_agreement_prices_handles_missing_values(self) -> None:
+        prices = normalize_agreement_prices([{"timeslotName": "STANDARD"}])
+
+        assert prices[0]["gross_eur_per_kwh"] is None
+        assert prices[0]["net_eur_per_kwh"] is None
 
     def test_normalize_timeslots_preserves_rates_and_activation_rules(self) -> None:
         timeslots = normalize_timeslots(

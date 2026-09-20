@@ -61,7 +61,7 @@ get_smart_meter_readings:
 
 export_smart_meter_csv:
   name: Export Smart Meter Data to CSV
-  description: Export smart meter data for a month or year to CSV. Choose 15-minute or hourly readings and wide or tall layout. Results are returned in the service response and as event `octopus_germany_csv_export_result`.
+  description: Export smart meter data for a month or year to CSV using paginated monthly range requests in the Home Assistant timezone. Choose 15-minute or hourly readings and wide or tall layout. The response includes meter-assignment and quality metadata and is also fired as event `octopus_germany_csv_export_result`.
   fields:
     account_number:
       name: Account Number

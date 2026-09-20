@@ -7,6 +7,8 @@ Diese Liste beschreibt die bestehenden `unique_id`-Muster. Sie gelten als kompat
 - `octopus_<account>_electricity_price`
 - `octopus_<account>_electricity_balance`
 - `octopus_<account>_electricity_latest_reading`
+- `octopus_<account>_14a_module`
+- `octopus_<account>_variable_grid_fee`
 - `octopus_<account>_gas_balance`
 - `octopus_<account>_gas_tariff`
 - `octopus_<account>_gas_malo_number`

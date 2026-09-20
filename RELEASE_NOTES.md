@@ -1,5 +1,42 @@
 # Release Notes
 
+## Version 0.0.130 (2026-09-20)
+
+### Improvements
+
+- The electricity price sensor now exposes all past, active and scheduled agreements in its `agreements` attribute.
+- Agreement attributes include active, revoked and terminated status, validity dates, and every available Time-of-Use price tier.
+- Gross and net prices are retained in cents per kWh and normalized to EUR per kWh, together with the API-provided VAT percentage and price validity.
+
+## Version 0.0.129 (2026-09-20)
+
+### New Features
+
+- Added a diagnostic sensor for the section 14a module reported by the OE backend.
+- Added a variable grid fee sensor showing the currently active grid fee component in EUR/kWh, with rate type, validity, next change, grid operator and full daily schedule attributes.
+- Variable grid fee conditions are fetched from the dedicated OE backend at most once per local day; tariff boundary changes are calculated locally without additional API requests.
+- Added a separate introspection schema snapshot for the OE backend; the existing OEG Kraken schema remains unchanged because the endpoints expose different Query roots.
+
+### Notes
+
+- A reported `MODULE_1` value is exposed without assuming that optional module 3 billing has been selected. The accompanying grid fee schedule is shown as data supplied by OE.
+
+## Version 0.0.128 (2026-09-20)
+
+### Improvements
+
+- CSV exports now load smart-meter data through paginated monthly range queries instead of issuing one request per day.
+- Added timezone-correct range boundaries, including daylight-saving transitions, and retained OE source, quality, device and register metadata for future diagnostics.
+- Yearly exports are split into bounded monthly requests while preserving the existing CSV layouts and resolutions.
+- CSV service responses now summarize measurement source, quality and optional meter/register IDs. Missing IDs are reported neutrally because live property measurements can omit them even when OE marks their quality as actual.
+
+## Version 0.0.127 (2026-09-20)
+
+### Fixes
+
+- Report 15-minute smart-meter API failures and rate limits as temporary errors instead of incorrectly claiming that the requested period contains no readings.
+- Stop CSV exports immediately during smart-meter API backoff and avoid duplicate integration tracebacks for expected service validation errors.
+
 ## Version 0.0.126 (2026-09-14)
 
 ### Fixes

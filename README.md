@@ -25,6 +25,8 @@ This custom component integrates Octopus Germany services with Home Assistant, p
   - Time of Use tariffs (GO, STANDARD rates)
   - Dynamic tariffs (with real-time pricing using unit rate forecasts)
   - Heat tariffs (for heat pumps)
+- **Section 14a Grid Fees**: OE-reported module and current variable grid fee with the complete daily schedule
+- **Agreement History**: Past, active and scheduled electricity agreements with gross/net prices and VAT in electricity price sensor attributes
 - **Multi-Ledger Support**: Electricity, Gas, Heat, and other ledger types
 - **Device Control**: Smart charging control for electric vehicles and charge points
 - **Boost Charging**: Instant charge boost functionality (requires smart charging enabled)
@@ -92,7 +94,8 @@ To keep this start page compact, detailed documentation is split across focused 
 - `octopus_germany.get_smart_meter_readings`
   - Fetch historical iMSys readings for one day
 - `octopus_germany.export_smart_meter_csv`
-  - Export iMSys readings to CSV (month/year)
+  - Export iMSys readings to CSV (month/year) using paginated monthly range queries
+  - Uses the Home Assistant timezone and retains OE meter-quality metadata while loading
 - `octopus_germany.submit_meter_readings`
   - Submit electricity or gas meter readings to the OE API
   - [Daily upload automation example](docs/UPLOAD_DAILY_METER_READING_AUTOMATION.md)

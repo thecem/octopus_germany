@@ -67,6 +67,8 @@ Base account and meter data are polled every 30 minutes by default. When Intelli
 
 Smart-meter readings are requested only for accounts reporting smart-meter support, and Intelligent entities are created only when the corresponding capability or connected Intelligent devices are available.
 
+CSV exports load smart-meter readings through paginated monthly range queries in the configured Home Assistant timezone. The API layer retains source, quality, device and register metadata when OE provides it; internally consistent intervals can still represent estimated data.
+
 ## Documentation Structure
 
 To keep the repository start page compact, action details are documented in:
@@ -156,6 +158,11 @@ using the example, replace `a_xxxxxxxx` with your lower-case account number and
   - `rates`: (For Dynamic tariffs) Rate data formatted for octopus-energy-rates-card compatibility
   - `rates_count`: (For Dynamic tariffs) Number of available rates
   - `unit_rate_forecast`: (For Dynamic tariffs) Native German API unit rate forecast data
+  - `agreement_is_active`, `agreement_is_revoked`, `agreement_is_terminated`: Status of the currently selected agreement
+  - `agreement_prices`: Gross, net and VAT details for every price tier in the current agreement
+  - `agreements`: All past, current and scheduled electricity agreements with validity, status and complete price tiers
+
+Agreement price entries expose the original gross/net values in cents per kWh, normalized values in EUR per kWh, VAT percentage, price validity and Time-of-Use activation windows where available.
 
 #### Electricity Latest Reading Sensor
 
@@ -175,6 +182,17 @@ using the example, replace `a_xxxxxxxx` with your lower-case account number and
 - **Description**: Shows the current electricity account balance in EUR
 - **Unit**: €
 - **Note**: Only available for accounts with electricity service (MALO number present)
+
+#### Section 14a Grid Fee Sensors
+
+- **Module unique ID**: `octopus_<account_number>_14a_module`
+  - Shows the module value exactly as reported by the OE backend, for example `MODULE_1`
+  - This value alone does not prove that optional module 3 billing has been selected
+- **Variable grid fee unique ID**: `octopus_<account_number>_variable_grid_fee`
+  - Shows only the currently active grid fee component in EUR/kWh, not the complete electricity price
+  - Attributes include rate type, current interval, next change, validity, grid operator and the complete daily schedule
+
+The underlying schedule is fetched at most once per local day. State changes at tariff boundaries are calculated locally without another API request. Sensors are only created when the OE backend returns grid fee data.
 
 #### Gas Sensors
 

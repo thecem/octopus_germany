@@ -111,6 +111,10 @@ data:
 
 Export meter readings to CSV.
 
+The export uses paginated monthly range requests and local calendar boundaries from the configured Home Assistant timezone. A yearly export is split into monthly requests. Meter source and quality metadata are retained while loading, but the CSV contains consumption values only; metadata should be used separately before treating values as confirmed physical meter readings.
+
+The service response contains `measurement_metadata` with `sources`, `reading_qualities`, `reading_frequencies`, `device_ids`, `register_ids`, `missing_device_id_count` and `missing_register_id_count`. Missing IDs are normal for some aggregated property measurements and do not by themselves identify estimated data; use `sources` and `reading_qualities` for classification.
+
 Parameters:
 
 - `account_number` (required)

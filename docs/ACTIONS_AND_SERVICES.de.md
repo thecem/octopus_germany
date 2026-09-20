@@ -110,6 +110,10 @@ data:
 
 Exportiert Zaehlerdaten als CSV.
 
+Der Export verwendet paginierte Monatsabfragen und lokale Kalendergrenzen aus der konfigurierten Home-Assistant-Zeitzone. Ein Jahresexport wird in Monatsabfragen aufgeteilt. Quellen- und Qualitaetsmetadaten bleiben beim Laden erhalten, die CSV enthaelt jedoch nur Verbrauchswerte; vor einer Bewertung als echte Zaehlerwerte muessen die Metadaten separat geprueft werden.
+
+Die Service-Antwort enthaelt `measurement_metadata` mit `sources`, `reading_qualities`, `reading_frequencies`, `device_ids`, `register_ids`, `missing_device_id_count` und `missing_register_id_count`. Fehlende IDs sind bei manchen aggregierten Property-Messungen normal und kennzeichnen allein keine Schaetzung; fuer die Einordnung sind `sources` und `reading_qualities` massgeblich.
+
 Parameter:
 
 - `account_number` (required)

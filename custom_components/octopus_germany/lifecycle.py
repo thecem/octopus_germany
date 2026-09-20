@@ -10,6 +10,7 @@ import inspect
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 from homeassistant.const import Platform
 from homeassistant.core import callback
@@ -47,7 +48,7 @@ from .sensor import get_account_device_info
 from .service_handlers import async_register_services
 from .services import async_handle_refresh_intelligent_data
 from .statistics import async_setup_statistics_import
-from .tariff import is_product_current
+from .tariff import is_product_current, normalize_variable_grid_fees
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -230,6 +231,19 @@ async def _async_fetch_account_data(
                 "has_intelligent_dispatches": capabilities.has_intelligent_dispatches,
                 "has_smart_meter": capabilities.has_smart_meter,
             }
+            grid_operator_code = processed[account_number].get("grid_operator_code")
+            if grid_operator_code:
+                raw_grid_fees = await api.fetch_variable_grid_fees(
+                    account_number,
+                    grid_operator_code,
+                    datetime.now(ZoneInfo("Europe/Berlin")).date(),
+                )
+                processed[account_number]["variable_grid_fees"] = (
+                    normalize_variable_grid_fees(
+                        raw_grid_fees,
+                        processed[account_number].get("grid_operator_name"),
+                    )
+                )
             all_accounts_data.update(processed)
         except Exception:
             _LOGGER.exception("Error fetching data for account %s", account_number)

@@ -6,13 +6,15 @@ import csv
 import json
 import logging
 from calendar import monthrange
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
+from .api.smart_meter import SmartMeterFetchError
 from .const import DOMAIN
 from .services import async_request_intelligent_refresh
 
@@ -101,6 +103,65 @@ def _normalize_target_time(value: str) -> str:
         raise ValueError(msg)
 
     return f"{hours:02d}:{minutes:02d}"
+
+
+def _measurement_range_bounds(
+    start_date: date, end_date: date, timezone: str
+) -> tuple[str, str]:
+    """Return an inclusive local-date range as exclusive UTC instants."""
+    local_timezone = ZoneInfo(timezone)
+    start_at = datetime.combine(start_date, time.min, tzinfo=local_timezone)
+    end_at = datetime.combine(
+        end_date + timedelta(days=1), time.min, tzinfo=local_timezone
+    )
+    return start_at.astimezone(UTC).isoformat(), end_at.astimezone(UTC).isoformat()
+
+
+def _group_readings_by_local_date(
+    readings: list[dict[str, Any]], timezone: str
+) -> dict[str, list[dict[str, Any]]]:
+    """Group interval readings by their local start date."""
+    local_timezone = ZoneInfo(timezone)
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for reading in readings:
+        start_time = reading.get("start_time")
+        if not start_time:
+            continue
+        try:
+            local_date = (
+                datetime.fromisoformat(start_time).astimezone(local_timezone).date()
+            )
+        except TypeError, ValueError:
+            _LOGGER.warning("Ignoring measurement with invalid start time")
+            continue
+        grouped.setdefault(local_date.isoformat(), []).append(reading)
+    return grouped
+
+
+def _summarize_measurement_metadata(
+    readings: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Summarize meter-assignment and quality metadata without altering readings."""
+
+    def distinct_values(field: str) -> list[str]:
+        return sorted(
+            {str(reading[field]) for reading in readings if reading.get(field)}
+        )
+
+    return {
+        "measurement_count": len(readings),
+        "sources": distinct_values("source"),
+        "reading_qualities": distinct_values("reading_quality"),
+        "reading_frequencies": distinct_values("reading_frequency"),
+        "device_ids": distinct_values("device_id"),
+        "register_ids": distinct_values("register_id"),
+        "missing_device_id_count": sum(
+            not reading.get("device_id") for reading in readings
+        ),
+        "missing_register_id_count": sum(
+            not reading.get("register_id") for reading in readings
+        ),
+    }
 
 
 # Service schemas
@@ -333,16 +394,22 @@ async def async_register_services(
 
         # Get the coordinator for this account
         account_coordinator, client = _resolve_account_context(hass, account_number)
+        account_data = account_coordinator.data[account_number]
 
         # Get property_id if not provided
         if not property_id:
-            account_data = account_coordinator.data[account_number]
             property_ids = account_data.get("property_ids", [])
             if not property_ids:
                 _raise_validation_error(
                     f"No properties found for account {account_number}"
                 )
             property_id = property_ids[0]
+
+        market_supply_point_id = account_data.get("malo_number")
+        if not market_supply_point_id:
+            _raise_validation_error(
+                f"No electricity market supply point found for account {account_number}"
+            )
 
         year_value = int(year)
 
@@ -367,33 +434,52 @@ async def async_register_services(
         try:
             # Collect all readings for the period
             all_readings = {}
-            current_date = start_date
             total_days = (end_date - start_date).days + 1
+            timezone = hass.config.time_zone
+            range_start = start_date
 
-            while current_date <= end_date:
-                date_str = current_date.strftime("%Y-%m-%d")
+            while range_start <= end_date:
+                _, range_last_day = monthrange(range_start.year, range_start.month)
+                range_end = min(
+                    date(range_start.year, range_start.month, range_last_day),
+                    end_date,
+                )
+                start_at, end_at = _measurement_range_bounds(
+                    range_start, range_end, timezone
+                )
                 try:
-                    if resolution == "15min":
-                        readings = await client.fetch_electricity_15min_readings(
-                            account_number, property_id, date_str
-                        )
-                    else:
-                        readings = (
-                            await client.fetch_electricity_smart_meter_readings_v2(
-                                account_number, property_id, date_str
-                            )
-                        )
+                    readings = await client.fetch_electricity_measurements_range(
+                        property_id,
+                        market_supply_point_id,
+                        start_at,
+                        end_at,
+                        timezone,
+                        resolution,
+                    )
+                    grouped_readings = _group_readings_by_local_date(readings, timezone)
+                    all_readings.update(grouped_readings)
                     if readings:
-                        all_readings[date_str] = readings
                         _LOGGER.debug(
-                            "Fetched %d readings for %s", len(readings), date_str
+                            "Fetched %d readings for %s to %s",
+                            len(readings),
+                            range_start,
+                            range_end,
                         )
+                except SmartMeterFetchError as err:
+                    msg = (
+                        "Smart meter data is temporarily unavailable. "
+                        "Please retry the export later."
+                    )
+                    raise HomeAssistantError(msg) from err
                 except (RuntimeError, ValueError, TypeError) as err:
                     _LOGGER.warning(
-                        "Failed to fetch readings for %s: %s", date_str, err
+                        "Failed to fetch readings for %s to %s: %s",
+                        range_start,
+                        range_end,
+                        err,
                     )
 
-                current_date += timedelta(days=1)
+                range_start = range_end + timedelta(days=1)
 
             if not all_readings:
                 _raise_validation_error(
@@ -591,6 +677,13 @@ async def async_register_services(
                 "total_days": total_days,
                 "days_with_data": len(all_readings),
                 "output_file": str(output_path),
+                "measurement_metadata": _summarize_measurement_metadata(
+                    [
+                        reading
+                        for daily_readings in all_readings.values()
+                        for reading in daily_readings
+                    ]
+                ),
             }
 
             _LOGGER.info(
@@ -606,6 +699,8 @@ async def async_register_services(
 
             return result
 
+        except HomeAssistantError, ServiceValidationError:
+            raise
         except Exception as e:
             _LOGGER.exception("Error exporting smart meter data to CSV")
             msg = f"Error exporting smart meter data: {e}"

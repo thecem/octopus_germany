@@ -106,6 +106,7 @@ custom_components/octopus_germany/
 - [ ] Zeitkontrakte dokumentieren und testen: `validFrom`/`validTo` und Forecasts als Instant, TOU-Aktivierungsregeln als lokale Wandzeit.
 - [x] Direkte Produktdaten in eine testbare Normalisierungsfunktion auslagern.
 - [x] Gemeinsame Gross-Rate- und Time-of-Use-Slot-Normalisierung fuer Strom und Gas einfuehren.
+- [x] Alle vergangenen, aktuellen und zukuenftigen Agreements mit Status, Laufzeit sowie Brutto-, Netto- und MwSt.-Preisstufen im Strompreis-Sensor bereitstellen.
 - [x] Gross-Rate-Fallbacks in Simple-Agreement-Produkten zentralisieren.
 - [x] Optionale Forecast-Listen normalisieren und ungueltige Eintraege herausfiltern.
 - [x] Simple-/Time-of-Use-Produkt-Typ-Erkennung fuer Strom und Gas zentralisieren.
@@ -180,6 +181,87 @@ custom_components/octopus_germany/
 - [x] Changelog-Eintrag fuer neue Services und Polling-Optionen verfassen.
 - [x] Offene GitHub-Issues #92, #94, #95, #96 und #97 gegen den lokalen Stand pruefen und die behobenen Punkte dokumentieren.
 - [x] Offene GitHub-Issues #104 bis #107 analysieren; die daraus entstandenen Zeit-, Token-, Entity- und Produktvalidierungsregeln oben dokumentieren.
+
+## Phase 7: Messwert-Pagination und variable Netzentgelte nach Paragraph 14a EnWG
+
+### Messwertabfrage und CSV-Export
+
+- [x] Die direkte `property(id: $propertyId) { measurements(...) }`-Abfrage mit anonymisierten Live-Daten gegen den deutschen Endpoint validieren.
+- [x] `marketSupplyPointId` aus dem vorhandenen `malo_number` beziehen und niemals Account-, Property-, MaLo- oder Zaehlerkennungen fest einbauen.
+- [x] Die Aufloesung zentral auf die API-Frequenzen abbilden: `15min` auf `RAW_INTERVAL`, `hour` auf `HOUR_INTERVAL` und eine spaetere Tagesansicht auf `DAY_INTERVAL`.
+- [x] Lokale Periodengrenzen aus der Home-Assistant-Zeitzone in timezone-aware `startAt`/`endAt`-Werte umrechnen; Sommerzeitwechsel explizit testen.
+- [x] Pagination ueber `first`, `after`, `pageInfo.hasNextPage` und `pageInfo.endCursor` implementieren.
+- [ ] Das vom Endpoint akzeptierte maximale `first`-Limit ermitteln; Seiten gedrosselt laden und `KT-CT-1199` mit Backoff statt als leeres Ergebnis behandeln.
+- [x] Den beobachteten Tagesvertrag absichern: Ein normaler Tag liefert mit `RAW_INTERVAL` und `first: 100` genau 96 Intervalle zu je 900 Sekunden ohne Folgeseite.
+- [ ] Messwerte als `Decimal` normalisieren, damit sowohl normale Dezimalstrings als auch wissenschaftliche Schreibweise wie `0E-18` ohne Genauigkeitsverlust verarbeitet werden.
+- [ ] `durationInSeconds`, `readingDirection` und die zurueckgelieferte `marketSupplyPointId` validieren; fremde Zaehlerpunkte oder unerwartete Intervalllaengen nicht unbemerkt summieren.
+- [x] Fuer jede Messung auch `source`, `__typename`, `readingQuality`, `readingFrequencyType`, `deviceId` und `registerId` abfragen, damit echte, kombinierte und geschaetzte Daten sowie die Zuordnung zum Zaehler unterscheidbar werden.
+- [ ] Bei einem Zaehlerwechsel Messwerte vor und nach dem Wechseltermin getrennt pruefen: Wechsel von `deviceId`/`registerId`, fehlende Intervalle, Nullserien und Aenderungen von `source` oder `readingQuality` sichtbar machen.
+- [ ] Wiederkehrende Ersatzprofile erkennen und als Diagnose kennzeichnen. Nahezu identische Tageswerte im Sieben-Tage-Rhythmus duerfen nicht ungeprueft als reale Smart-Meter-Messung gelten.
+- [ ] Den Fehler `OE-DEU-0605` separat behandeln: Ein fehlender kundenseitig eingereichter Zaehlerstand ist nicht gleichbedeutend mit fehlenden Intervallmessungen, kann nach einem Zaehlerwechsel aber auf einen fehlenden Anfangsstand des neuen Zaehlers hinweisen.
+- [x] Monatsexporte ueber die Bereichsabfrage laden und Ergebnisse anhand des lokalen `startAt` wieder nach Kalendertag gruppieren.
+- [x] Jahresexporte monatsweise ausfuehren, damit Speicherbedarf, Fehlerwiederholung und Fortschritt kontrollierbar bleiben.
+- [ ] Tests fuer leere Ergebnisse, mehrere Seiten, fehlenden Cursor, Rate-Limit, partielle Monate und DST-Tage mit 92 bzw. 100 Viertelstundenwerten ergaenzen.
+- [ ] Die Summe der 15-Minuten-Intervalle gegen den entsprechenden `DAY_INTERVAL`-Wert testen; Abweichungen sichtbar melden statt still zu runden.
+- [ ] Fuer den beobachteten Normalfall festhalten: 96 Viertelstundenwerte zu je 900 Sekunden summieren sich auf denselben Tageswert; diese interne Konsistenz beweist jedoch nicht, dass die Quelle ein physischer Zaehler und keine Schaetzung ist.
+
+### Paragraph-14a-Datenvertrag
+
+- [ ] Die Semantik von `variableGridFees.module` beim Octopus-Endpoint verifizieren: `MODULE_1` darf erst nach Bestaetigung als tatsaechlich gewaehltes Abrechnungsmodul angezeigt werden.
+- [ ] Verifizieren, ob `gridFees` die fuer Modul 3 angebotenen Zeitfenster unabhaengig vom aktuell gewaehlten Modul liefert oder eine aktive Kombination aus Modul 1 und Modul 3 bestaetigt.
+- [x] Die Quelle fuer `gridOperatorCode` aus Account-, MaLo- oder Vertragsdaten bestimmen; keine Konfigurations- oder Code-Konstante mit kundenspezifischem Wert verwenden.
+- [x] Den lokalen GraphQL-Schema-Snapshot um `variableGridFees` und die zugehoerigen Typen aktualisieren oder die Abfrage als explizit optionalen, live validierten API-Pfad dokumentieren.
+- [x] Eine getrennte API-Methode fuer `variableGridFees(accountNumber, gridOperatorCode, date)` implementieren und GraphQL-Fehler ohne sensible Variablen behandeln.
+- [x] Ein typisiertes Modell fuer Modul, Tariftyp, Intervallbeginn/-ende, Gueltigkeit, Netzbetreiber und Cent-pro-kWh-Wert einfuehren.
+- [ ] Ueberlappende, lueckenhafte oder ungueltige Zeitfenster ablehnen; das Intervall `23:00:00` bis `00:00:00` wird bereits korrekt ueber Mitternacht ausgewertet.
+- [x] Die selten veraenderten API-Daten beim Start und danach hoechstens taeglich abrufen; aktuelle Tarifstufe und naechsten Wechsel lokal aus dem gecachten Zeitplan berechnen.
+- [x] Sensoren nur anlegen, wenn der Endpoint fuer den Account Daten liefert; fehlende Unterstuetzung darf den Basis-Coordinator nicht fehlschlagen lassen.
+
+### Vorgesehene Home-Assistant-Sensoren
+
+- [x] Diagnose-Sensor `sensor.octopus_<account>_14a_module` mit stabilem `unique_id` `octopus_<account>_14a_module` vorsehen. Zustand ist der verifizierte API-Wert, zum Beispiel `module_1`; bei ungeklaerter Semantik neutral als von Octopus gemeldetes Modul bezeichnen.
+- [x] Preis-Sensor `sensor.octopus_<account>_variable_grid_fee` mit stabilem `unique_id` `octopus_<account>_variable_grid_fee` vorsehen. Zustand ist ausschliesslich der aktuell aktive Netzentgeltanteil in `EUR/kWh`, nicht der gesamte Strompreis.
+- [x] Am Preis-Sensor die Attribute `rate_type`, `interval_start`, `interval_end`, `next_change`, `valid_from`, `valid_to`, `grid_operator_code` und den normalisierten Tagesplan bereitstellen.
+- [x] Cent pro kWh ohne vorzeitiges Runden in Euro pro kWh umrechnen; der Preis-Sensor verwendet `SensorDeviceClass.MONETARY` ohne die von Home Assistant dafuer abgelehnte `SensorStateClass.MEASUREMENT`.
+- [x] Keine separaten Entities fuer jedes statische Zeitfenster erzeugen. `OFFPEAK`, `STANDARD` und `PEAK` bleiben Tarifstufen im Zeitplan; nur der aktuell wirksame Wert ist Sensorzustand.
+- [x] Zustandswechsel an Intervallgrenzen lokal ausloesen, ohne dafuer eine neue GraphQL-Abfrage zu senden; nach Coordinator-Refresh den naechsten Wechsel neu planen.
+- [ ] Tests fuer alle Tarifstufen, exakte Intervallgrenzen, Mitternacht, Gueltigkeitswechsel, nicht unterstuetzte Accounts und die Unterscheidung zwischen Netzentgelt und Gesamtstrompreis ergaenzen.
+- [ ] Beide README-Dateien, Uebersetzungen, Entity-Kompatibilitaet und Release Notes erst zusammen mit der tatsaechlichen Implementierung aktualisieren; dann auch die Manifest-Version erhoehen.
+
+## Phase 8: Saldo- und Buchungshistorie
+
+### API und Datenmodell
+
+- [ ] Eine getrennte `BalanceHistory`-Query in `api/queries.py` aufnehmen; die bestehende Basisabfrage behaelt nur `ledgerType` und `balance` und wird nicht bei jedem Coordinator-Lauf um Transaktionen vergroessert.
+- [ ] Eine On-Demand-API-Methode mit `account_number`, optionalem Cursor und begrenzter Seitengroesse implementieren.
+- [ ] Pagination fuer jedes zurueckgegebene Ledger getrennt modellieren und live pruefen, ob ein Cursor verbindungsspezifisch ist; einen Cursor nicht ungeprueft auf mehrere Ledger-Verbindungen anwenden.
+- [ ] Ledger-Betraege aus der kleinsten Waehrungseinheit in Euro normalisieren: `balance`, `balanceCarriedForward`, `gross`, `net` und `tax` werden durch 100 geteilt.
+- [ ] Transaktionen typisieren mit `id`, `transaction_type`, `posted_date`, `title`, `is_reversed`, `gross`, `net`, `tax` und `balance_carried_forward`.
+- [ ] Vorzeichen nicht allein aus dem positiven API-Betrag ableiten. Die Wirkung von `Credit`, `Charge`, `Refund` und weiteren `__typename`-Werten mit anonymisierten Saldoverlaeufen testen.
+- [ ] Stornierte Buchungen nicht still entfernen; `is_reversed` erhalten und eine optionale Filterung erst in der Service-Antwort anwenden.
+- [ ] GraphQL- und Pagination-Fehler ohne Accountnummern, Transaktions-IDs oder Buchungstitel protokollieren.
+
+### Home-Assistant-Schnittstelle
+
+- [ ] Den vorhandenen Balance-Sensor als primaere Entity beibehalten; sein Zustand bleibt der aktuelle Ledger-Saldo in Euro.
+- [ ] Einen antwortfaehigen Service `get_balance_history` mit `account_number`, optionalem `ledger_type`, `cursor` und `limit` vorsehen. Die Antwort enthaelt normalisierte Buchungen sowie `has_next_page` und `end_cursor`.
+- [ ] Den Service-Response nach Herkunft gliedern: `source` enthaelt unveraenderte API-Felder, `amounts_minor_units` die gelieferten Ganzzahlbetraege, `amounts_eur` die durch 100 normalisierten Werte und `calculated` ausschliesslich fachlich abgeleitete Werte.
+- [ ] Pro Ledger mindestens `ledger_type`, `balance_minor_units`, `balance_eur`, `transactions` und `page_info` ausgeben.
+- [ ] Pro Transaktion die direkt verfuegbaren Felder `id`, `transaction_type`, `posted_date`, `title` und `is_reversed` sowie `gross`, `net`, `tax` und `balance_carried_forward` jeweils in Minor Units und Euro ausgeben.
+- [ ] Abgeleitete Felder wie `direction` und `signed_gross_eur` nur nach verifizierter Typsemantik bereitstellen und unter `calculated` kennzeichnen; `Credit`, `Charge` und `Refund` nicht allein anhand ihres Namens interpretieren.
+- [ ] Im Service-Response `currency: EUR`, `minor_unit_factor: 100` und eine kurze `field_semantics`-Zuordnung mitliefern, damit Automationen Rohwerte, normalisierte Werte und Berechnungen unterscheiden koennen.
+- [ ] Bei gesetztem `ledger_type` nur dieses Ledger zurueckgeben; ohne Filter alle verfuegbaren Ledger getrennt und mit jeweils eigener Pagination ausgeben.
+- [ ] Die vollstaendige Buchungshistorie nicht als Sensorattribut speichern, da Home Assistant Attribute in der Recorder-Datenbank vervielfacht und Buchungstitel sensible Informationen enthalten koennen.
+- [ ] Zunaechst keinen zusaetzlichen Transaktionssensor anlegen. Einen standardmaessig deaktivierten Sensor fuer die letzte Buchung erst bei einem konkreten Automationsbedarf evaluieren; Freitexttitel nur nach ausdruecklicher Datenschutzentscheidung aufnehmen.
+- [ ] Keine einzelne Entity pro Transaktion erzeugen.
+- [ ] Service-Schema, eine Tabelle aller API- und berechneten Felder, anonymisierte Antwortbeispiele und einen Datenschutz-Hinweis in beiden README-Dateien sowie der Service-Dokumentation ergaenzen.
+
+### Tests und Freigabe
+
+- [ ] Anonymisierte Fixtures fuer `Credit`, `Charge`, `Refund`, stornierte Buchungen, mehrere Ledger und mehrere Seiten erstellen.
+- [ ] Cent-/Euro-Konvertierung, Sortierreihenfolge, Cursor-Fortsetzung und unveraenderte Balance-Sensoren testen.
+- [ ] Sicherstellen, dass ein Fehler der History-Abfrage weder den Basis-Coordinator noch bestehende Balance-Sensoren als nicht verfuegbar markiert.
+- [ ] Die Manifest-Version und Release Notes erst mit der tatsaechlichen Implementierung aktualisieren.
 
 ## Verifikation pro Umsetzungsschritt
 

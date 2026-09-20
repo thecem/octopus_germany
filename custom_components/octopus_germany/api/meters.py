@@ -8,6 +8,7 @@ from typing import Any
 
 from .queries import (
     ELECTRICITY_15MIN_READINGS_QUERY,
+    ELECTRICITY_MEASUREMENTS_RANGE_QUERY,
     ELECTRICITY_METER_READINGS_QUERY,
     ELECTRICITY_SMART_METER_READINGS_QUERY,
     ELECTRICITY_SMART_METER_READINGS_QUERY_V2,
@@ -16,6 +17,13 @@ from .queries import (
 from .smart_meter import SMART_METER_ERROR_BACKOFF, SmartMeterFetchError
 
 _LOGGER = logging.getLogger(__name__)
+
+_MEASUREMENT_PAGE_SIZE = 100
+_READING_FREQUENCIES = {
+    "15min": "RAW_INTERVAL",
+    "hour": "HOUR_INTERVAL",
+    "day": "DAY_INTERVAL",
+}
 
 
 class MeterApiMixin:
@@ -315,7 +323,8 @@ class MeterApiMixin:
                 "server error",
                 self._15min_retry_until.isoformat(),
             )
-            return None
+            msg = "15-minute smart-meter request is in backoff"
+            raise SmartMeterFetchError(msg)
 
         variables = {
             "accountNumber": account_number,
@@ -329,55 +338,174 @@ class MeterApiMixin:
             response = await client.execute_async(
                 query=ELECTRICITY_15MIN_READINGS_QUERY, variables=variables
             )
+        except Exception as err:
+            self._15min_retry_until = now + SMART_METER_ERROR_BACKOFF
+            _LOGGER.exception("Error fetching 15min readings")
+            msg = "15-minute smart-meter HTTP or response decoding failed"
+            raise SmartMeterFetchError(msg) from err
+
+        if response is None:
+            self._15min_retry_until = now + SMART_METER_ERROR_BACKOFF
+            msg = "15-minute smart-meter request returned no response"
+            raise SmartMeterFetchError(msg)
+
+        if "errors" in response:
+            self._15min_retry_until = now + SMART_METER_ERROR_BACKOFF
+            errors = response["errors"]
+            error_code = errors[0].get("extensions", {}).get("errorCode")
+            if error_code == "KT-CT-1199":
+                _LOGGER.warning("15-minute smart-meter API rate limit reached")
+                msg = "15-minute smart-meter API rate limit reached"
+            else:
+                _LOGGER.error("GraphQL errors in 15min readings: %s", errors)
+                msg = "15-minute smart-meter GraphQL request failed"
+            raise SmartMeterFetchError(msg)
+
+        if self._15min_retry_until is not None:
+            _LOGGER.info("15min smart-meter endpoint recovered")
+            self._15min_retry_until = None
+
+        measurements = (
+            response.get("data", {})
+            .get("account", {})
+            .get("property", {})
+            .get("measurements", {})
+        )
+
+        if measurements and "edges" in measurements and measurements["edges"]:
+            readings = []
+            for edge in measurements["edges"]:
+                if edge.get("node"):
+                    reading = edge["node"]
+                    readings.append(
+                        {
+                            "start_time": reading.get("startAt"),
+                            "end_time": reading.get("endAt"),
+                            "value": reading.get("value"),
+                            "unit": reading.get("unit"),
+                        }
+                    )
+            _LOGGER.debug(
+                "Found %d 15-min readings for property %s on %s",
+                len(readings),
+                property_id,
+                date,
+            )
+            return readings
+
+        return []
+
+    async def fetch_electricity_measurements_range(
+        self,
+        property_id: str,
+        market_supply_point_id: str,
+        start_at: str,
+        end_at: str,
+        timezone: str,
+        resolution: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch and paginate electricity measurements for a time range."""
+        if not await self.ensure_token():
+            msg = "Failed to authenticate smart-meter measurement request"
+            raise SmartMeterFetchError(msg)
+
+        reading_frequency = _READING_FREQUENCIES.get(resolution)
+        if reading_frequency is None:
+            msg = f"Unsupported smart-meter resolution: {resolution}"
+            raise ValueError(msg)
+
+        now = datetime.now(UTC)
+        if self._15min_retry_until and now < self._15min_retry_until:
+            msg = "Smart-meter measurement request is in backoff"
+            raise SmartMeterFetchError(msg)
+
+        client = self._get_graphql_client()
+        readings: list[dict[str, Any]] = []
+        cursor = None
+
+        while True:
+            variables = {
+                "propertyId": property_id,
+                "first": _MEASUREMENT_PAGE_SIZE,
+                "after": cursor,
+                "utilityFilters": [
+                    {
+                        "electricityFilters": {
+                            "marketSupplyPointId": market_supply_point_id,
+                            "readingFrequencyType": reading_frequency,
+                        }
+                    }
+                ],
+                "startAt": start_at,
+                "endAt": end_at,
+                "timezone": timezone,
+            }
+
+            try:
+                response = await client.execute_async(
+                    query=ELECTRICITY_MEASUREMENTS_RANGE_QUERY,
+                    variables=variables,
+                )
+            except Exception as err:
+                self._15min_retry_until = now + SMART_METER_ERROR_BACKOFF
+                msg = "Smart-meter measurement request failed"
+                raise SmartMeterFetchError(msg) from err
 
             if response is None:
                 self._15min_retry_until = now + SMART_METER_ERROR_BACKOFF
-                return None
+                msg = "Smart-meter measurement request returned no response"
+                raise SmartMeterFetchError(msg)
 
-            if "errors" in response:
+            errors = response.get("errors") or []
+            if errors:
                 self._15min_retry_until = now + SMART_METER_ERROR_BACKOFF
-                _LOGGER.error(
-                    "GraphQL errors in 15min readings: %s", response["errors"]
-                )
-                return None
+                error_code = errors[0].get("extensions", {}).get("errorCode")
+                if error_code == "KT-CT-1199":
+                    msg = "Smart-meter measurement API rate limit reached"
+                else:
+                    msg = "Smart-meter measurement GraphQL request failed"
+                raise SmartMeterFetchError(msg)
 
-            if self._15min_retry_until is not None:
-                _LOGGER.info("15min smart-meter endpoint recovered")
-                self._15min_retry_until = None
+            property_data = (response.get("data") or {}).get("property") or {}
+            measurements = property_data.get("measurements") or {}
+            for edge in measurements.get("edges") or []:
+                node = edge.get("node") or {}
+                filters = (node.get("metaData") or {}).get("utilityFilters") or {}
+                if node:
+                    readings.append(
+                        {
+                            "start_time": node.get("startAt"),
+                            "end_time": node.get("endAt"),
+                            "duration_in_seconds": node.get("durationInSeconds"),
+                            "value": node.get("value"),
+                            "unit": node.get("unit"),
+                            "source": node.get("source"),
+                            "measurement_type": node.get("__typename"),
+                            "market_supply_point_id": filters.get(
+                                "marketSupplyPointId"
+                            ),
+                            "device_id": filters.get("deviceId"),
+                            "register_id": filters.get("registerId"),
+                            "reading_direction": filters.get("readingDirection"),
+                            "reading_frequency": filters.get("readingFrequencyType"),
+                            "reading_quality": filters.get("readingQuality"),
+                        }
+                    )
 
-            measurements = (
-                response.get("data", {})
-                .get("account", {})
-                .get("property", {})
-                .get("measurements", {})
-            )
+            page_info = measurements.get("pageInfo") or {}
+            next_cursor = page_info.get("endCursor")
+            if not page_info.get("hasNextPage"):
+                break
+            if not next_cursor or next_cursor == cursor:
+                msg = "Smart-meter measurement pagination returned no new cursor"
+                raise SmartMeterFetchError(msg)
+            cursor = next_cursor
 
-            if measurements and "edges" in measurements and measurements["edges"]:
-                readings = []
-                for edge in measurements["edges"]:
-                    if edge.get("node"):
-                        reading = edge["node"]
-                        readings.append(
-                            {
-                                "start_time": reading.get("startAt"),
-                                "end_time": reading.get("endAt"),
-                                "value": reading.get("value"),
-                                "unit": reading.get("unit"),
-                            }
-                        )
-                _LOGGER.debug(
-                    "Found %d 15-min readings for property %s on %s",
-                    len(readings),
-                    property_id,
-                    date,
-                )
-                return readings
+        if self._15min_retry_until is not None:
+            _LOGGER.info("Smart-meter measurement endpoint recovered")
+            self._15min_retry_until = None
 
-        except Exception:
-            self._15min_retry_until = now + SMART_METER_ERROR_BACKOFF
-            _LOGGER.exception("Error fetching 15min readings")
-            return None
-        return []
+        return readings
 
     async def fetch_electricity_smart_meter_readings_v2(
         self, account_number: str, property_id: str, date: str

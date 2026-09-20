@@ -19,6 +19,7 @@ from python_graphql_client import GraphqlClient
 from .api.accounts import AccountApiMixin
 from .api.auth import _TOKEN_MANAGERS, TokenManager
 from .api.devices import DeviceApiMixin
+from .api.grid_fees import GridFeeApiMixin
 from .api.meters import MeterApiMixin
 from .api.queries import (
     ACCOUNT_CAPABILITIES_QUERY,
@@ -56,13 +57,14 @@ __all__ = [
 ]
 
 GRAPH_QL_ENDPOINT = "https://api.oeg-kraken.energy/v1/graphql/"
+OE_BACKEND_GRAPH_QL_ENDPOINT = "https://api.backend.octopusenergy.de/v1/graphql/"
 ELECTRICITY_LEDGER = "ELECTRICITY_LEDGER"
 
 if TYPE_CHECKING:
     from .models import TariffCapabilities
 
 
-class OctopusGermany(AccountApiMixin, DeviceApiMixin, MeterApiMixin):
+class OctopusGermany(AccountApiMixin, DeviceApiMixin, GridFeeApiMixin, MeterApiMixin):
     """API client wrapper combining account, device, and meter mixins."""
 
     def __init__(self, email: str, password: str) -> None:
@@ -88,6 +90,7 @@ class OctopusGermany(AccountApiMixin, DeviceApiMixin, MeterApiMixin):
         self._capabilities_by_account: dict[str, TariffCapabilities] = {}
         self._smart_meter_retry_until: datetime | None = None
         self._15min_retry_until: datetime | None = None
+        self._variable_grid_fees_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
 
         # Set up the token manager refresh callback
         self._token_manager.set_refresh_callback(self.login)
@@ -114,6 +117,13 @@ class OctopusGermany(AccountApiMixin, DeviceApiMixin, MeterApiMixin):
         if additional_headers:
             headers.update(additional_headers)
         return GraphqlClient(endpoint=GRAPH_QL_ENDPOINT, headers=headers)
+
+    def _get_oe_backend_graphql_client(self) -> GraphqlClient:
+        """Get an authenticated client for OE Germany backend operations."""
+        return GraphqlClient(
+            endpoint=OE_BACKEND_GRAPH_QL_ENDPOINT,
+            headers=self._get_auth_headers(),
+        )
 
     async def execute_graphql(
         self,

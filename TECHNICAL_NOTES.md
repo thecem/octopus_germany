@@ -10,6 +10,15 @@
 
 ### Key Implementation Details
 
+#### GraphQL Endpoints and Schemas
+
+- **Kraken API**: `https://api.oeg-kraken.energy/v1/graphql/`
+   - Schema snapshot: `custom_components/octopus_germany/oeg_graphql_schema.yaml`
+- **OE Backend API**: `https://api.backend.octopusenergy.de/v1/graphql/`
+   - Used for `variableGridFees` and authenticated with the shared Kraken token
+   - Schema snapshot: `custom_components/octopus_germany/oe_backend_graphql_schema.json`
+- The customer portal proxies these endpoints through separate same-origin routes. Integration code calls the upstream APIs directly and never forwards browser cookies.
+
 #### Token Management & Authentication
 - **Shared Token Strategy**: All platforms use `hass.data[DOMAIN][entry.entry_id]["coordinator"]`
 - **Auto-Refresh**: Background task refreshes tokens every 59 minutes
@@ -169,7 +178,7 @@ logger:
 
 1. **Device Type Mapping**: Some devices may have unexpected `deviceType` values
 2. **Time Zone Handling**: API uses UTC, local conversion needed for UI
-3. **GraphQL Schema Evolution**: Monitor for field additions/deprecations
+3. **GraphQL Schema Evolution**: Monitor both endpoint schemas for field additions/deprecations; do not merge their distinct Query roots
 
 ## Future Considerations
 

@@ -18,6 +18,8 @@ Diese Custom Integration bindet Octopus Energy Germany in Home Assistant ein. Si
 
 - Kontodaten (Strom/Gas)
 - Aktuelle Tarifpreise (inkl. Dynamic/TOU)
+- Paragraph-14a-Netzentgelte mit von OE gemeldetem Modul, aktuellem Preisanteil und Tagesplan
+- Vergangene, aktive und zukuenftige Stromvertraege mit Brutto-/Netto-Preisen und MwSt. in den Attributen des Strompreis-Sensors
 - SmartFlex-Geraetestatus, Dispatching, Session-Daten
 - Schalter fuer Smart Control und Boost Charge
 - **Smart-Meter-Readings**: Vortagsverbrauch akkumuliert mit stundenweiser Aufschluesselung (aus bei Octopus gespeicherten Zaehlerdaten)
@@ -70,7 +72,8 @@ Fuer eine kompakte Startseite sind die Details aufgeteilt:
 - octopus_germany.get_smart_meter_readings
   - Tageswerte aus iMSys Historie laden
 - octopus_germany.export_smart_meter_csv
-  - iMSys Daten als CSV exportieren
+  - iMSys-Daten ueber paginierte Monatsabfragen als CSV exportieren
+  - Verwendet die Home-Assistant-Zeitzone und behaelt OE-Messqualitaetsdaten beim Laden bei
 
 ## Hinweis zu iMSys / SMGW-HAN
 
