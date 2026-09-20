@@ -24,6 +24,7 @@ from custom_components.octopus_germany.tariff import (
     get_active_timeslot_rate,
     get_current_forecast_rate,
     get_next_grid_fee_change,
+    get_next_price_change,
     is_product_current,
     is_time_between,
     parse_tariff_time,
@@ -238,9 +239,22 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
         self._attr_state_class = SensorStateClass.TOTAL
         self._attr_has_entity_name = False
         self._attributes = {}
+        self._cancel_price_update = None
 
         # Initialize attributes right after creation
         self._update_attributes()
+
+    async def async_added_to_hass(self) -> None:
+        """Schedule the first local price-boundary update."""
+        await super().async_added_to_hass()
+        self._schedule_price_update()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Cancel the local price-boundary update."""
+        if self._cancel_price_update:
+            self._cancel_price_update()
+            self._cancel_price_update = None
+        await super().async_will_remove_from_hass()
 
     def _parse_time(self, time_str: str) -> time:
         """Parse time string in HH:MM:SS format to time object."""
@@ -601,7 +615,45 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         self._update_attributes()
+        self._schedule_price_update()
         self.async_write_ha_state()
+
+    @callback
+    def _handle_price_update(self, _now: Any) -> None:
+        """Write state when the active product price period changes."""
+        self._cancel_price_update = None
+        self._update_attributes()
+        self.async_write_ha_state()
+        self._schedule_price_update()
+
+    @callback
+    def _schedule_price_update(self) -> None:
+        """Schedule a local update at the next product price boundary."""
+        if self._cancel_price_update:
+            self._cancel_price_update()
+            self._cancel_price_update = None
+        if not self.hass or not self.coordinator.data:
+            return
+        account_data = self.coordinator.data.get(self._account_number, {})
+        products = account_data.get("products", [])
+        current_product = next(
+            (
+                product
+                for product in sorted(
+                    products,
+                    key=lambda product: product.get("validFrom", ""),
+                    reverse=True,
+                )
+                if is_product_current(product)
+            ),
+            None,
+        )
+        if current_product:
+            next_change = get_next_price_change(current_product)
+            if next_change:
+                self._cancel_price_update = async_track_point_in_time(
+                    self.hass, self._handle_price_update, next_change
+                )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

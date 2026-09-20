@@ -82,6 +82,42 @@ def get_active_timeslot_rate(
     return None
 
 
+def get_next_price_change(
+    product: dict[str, Any], current_time: datetime | None = None
+) -> datetime | None:
+    """Return the next local boundary that can change a product price."""
+    if not product:
+        return None
+    current_time = current_time or local_now()
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=UTC)
+
+    candidates: list[datetime] = []
+    local_time = current_time.timetz().replace(tzinfo=None)
+    for timeslot in product.get("timeslots", []):
+        for rule in timeslot.get("activation_rules", []):
+            for boundary in (rule.get("from_time"), rule.get("to_time")):
+                boundary_time = parse_tariff_time(boundary)
+                if boundary_time is None:
+                    continue
+                boundary_date = current_time.date()
+                if boundary_time <= local_time:
+                    boundary_date += timedelta(days=1)
+                candidates.append(
+                    datetime.combine(
+                        boundary_date, boundary_time, tzinfo=current_time.tzinfo
+                    )
+                )
+
+    for forecast in product.get("unitRateForecast", []):
+        for field in ("validFrom", "validTo"):
+            boundary = parse_product_datetime(forecast.get(field))
+            if boundary and boundary > current_time.astimezone(UTC):
+                candidates.append(boundary.astimezone(current_time.tzinfo))
+
+    return min(candidates) if candidates else None
+
+
 def normalize_variable_grid_fees(
     value: dict[str, Any] | None,
     grid_operator_name: str | None = None,

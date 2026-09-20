@@ -86,6 +86,7 @@ from custom_components.octopus_germany.tariff import (
     get_active_timeslot_rate,
     get_current_forecast_rate,
     get_next_grid_fee_change,
+    get_next_price_change,
     is_product_current,
     normalize_variable_grid_fees,
     parse_tariff_time,
@@ -220,6 +221,20 @@ class TariffCapabilitiesTest(unittest.TestCase):
         )
         assert not is_product_current(
             product, datetime.fromisoformat("2026-09-07T23:00:00+00:00")
+        )
+
+    def test_next_price_change_uses_local_timeslot_boundary(self) -> None:
+        product = {
+            "type": "TimeOfUse",
+            "timeslots": [
+                {"activation_rules": [{"from_time": "00:00:00", "to_time": "05:00:00"}]}
+            ],
+        }
+
+        current_time = datetime.fromisoformat("2026-09-07T04:40:00+02:00")
+
+        assert get_next_price_change(product, current_time) == datetime.fromisoformat(
+            "2026-09-07T05:00:00+02:00"
         )
 
     def test_timeslot_default_uses_home_assistant_local_time(self) -> None:

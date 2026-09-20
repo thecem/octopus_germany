@@ -1,5 +1,11 @@
 # Release Notes
 
+## Version 0.0.132 (2026-09-20)
+
+### Fixes
+
+- Updated the electricity price sensor locally at Heat and other Time-of-Use tariff boundaries instead of waiting for the next coordinator poll.
+
 ## Version 0.0.131 (2026-09-20)
 
 ### Improvements
