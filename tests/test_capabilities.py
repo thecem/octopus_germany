@@ -1005,6 +1005,37 @@ class TariffCapabilitiesTest(unittest.TestCase):
             assert fee_sensor.native_value == 0.1052
             assert fee_sensor.extra_state_attributes["rate_type"] == "PEAK"
 
+    def test_grid_fee_fallback_does_not_override_specific_interval(self) -> None:
+        grid_fees = normalize_variable_grid_fees(
+            {
+                "module": "MODULE_3",
+                "gridFees": [
+                    {
+                        "gridFeeKwhRateType": "STANDARD",
+                        "rateTypeIntervalStart": "00:00:00",
+                        "rateTypeIntervalEnd": "00:00:00",
+                        "gridOperatorCode": "operator-1",
+                        "gridFeeInCentsPerKwh": "8.670000",
+                    },
+                    {
+                        "gridFeeKwhRateType": "PEAK",
+                        "rateTypeIntervalStart": "17:00:00",
+                        "rateTypeIntervalEnd": "21:00:00",
+                        "gridOperatorCode": "operator-1",
+                        "gridFeeInCentsPerKwh": "13.460000",
+                    },
+                ],
+            },
+            "Grid Operator",
+        )
+
+        assert (
+            get_active_grid_fee(
+                grid_fees, datetime.fromisoformat("2026-09-21T17:25:00+02:00")
+            )["rate_type"]
+            == "PEAK"
+        )
+
     def test_comprehensive_query_makes_intelligent_fields_conditional(self) -> None:
         assert "$includeIntelligent: Boolean!" in COMPREHENSIVE_QUERY
         assert "isActive" in COMPREHENSIVE_QUERY

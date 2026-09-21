@@ -69,7 +69,7 @@ The integration is configured via the Home Assistant UI:
 
 ### Polling
 
-The default base polling interval is 30 minutes. Accounts with detected Intelligent tariff support use a separate three-minute polling interval for device and dispatch data. Both intervals can be changed from the integration options and are validated between 1 and 60 minutes. Electricity price sensors also update locally at Time-of-Use tariff boundaries, without waiting for the next base poll.
+The default base polling interval is 30 minutes. Accounts with detected Intelligent tariff support use a separate three-minute polling interval for device and dispatch data. Both intervals can be changed from the integration options and are validated between 1 and 60 minutes. Electricity price sensors also update locally at Time-of-Use tariff boundaries, without waiting for the next base poll. Variable grid-fee entries with a `00:00:00` to `00:00:00` interval are treated as fallbacks behind specific intervals.
 
 Intelligent device and dispatch entities are created only when the account exposes the required tariff capability or connected Intelligent devices. Accounts without that capability do not receive the Intelligent polling coordinator.
 

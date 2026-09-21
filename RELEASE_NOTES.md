@@ -1,5 +1,12 @@
 # Release Notes
 
+## Version 0.0.133 (2026-09-21)
+
+### Fixes
+
+- Treat OE `00:00:00` to `00:00:00` grid-fee entries as fallbacks so specific PEAK and OFFPEAK intervals remain active.
+- Log a diagnostic warning when OE provides an all-day fallback interval.
+
 ## Version 0.0.132 (2026-09-20)
 
 ### Fixes

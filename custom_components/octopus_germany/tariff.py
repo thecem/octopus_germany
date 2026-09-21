@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from homeassistant.util.dt import now as local_now
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def parse_product_datetime(value: str | None) -> datetime | None:
@@ -132,11 +135,24 @@ def normalize_variable_grid_fees(
             cents = Decimal(str(rate["gridFeeInCentsPerKwh"]))
         except InvalidOperation, KeyError, TypeError:
             continue
+        start_time = rate.get("rateTypeIntervalStart")
+        end_time = rate.get("rateTypeIntervalEnd")
+        if start_time == "00:00:00" and end_time == "00:00:00":
+            _LOGGER.warning(
+                "OE variable grid fee contains an all-day fallback interval: "
+                "grid_operator=%s, grid_operator_code=%s, module=%s, "
+                "rate_type=%s, rate_cents_per_kwh=%s",
+                grid_operator_name,
+                rate.get("gridOperatorCode"),
+                value.get("module"),
+                rate.get("gridFeeKwhRateType"),
+                cents,
+            )
         rates.append(
             {
                 "rate_type": rate.get("gridFeeKwhRateType"),
-                "start_time": rate.get("rateTypeIntervalStart"),
-                "end_time": rate.get("rateTypeIntervalEnd"),
+                "start_time": start_time,
+                "end_time": end_time,
                 "valid_from": rate.get("validFrom"),
                 "valid_to": rate.get("validTo"),
                 "grid_operator_code": rate.get("gridOperatorCode"),
@@ -175,6 +191,7 @@ def get_active_grid_fee(
     current_utc = current_time.astimezone(UTC)
     wall_time = current_time.time().replace(tzinfo=None)
 
+    fallback_rate = None
     for rate in grid_fee_data.get("rates", []):
         valid_from = parse_product_datetime(rate.get("valid_from"))
         valid_to = parse_product_datetime(rate.get("valid_to"))
@@ -184,9 +201,12 @@ def get_active_grid_fee(
             continue
         start = parse_tariff_time(rate.get("start_time"))
         end = parse_tariff_time(rate.get("end_time"))
+        if start == time.min and end == time.min:
+            fallback_rate = rate
+            continue
         if start and end and is_time_between(wall_time, start, end):
             return rate
-    return None
+    return fallback_rate
 
 
 def get_next_grid_fee_change(
