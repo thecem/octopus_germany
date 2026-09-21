@@ -15,7 +15,7 @@ This custom component integrates Octopus Germany services with Home Assistant, p
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K71LPRM2)
 
 **⚡ New to Octopus Energy Germany?**
-[![Octopus Energy Referral](https://img.shields.io/badge/🐙_Get_100€_Bonus-Join_Octopus_Energy-00D9FF?style=for-the-badge&logoColor=white)](https://octopusenergy.de/empfehlungen?referralCode=free-cat-744)
+[![Octopus Energy Referral](https://img.shields.io/badge/🐙_Get_150€_Bonus-Join_Octopus_Energy-00D9FF?style=for-the-badge&logoColor=white)](https://octopusenergy.de/empfehlungen?referralCode=free-cat-744)
 
 ## Features
 
