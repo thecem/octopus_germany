@@ -501,6 +501,67 @@ query ElectricityMeterReadings($accountNumber: String!, $meterId: ID!) {
 }
 """
 
+ELECTRICITY_METER_REGISTER_READINGS_QUERY = """
+query ElectricityMeterRegisterReadings(
+  $accountNumber: String!
+  $meterId: ID!
+  $first: Int!
+  $after: String
+) {
+  electricityMeterReadings(
+    accountNumber: $accountNumber
+    meterId: $meterId
+    first: $first
+    after: $after
+  ) {
+    pageInfo { hasNextPage endCursor }
+    edges {
+      node {
+        value
+        readAt
+        registerObisCode
+        typeOfRead
+        origin
+        meterId
+        registerType
+      }
+    }
+  }
+}
+"""
+
+ELECTRICITY_METERS_QUERY = """
+query ElectricityMeters(
+  $accountNumber: String!
+  $meloNumber: String!
+  $first: Int!
+  $after: String
+) {
+  electricityMeters(
+    accountNumber: $accountNumber
+    meloNumber: $meloNumber
+    first: $first
+    after: $after
+  ) {
+    pageInfo { hasNextPage endCursor }
+    edges {
+      node {
+        id
+        number
+        activeFrom
+        activeTo
+        meteringDirection
+        readingTransmissionType
+        tariffCount
+        meloNumber
+        hasSmartMeterGateway
+        conversionFactor
+      }
+    }
+  }
+}
+"""
+
 # Query to get latest smart meter readings
 # Schema introspection query to explore available fields
 INTROSPECTION_QUERY = """

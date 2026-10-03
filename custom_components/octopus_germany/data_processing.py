@@ -32,6 +32,9 @@ def create_empty_account_data(account_number: str) -> dict[str, AccountData]:
             "malo_number": None,
             "melo_number": None,
             "meter": None,
+            "electricity_meters": [],
+            "electricity_meter_locations": [],
+            "electricity_meter_readings": {},
             "grid_operator_code": None,
             "grid_operator_name": None,
             "variable_grid_fees": None,
@@ -276,6 +279,51 @@ def extract_meter_data(account_data: dict[str, Any]) -> dict[str, Any]:
         meter = first_meter(malo) or {}
         return meter.get(field) or malo.get(field)
 
+    electricity_meters = []
+    electricity_meter_locations = []
+    seen_meter_ids: set[str] = set()
+    for malo in electricity_malos:
+        agreements = malo.get("agreements") or []
+        is_active = any(
+            agreement.get("isActive") is True
+            and not agreement.get("isRevoked")
+            and not agreement.get("isTerminated")
+            for agreement in agreements
+        )
+        meters = malo.get("meters") or (
+            [malo.get("meter")] if malo.get("meter") else []
+        )
+        melo_numbers = {
+            str(meter["meloNumber"])
+            for meter in meters
+            if isinstance(meter, dict) and meter.get("meloNumber")
+        }
+        if malo.get("meloNumber"):
+            melo_numbers.add(str(malo["meloNumber"]))
+        electricity_meter_locations.extend(
+            {
+                "malo_number": malo.get("maloNumber"),
+                "melo_number": melo_number,
+                "malo_agreement_active": is_active,
+            }
+            for melo_number in sorted(melo_numbers)
+        )
+        for meter in meters:
+            if not isinstance(meter, dict):
+                continue
+            meter_id = meter.get("id")
+            if meter_id and str(meter_id) in seen_meter_ids:
+                continue
+            if meter_id:
+                seen_meter_ids.add(str(meter_id))
+            electricity_meters.append(
+                {
+                    **meter,
+                    "malo_number": malo.get("maloNumber"),
+                    "malo_agreement_active": is_active,
+                }
+            )
+
     return {
         "malo_number": next(
             (
@@ -313,6 +361,8 @@ def extract_meter_data(account_data: dict[str, Any]) -> dict[str, Any]:
             (first_meter(malo) for malo in electricity_malos if first_meter(malo)),
             None,
         ),
+        "electricity_meters": electricity_meters,
+        "electricity_meter_locations": electricity_meter_locations,
         "gas_malo_number": next(
             (malo.get("maloNumber") for malo in gas_malos if malo.get("maloNumber")),
             None,

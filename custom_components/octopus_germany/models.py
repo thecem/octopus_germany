@@ -39,6 +39,9 @@ class AccountData(TypedDict, total=False):
     malo_number: str | None
     melo_number: str | None
     meter: dict[str, Any] | None
+    electricity_meters: list[dict[str, Any]]
+    electricity_meter_locations: list[dict[str, Any]]
+    electricity_meter_readings: dict[str, list[dict[str, Any]]]
     grid_operator_code: str | None
     grid_operator_name: str | None
     variable_grid_fees: dict[str, Any] | None

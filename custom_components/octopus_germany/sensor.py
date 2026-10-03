@@ -139,6 +139,20 @@ def get_electricity_meter_device_info(
     )
 
 
+def get_electricity_meter_specific_device_info(
+    account_number: str, meter: dict[str, Any]
+) -> DeviceInfo:
+    """Get device info for an individual electricity meter."""
+    meter_id = str(meter.get("id", "unknown"))
+    meter_number = meter.get("number") or meter_id
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"electricity_meter_{account_number}_{meter_id}")},
+        name=f"Electricity Meter ({meter_number})",
+        manufacturer="Octopus Energy Germany",
+        model=meter.get("meterType") or "Smart Meter",
+    )
+
+
 def get_gas_meter_device_info(
     coordinator_data: CoordinatorData, account_number: str
 ) -> DeviceInfo:
@@ -267,6 +281,12 @@ async def async_setup_entry(
                     entities.append(
                         OctopusElectricityLatestReadingSensor(acc_num, coordinator)
                     )
+
+                entities.extend(
+                    _create_electricity_meter_register_sensors(
+                        acc_num, account_data, coordinator
+                    )
+                )
 
                 # Create electricity smart-meter readings sensor for
                 # electricity-enabled accounts.
@@ -674,3 +694,124 @@ class OctopusElectricityLatestReadingSensor(CoordinatorEntity, SensorEntity):
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return get_account_device_info(self._account_number)
+
+
+class OctopusElectricityMeterRegisterSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for a cumulative import or export register on one meter."""
+
+    def __init__(
+        self,
+        account_number: str,
+        meter: dict[str, Any],
+        obis_code: str,
+        coordinator: OctopusDataCoordinator,
+    ) -> None:
+        super().__init__(coordinator)
+        self._account_number = account_number
+        self._meter = meter
+        self._meter_id = str(meter["id"])
+        self._obis_code = obis_code
+        self._purpose = "Import" if obis_code == "1.8.0" else "Export"
+        meter_number = meter.get("number") or self._meter_id
+        self._attr_name = f"{self._purpose} total ({obis_code})"
+        self._attr_unique_id = (
+            f"octopus_{account_number}_{self._meter_id}_electricity_{obis_code}"
+        )
+        self._attr_device_class = SensorDeviceClass.ENERGY
+        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+        self._attr_native_unit_of_measurement = "kWh"
+        self._attr_has_entity_name = True
+        self._attr_suggested_object_id = (
+            f"octopus_{account_number}_{meter_number}_{self._purpose.lower()}_total"
+        )
+
+    def _register_readings(self) -> list[dict[str, Any]]:
+        if not self.coordinator.data:
+            return []
+        account_data = self.coordinator.data.get(self._account_number, {})
+        readings_by_meter = account_data.get("electricity_meter_readings", {})
+        readings = readings_by_meter.get(self._meter_id, [])
+        matching_readings = []
+        for reading in readings:
+            register_code = str(reading.get("registerObisCode") or "").strip()
+            if (
+                register_code == self._obis_code
+                or register_code.rsplit(":", 1)[-1] == self._obis_code
+            ):
+                matching_readings.append(reading)
+        return matching_readings
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the newest cumulative reading for this OBIS register."""
+        for reading in self._register_readings():
+            try:
+                value = reading.get("value")
+                if value is not None:
+                    return float(value)
+            except TypeError, ValueError:
+                continue
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return meter metadata and every register-specific reading."""
+        readings = self._register_readings()
+        history = []
+        for reading in readings:
+            try:
+                value = float(reading["value"])
+            except KeyError, TypeError, ValueError:
+                continue
+            history.append(
+                {
+                    "read_at": reading.get("readAt"),
+                    "value_kwh": value,
+                    "reading_type": reading.get("typeOfRead"),
+                    "origin": reading.get("origin"),
+                }
+            )
+
+        return {
+            "meter_id": self._meter_id,
+            "meter_number": self._meter.get("number"),
+            "malo_number": self._meter.get("malo_number"),
+            "is_active": self._meter.get("is_active", False),
+            "malo_agreement_active": self._meter.get("malo_agreement_active", False),
+            "active_from": self._meter.get("activeFrom"),
+            "active_to": self._meter.get("activeTo"),
+            "register_obis_code": self._obis_code,
+            "last_reading_at": readings[0].get("readAt") if readings else None,
+            "reading_history": history,
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return whether the coordinator has readings for this register."""
+        return self.coordinator.last_update_success and bool(self._register_readings())
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return the meter device this register belongs to."""
+        return get_electricity_meter_specific_device_info(
+            self._account_number, self._meter
+        )
+
+
+def _create_electricity_meter_register_sensors(
+    account_number: str,
+    account_data: AccountData,
+    coordinator: OctopusDataCoordinator,
+) -> list[SensorEntity]:
+    """Create import and export register sensors for every known meter."""
+    entities: list[SensorEntity] = []
+    for meter in account_data.get("electricity_meters", []):
+        if not meter.get("id"):
+            continue
+        entities.extend(
+            OctopusElectricityMeterRegisterSensor(
+                account_number, meter, obis_code, coordinator
+            )
+            for obis_code in ("1.8.0", "2.8.0")
+        )
+    return entities

@@ -65,6 +65,7 @@ from custom_components.octopus_germany.octopus_germany import (
 from custom_components.octopus_germany.sensor import (
     OctopusSmartChargingSessionsSensor,
     _create_device_entities,
+    _create_electricity_meter_register_sensors,
 )
 from custom_components.octopus_germany.service_handlers import (
     _group_readings_by_local_date,
@@ -95,6 +96,187 @@ from custom_components.octopus_germany.tariff import (
 
 class TariffCapabilitiesTest(unittest.TestCase):
     """Verify feature detection for supported account response shapes."""
+
+    def test_extract_meter_data_keeps_all_meters_and_contract_status(self) -> None:
+        account_data = {
+            "allProperties": [
+                {
+                    "electricityMalos": [
+                        {
+                            "maloNumber": "malo-active",
+                            "agreements": [{"isActive": True}],
+                            "meters": [
+                                {
+                                    "id": "meter-active",
+                                    "number": "0251",
+                                    "meloNumber": "melo-active",
+                                }
+                            ],
+                        },
+                        {
+                            "maloNumber": "malo-old",
+                            "agreements": [{"isActive": False}],
+                            "meters": [
+                                {
+                                    "id": "meter-2",
+                                    "number": "1LGZ",
+                                    "meloNumber": "melo-old",
+                                },
+                                {"id": "meter-3", "number": "meter-3"},
+                                {"id": "meter-4", "number": "meter-4"},
+                            ],
+                        },
+                    ]
+                }
+            ]
+        }
+
+        meters = extract_meter_data(account_data)["electricity_meters"]
+
+        assert len(meters) == 4
+        assert meters[0]["number"] == "0251"
+        assert meters[0]["malo_agreement_active"]
+        assert meters[0]["malo_number"] == "malo-active"
+        assert all(not meter["malo_agreement_active"] for meter in meters[1:])
+        locations = extract_meter_data(account_data)["electricity_meter_locations"]
+        assert {location["melo_number"] for location in locations} == {
+            "melo-active",
+            "melo-old",
+        }
+
+    def test_meter_register_sensor_uses_meter_id_and_obis_history(self) -> None:
+        account_data = {
+            "electricity_meters": [
+                {
+                    "id": "meter-1",
+                    "number": "1LGZ",
+                    "malo_number": "malo-1",
+                    "malo_agreement_active": True,
+                }
+            ]
+        }
+        coordinator = Mock()
+        coordinator.data = {
+            "account-1": {
+                "electricity_meter_readings": {
+                    "meter-1": [
+                        *[
+                            {
+                                "value": str(1234.5 - index),
+                                "readAt": f"2026-10-{1 + index:02d}T12:00:00+02:00",
+                                "registerObisCode": "1-0:1.8.0",
+                            }
+                            for index in range(25)
+                        ],
+                        {
+                            "value": "75.25",
+                            "readAt": "2026-10-01T12:00:00+02:00",
+                            "registerObisCode": "1-0:2.8.0",
+                        },
+                    ]
+                }
+            }
+        }
+        coordinator.last_update_success = True
+
+        sensors = _create_electricity_meter_register_sensors(
+            "account-1", account_data, coordinator
+        )
+
+        assert len(sensors) == 2
+        assert sensors[0].native_value == 1234.5
+        assert sensors[1].native_value == 75.25
+        assert sensors[0].extra_state_attributes["meter_id"] == "meter-1"
+        assert sensors[0].extra_state_attributes["malo_agreement_active"]
+        assert len(sensors[0].extra_state_attributes["reading_history"]) == 25
+        assert (
+            sensors[0].extra_state_attributes["reading_history"][0]["value_kwh"]
+            == 1234.5
+        )
+
+    def test_fetch_electricity_meter_register_readings_follows_all_pages(self) -> None:
+        api = object.__new__(OctopusGermany)
+        api.ensure_token = AsyncMock(return_value=True)
+        client = Mock()
+        client.execute_async = AsyncMock(
+            side_effect=[
+                {
+                    "data": {
+                        "electricityMeterReadings": {
+                            "edges": [
+                                {
+                                    "node": {
+                                        "value": "1234.5",
+                                        "registerObisCode": "1-0:1.8.0",
+                                    }
+                                }
+                            ],
+                            "pageInfo": {"hasNextPage": True, "endCursor": "r1"},
+                        }
+                    }
+                },
+                {
+                    "data": {
+                        "electricityMeterReadings": {
+                            "edges": [
+                                {
+                                    "node": {
+                                        "value": "1200.0",
+                                        "registerObisCode": "1-0:1.8.0",
+                                    }
+                                }
+                            ],
+                            "pageInfo": {"hasNextPage": False, "endCursor": "r2"},
+                        }
+                    }
+                },
+            ]
+        )
+        api._get_graphql_client = Mock(return_value=client)
+
+        readings = asyncio.run(
+            api.fetch_electricity_meter_register_readings("account-1", "meter-1")
+        )
+
+        assert readings == [
+            {"value": "1234.5", "registerObisCode": "1-0:1.8.0"},
+            {"value": "1200.0", "registerObisCode": "1-0:1.8.0"},
+        ]
+        assert client.execute_async.await_count == 2
+
+    def test_fetch_electricity_meters_follows_all_pages(self) -> None:
+        api = object.__new__(OctopusGermany)
+        api.ensure_token = AsyncMock(return_value=True)
+        client = Mock()
+        client.execute_async = AsyncMock(
+            side_effect=[
+                {
+                    "data": {
+                        "electricityMeters": {
+                            "edges": [{"node": {"id": "meter-1"}}],
+                            "pageInfo": {"hasNextPage": True, "endCursor": "c1"},
+                        }
+                    }
+                },
+                {
+                    "data": {
+                        "electricityMeters": {
+                            "edges": [{"node": {"id": "meter-2"}}],
+                            "pageInfo": {"hasNextPage": False, "endCursor": "c2"},
+                        }
+                    }
+                },
+            ]
+        )
+        api._get_graphql_client = Mock(return_value=client)
+
+        meters = asyncio.run(api.fetch_electricity_meters("account-1", "melo-1"))
+
+        assert meters == [{"id": "meter-1"}, {"id": "meter-2"}]
+        assert client.execute_async.await_count == 2
+        assert (
+            client.execute_async.await_args_list[1].kwargs["variables"]["after"] == "c1"
+        )
 
     def test_standard_dynamic_tariff_has_no_intelligent_features(self) -> None:
         account_data = {

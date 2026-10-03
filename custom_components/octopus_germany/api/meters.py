@@ -10,6 +10,8 @@ from .queries import (
     ELECTRICITY_15MIN_READINGS_QUERY,
     ELECTRICITY_MEASUREMENTS_RANGE_QUERY,
     ELECTRICITY_METER_READINGS_QUERY,
+    ELECTRICITY_METER_REGISTER_READINGS_QUERY,
+    ELECTRICITY_METERS_QUERY,
     ELECTRICITY_SMART_METER_READINGS_QUERY,
     ELECTRICITY_SMART_METER_READINGS_QUERY_V2,
     GAS_METER_READINGS_QUERY,
@@ -173,6 +175,118 @@ class MeterApiMixin:
         except Exception:
             _LOGGER.exception("Error fetching electricity meter reading")
             return None
+
+    async def fetch_electricity_meter_register_readings(
+        self, account_number: str, meter_id: str
+    ) -> list[dict[str, Any]] | None:
+        """Fetch recent electricity register readings for one meter."""
+        if not await self.ensure_token():
+            _LOGGER.error(
+                "Failed to ensure valid token for "
+                "fetch_electricity_meter_register_readings"
+            )
+            return None
+
+        client = self._get_graphql_client()
+        readings: list[dict[str, Any]] = []
+        cursor = None
+        try:
+            while True:
+                response = await client.execute_async(
+                    query=ELECTRICITY_METER_REGISTER_READINGS_QUERY,
+                    variables={
+                        "accountNumber": account_number,
+                        "meterId": meter_id,
+                        "first": _MEASUREMENT_PAGE_SIZE,
+                        "after": cursor,
+                    },
+                )
+                if not isinstance(response, dict) or response.get("errors"):
+                    _LOGGER.warning(
+                        "Failed to fetch electricity register readings for meter %s",
+                        meter_id,
+                    )
+                    return None
+
+                readings_data = (
+                    response.get("data", {}).get("electricityMeterReadings") or {}
+                )
+                readings.extend(
+                    edge["node"]
+                    for edge in readings_data.get("edges", [])
+                    if isinstance(edge, dict) and isinstance(edge.get("node"), dict)
+                )
+                page_info = readings_data.get("pageInfo") or {}
+                if not page_info.get("hasNextPage"):
+                    return readings
+
+                next_cursor = page_info.get("endCursor")
+                if not next_cursor or next_cursor == cursor:
+                    _LOGGER.warning(
+                        "Reading pagination returned no new cursor for meter %s",
+                        meter_id,
+                    )
+                    return None
+                cursor = next_cursor
+        except Exception:
+            _LOGGER.exception(
+                "Error fetching electricity register readings for meter %s", meter_id
+            )
+            return None
+
+    async def fetch_electricity_meters(
+        self, account_number: str, melo_number: str
+    ) -> list[dict[str, Any]] | None:
+        """Fetch every electricity meter associated with one MeLo."""
+        if not await self.ensure_token():
+            _LOGGER.error("Failed to ensure token for electricity meter discovery")
+            return None
+
+        client = self._get_graphql_client()
+        meters: list[dict[str, Any]] = []
+        cursor = None
+        while True:
+            try:
+                response = await client.execute_async(
+                    query=ELECTRICITY_METERS_QUERY,
+                    variables={
+                        "accountNumber": account_number,
+                        "meloNumber": melo_number,
+                        "first": _MEASUREMENT_PAGE_SIZE,
+                        "after": cursor,
+                    },
+                )
+            except Exception:
+                _LOGGER.exception(
+                    "Failed to fetch electricity meters for MeLo %s", melo_number
+                )
+                return None
+
+            if not isinstance(response, dict) or response.get("errors"):
+                _LOGGER.warning(
+                    "Invalid response while fetching electricity meters for MeLo %s",
+                    melo_number,
+                )
+                return None
+
+            connection = (response.get("data") or {}).get("electricityMeters") or {}
+            meters.extend(
+                edge["node"]
+                for edge in connection.get("edges", [])
+                if isinstance(edge, dict) and isinstance(edge.get("node"), dict)
+            )
+            page_info = connection.get("pageInfo") or {}
+            if not page_info.get("hasNextPage"):
+                return meters
+
+            next_cursor = page_info.get("endCursor")
+            if not next_cursor or next_cursor == cursor:
+                _LOGGER.warning(
+                    "Meter pagination returned no new cursor for MeLo %s",
+                    melo_number,
+                )
+                return meters
+            cursor = next_cursor
 
     async def fetch_electricity_smart_meter_readings(
         self, account_number: str, property_id: str, date: str

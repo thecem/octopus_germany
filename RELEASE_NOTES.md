@@ -1,5 +1,17 @@
 # Release Notes
 
+## Version 0.0.135 (2026-10-03)
+
+### Improvements
+
+- Discover all current and historical electricity meters per MeLo and paginate all available 1.8.0/2.8.0 register readings for their per-meter sensors.
+
+## Version 0.0.134 (2026-10-03)
+
+### New Features
+
+- Added per-meter cumulative import (OBIS 1.8.0) and export (OBIS 2.8.0) energy sensors, with meter identity, active agreement status and the 20 most recent readings in attributes.
+
 ## Version 0.0.133 (2026-09-21)
 
 ### Fixes

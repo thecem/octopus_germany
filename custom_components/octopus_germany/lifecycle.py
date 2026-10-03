@@ -677,6 +677,53 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         meter = result_data[account_number]["meter"]
 
+        meter_locations = result_data[account_number].get(
+            "electricity_meter_locations", []
+        )
+        if not meter_locations and meter:
+            melo_number = meter.get("meloNumber") or result_data[account_number].get(
+                "melo_number"
+            )
+            if melo_number:
+                meter_locations = [
+                    {
+                        "melo_number": str(melo_number),
+                        "malo_number": result_data[account_number].get("malo_number"),
+                    }
+                ]
+
+        meters_by_id = {
+            str(existing_meter["id"]): existing_meter
+            for existing_meter in result_data[account_number].get(
+                "electricity_meters", []
+            )
+            if existing_meter.get("id")
+        }
+        for location in meter_locations:
+            melo_number = location.get("melo_number")
+            if not melo_number:
+                continue
+            discovered_meters = await api.fetch_electricity_meters(
+                account_number, str(melo_number)
+            )
+            if discovered_meters is None:
+                continue
+            for discovered_meter in discovered_meters:
+                meter_id = discovered_meter.get("id")
+                if not meter_id:
+                    continue
+                meter_id = str(meter_id)
+                meters_by_id[meter_id] = {
+                    **meters_by_id.get(meter_id, {}),
+                    **discovered_meter,
+                    "malo_number": location.get("malo_number"),
+                    "malo_agreement_active": location.get(
+                        "malo_agreement_active", False
+                    ),
+                    "is_active": discovered_meter.get("activeTo") is None,
+                }
+        result_data[account_number]["electricity_meters"] = list(meters_by_id.values())
+
         # Gas meter smart reading capability
         gas_meter = result_data[account_number]["gas_meter"]
         gas_meter_smart_reading = None
@@ -721,44 +768,43 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         result_data[account_number]["gas_latest_reading"] = gas_latest_reading
 
-        # Fetch latest electricity meter reading if electricity meter exists
+        # Fetch recent cumulative-register readings for every electricity meter.
         electricity_latest_reading = None
-        if include_meter_readings and meter and meter.get("id"):
-            try:
-                electricity_meter_id = meter.get("id")
-                _LOGGER.debug(
-                    "Attempting to fetch electricity meter reading for "
-                    "account %s, meter %s",
-                    account_number,
-                    electricity_meter_id,
-                )
-                electricity_latest_reading = await api.fetch_electricity_meter_reading(
-                    account_number, electricity_meter_id
-                )
+        electricity_meter_readings = {}
+        electricity_meters = result_data[account_number].get("electricity_meters") or []
+        if not electricity_meters and meter and meter.get("id"):
+            electricity_meters = [meter]
 
-                if electricity_latest_reading:
-                    _LOGGER.debug(
-                        "Successfully fetched electricity meter reading: %s at %s",
-                        electricity_latest_reading.get("value"),
-                        electricity_latest_reading.get("readAt"),
+        if include_meter_readings:
+            for electricity_meter in electricity_meters:
+                electricity_meter_id = electricity_meter.get("id")
+                if not electricity_meter_id:
+                    continue
+                try:
+                    readings = await api.fetch_electricity_meter_register_readings(
+                        account_number, str(electricity_meter_id)
                     )
-                else:
-                    _LOGGER.debug(
-                        "No electricity meter reading returned for meter %s",
+                    if readings is not None:
+                        electricity_meter_readings[str(electricity_meter_id)] = readings
+                        if readings and (
+                            electricity_meter.get("is_active")
+                            or electricity_latest_reading is None
+                        ):
+                            electricity_latest_reading = readings[0]
+                except Exception as e:
+                    _LOGGER.warning(
+                        "Failed to fetch electricity readings for account %s, "
+                        "meter %s: %s",
+                        account_number,
                         electricity_meter_id,
+                        str(e),
                     )
-
-            except Exception as e:
-                _LOGGER.warning(
-                    "Failed to fetch electricity meter reading for "
-                    "account %s, meter %s: %s",
-                    account_number,
-                    electricity_meter_id,
-                    str(e),
-                )
 
         result_data[account_number]["electricity_latest_reading"] = (
             electricity_latest_reading
+        )
+        result_data[account_number]["electricity_meter_readings"] = (
+            electricity_meter_readings
         )
 
         # Extract smart meter readings if available

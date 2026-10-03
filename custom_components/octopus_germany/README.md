@@ -178,6 +178,15 @@ Each item in `agreements` contains `code`, `name`, `type`, `is_active`, `is_revo
   - `reading_origin`: Origin of the reading (CUSTOMER, ESTIMATED, etc.)
   - `reading_type`: Type of reading (ACTUAL, ESTIMATED, etc.)
 
+#### Electricity Meter Register Sensors
+
+The integration creates separate cumulative-energy sensors for each electricity meter returned by Octopus:
+
+- Import register `1.8.0`
+- Export register `2.8.0`
+
+Current and historical meters are discovered through OE's meter endpoint. Meter `activeFrom` and `activeTo` values identify the current meter. Sensors use the internal meter ID plus OBIS code for stable unique IDs and are grouped under a meter device named with the meter number (for example, `0251` or `1LGZ`). Each sensor uses kWh, energy device class and `total_increasing` state class. Attributes include meter ID/number, MALO number, active dates, latest reading time, and all register readings returned by OE with value, timestamp, origin and read type.
+
 #### Electricity Balance Sensor
 
 - **Entity ID**: `sensor.octopus_<account_number>_electricity_balance`

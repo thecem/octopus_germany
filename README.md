@@ -33,6 +33,7 @@ This custom component integrates Octopus Germany services with Home Assistant, p
 - **Intelligent Dispatching**: Real-time status of Octopus Intelligent charge scheduling
 - **Smart Charging Sessions**: Track smart charges for Octopus rewards (30€/month with ≥5 charges)
 - **Smart Meter Readings**: Previous day accumulative consumption with hourly breakdown (from Octopus-stored meter data)
+- **Meter Register Sensors**: Per-meter cumulative import (OBIS 1.8.0) and export (OBIS 2.8.0) readings for current and historical meters, including complete register history
 - **Octopus Historical Data Readout**: Read historical consumption and meter readings stored by Octopus
 - **Service Device Grouping**: All entities organized under single service device per account
 - **Multi-Account**: Support for multiple Octopus accounts under one integration
