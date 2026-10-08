@@ -184,13 +184,13 @@ Each item in `agreements` contains `code`, `name`, `type`, `is_active`, `is_revo
 
 #### Electricity Meter Register Sensors
 
-The integration creates a sensor for each OBIS register with usable numeric readings on each electricity meter returned by Octopus. Meter discovery combines distinct meters from plural and singular API fields. If the per-MeLo meter list is empty, the account's primary meter is used as a fallback. Register sensors are created whenever readings are available, even if the account has no MALO number:
+The integration creates a diagnostic meter-type sensor for every identifiable electricity meter returned by Octopus, even before register readings are available. Meter discovery combines distinct meters from plural and singular API fields. A sensor is also created for each OBIS register with usable numeric readings. If the per-MeLo meter list is empty, the account's primary meter is used as a fallback. Register sensors are created whenever readings are available, even if the account has no MALO number:
 
 - Import registers `1.8.x` (including `1.8.0`)
 - Export registers `2.8.x` (including `2.8.0`)
 - Other reported OBIS codes, displayed as neutral register sensors without an assumed unit or device/state class
 
-Empty or missing OBIS codes and registers without usable numeric readings do not create entities (zero is a valid reading). Newly populated registers are added on coordinator updates without duplicates. Existing entities are retained if readings later become unavailable.
+Empty or missing OBIS codes and registers without usable numeric readings do not create register entities (zero is a valid reading). The diagnostic meter-type sensor still creates a device for an identifiable meter when no usable registers are available. Newly populated registers are added on coordinator updates without duplicates. Existing entities are retained if readings later become unavailable.
 
 Current and historical meters are discovered through OE's meter endpoint. Meter `activeFrom` and `activeTo` values identify the current meter. Sensors use the internal meter ID plus OBIS code for stable unique IDs and are grouped under a meter device named with the meter number (for example, `0251` or `1LGZ`). Existing `1.8.0`/`2.8.0` unique IDs are unchanged. Import/export energy sensors use kWh, energy device class and `total_increasing` state class. Attributes include meter ID/number, MALO number, active dates, latest reading time, and all usable register readings returned by OE with value, timestamp, origin and read type. History uses `value_kwh` for energy registers and `value` for other registers.
 

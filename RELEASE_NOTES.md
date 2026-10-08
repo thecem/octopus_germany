@@ -1,5 +1,11 @@
 # Release Notes
 
+## Version 0.0.142 (2026-10-08)
+
+### Fixes
+
+- Combine plural and singular electricity meter records, preserve meters without internal IDs, and create a diagnostic meter entity even when register readings are not yet available.
+
 ## Version 0.0.141 (2026-10-08)
 
 ### Fixes

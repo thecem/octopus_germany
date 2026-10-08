@@ -18,7 +18,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceEntryType
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 if TYPE_CHECKING:
@@ -147,7 +147,13 @@ def get_electricity_meter_specific_device_info(
     account_number: str, meter: dict[str, Any]
 ) -> DeviceInfo:
     """Get device info for an individual electricity meter."""
-    meter_id = str(meter.get("id", "unknown"))
+    meter_id = str(
+        meter.get("id")
+        or meter.get("number")
+        or meter.get("meloNumber")
+        or meter.get("malo_number")
+        or "unknown"
+    )
     meter_number = meter.get("number") or meter_id
     return DeviceInfo(
         identifiers={(DOMAIN, f"electricity_meter_{account_number}_{meter_id}")},
@@ -155,6 +161,17 @@ def get_electricity_meter_specific_device_info(
         manufacturer="Octopus Energy Germany",
         model=get_electricity_meter_type(meter),
     )
+
+
+def _electricity_meter_identity(meter: dict[str, Any]) -> str | None:
+    """Return a stable available identity for a meter record."""
+    identity = (
+        meter.get("id")
+        or meter.get("number")
+        or meter.get("meloNumber")
+        or meter.get("malo_number")
+    )
+    return str(identity) if identity else None
 
 
 def get_gas_meter_device_info(
@@ -302,6 +319,12 @@ async def async_setup_entry(
                     )
 
             entities.extend(
+                _create_electricity_meter_info_sensors(
+                    acc_num, account_data, coordinator
+                )
+            )
+
+            entities.extend(
                 _create_electricity_meter_register_sensors(
                     acc_num, account_data, coordinator
                 )
@@ -417,11 +440,20 @@ async def async_setup_entry(
         for entity in entities
         if isinstance(entity, OctopusElectricityMeterRegisterSensor)
     }
+    meter_info_ids = {
+        entity.unique_id
+        for entity in entities
+        if isinstance(entity, OctopusElectricityMeterInfoSensor)
+    }
 
     entry.async_on_unload(
         coordinator.async_add_listener(
             _create_register_discovery_callback(
-                account_numbers, coordinator, async_add_entities, register_ids
+                account_numbers,
+                coordinator,
+                async_add_entities,
+                register_ids,
+                meter_info_ids,
             )
         )
     )
@@ -830,6 +862,78 @@ class OctopusElectricityMeterRegisterSensor(CoordinatorEntity, SensorEntity):
         )
 
 
+class OctopusElectricityMeterInfoSensor(CoordinatorEntity, SensorEntity):
+    """Diagnostic sensor that ensures every identified meter has a device."""
+
+    def __init__(
+        self,
+        account_number: str,
+        meter: dict[str, Any],
+        coordinator: OctopusDataCoordinator,
+        meter_identity: str,
+    ) -> None:
+        """Initialize the meter type sensor."""
+        super().__init__(coordinator)
+        self._account_number = account_number
+        self._meter = meter
+        self._attr_name = "Meter type"
+        self._attr_unique_id = f"octopus_{account_number}_{meter_identity}_meter_type"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_has_entity_name = True
+
+    @property
+    def native_value(self) -> str:
+        """Return the type reported for this meter."""
+        return get_electricity_meter_type(self._meter)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return meter identity and installation dates."""
+        return {
+            "meter_id": self._meter.get("id"),
+            "meter_number": self._meter.get("number"),
+            "melo_number": self._meter.get("meloNumber"),
+            "malo_number": self._meter.get("malo_number"),
+            "active_from": self._meter.get("activeFrom"),
+            "active_to": self._meter.get("activeTo"),
+            "is_active": self._meter.get("is_active", False),
+        }
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return the device for this electricity meter."""
+        return get_electricity_meter_specific_device_info(
+            self._account_number, self._meter
+        )
+
+
+def _create_electricity_meter_info_sensors(
+    account_number: str,
+    account_data: AccountData,
+    coordinator: OctopusDataCoordinator,
+) -> list[SensorEntity]:
+    """Create one diagnostic entity for each identifiable electricity meter."""
+    meters = account_data.get("electricity_meters") or []
+    if not meters and isinstance(account_data.get("meter"), dict):
+        meters = [account_data["meter"]]
+
+    entities: list[SensorEntity] = []
+    seen_meter_ids: set[str] = set()
+    for meter in meters:
+        if not isinstance(meter, dict):
+            continue
+        meter_identity = _electricity_meter_identity(meter)
+        if not meter_identity or meter_identity in seen_meter_ids:
+            continue
+        seen_meter_ids.add(meter_identity)
+        entities.append(
+            OctopusElectricityMeterInfoSensor(
+                account_number, meter, coordinator, meter_identity
+            )
+        )
+    return entities
+
+
 def _create_electricity_meter_register_sensors(
     account_number: str,
     account_data: AccountData,
@@ -877,15 +981,22 @@ def _create_register_discovery_callback(
     coordinator: OctopusDataCoordinator,
     async_add_entities: AddEntitiesCallback,
     register_ids: set[str],
+    meter_info_ids: set[str],
 ) -> Callable[[], None]:
-    """Track registers added after the initial sensor setup."""
+    """Track newly discovered meters and registers after initial sensor setup."""
 
     @callback
     def discover_registers() -> None:
-        """Add populated registers first reported by a later coordinator update."""
+        """Add newly reported meters and populated registers without duplicates."""
         new_entities = []
         for acc_num in account_numbers:
             account_data = (coordinator.data or {}).get(acc_num, {})
+            for entity in _create_electricity_meter_info_sensors(
+                acc_num, account_data, coordinator
+            ):
+                if entity.unique_id not in meter_info_ids:
+                    meter_info_ids.add(entity.unique_id)
+                    new_entities.append(entity)
             for entity in _create_electricity_meter_register_sensors(
                 acc_num, account_data, coordinator
             ):

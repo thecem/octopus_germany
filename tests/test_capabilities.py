@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import voluptuous as vol
 
 from custom_components.octopus_germany import _async_fetch_account_data
+from custom_components.octopus_germany.api.queries import ELECTRICITY_METERS_QUERY
 from custom_components.octopus_germany.binary_sensor import (
     _create_intelligent_binary_entities,
 )
@@ -39,7 +40,6 @@ from custom_components.octopus_germany.data_processing import (
     normalize_unit_rate_forecast,
     process_ledgers,
 )
-from custom_components.octopus_germany.api.queries import ELECTRICITY_METERS_QUERY
 from custom_components.octopus_germany.entities.electricity import (
     OctopusElectricityPriceSensor,
     OctopusSection14aModuleSensor,
@@ -68,6 +68,7 @@ from custom_components.octopus_germany.sensor import (
     OctopusElectricitySmartMeterReadingsSensor,
     OctopusSmartChargingSessionsSensor,
     _create_device_entities,
+    _create_electricity_meter_info_sensors,
     _create_electricity_meter_register_sensors,
     get_electricity_meter_device_info,
     get_electricity_meter_specific_device_info,
@@ -224,6 +225,10 @@ class TariffCapabilitiesTest(unittest.TestCase):
                                 },
                                 {"id": "meter-3", "number": "meter-3"},
                                 {"id": "meter-4", "number": "meter-4"},
+                                {
+                                    "number": "meter-without-id",
+                                    "meloNumber": "melo-without-id",
+                                },
                             ],
                         },
                     ]
@@ -233,7 +238,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
 
         meters = extract_meter_data(account_data)["electricity_meters"]
 
-        assert len(meters) == 5
+        assert len(meters) == 6
         assert meters[0]["number"] == "0251"
         assert meters[0]["malo_agreement_active"]
         assert meters[0]["malo_number"] == "malo-active"
@@ -243,6 +248,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
             "melo-active",
             "melo-singular",
             "melo-old",
+            "melo-without-id",
         }
 
     def test_meter_register_sensor_uses_meter_id_and_obis_history(self) -> None:
@@ -380,6 +386,60 @@ class TariffCapabilitiesTest(unittest.TestCase):
             "account-1", account_data, coordinator
         )
 
+    def test_meter_info_sensor_creates_device_without_readings_or_internal_id(
+        self,
+    ) -> None:
+        """Create a meter device from its number when no readings or ID exist."""
+        account_data = {
+            "electricity_meters": [
+                {
+                    "number": "meter-no-id",
+                    "meterType": "MME",
+                    "meloNumber": "melo-1",
+                }
+            ]
+        }
+        coordinator = Mock(data={"account-1": account_data})
+
+        sensors = _create_electricity_meter_info_sensors(
+            "account-1", account_data, coordinator
+        )
+
+        assert len(sensors) == 1
+        assert sensors[0].native_value == "MME"
+        assert sensors[0].unique_id == "octopus_account-1_meter-no-id_meter_type"
+        assert sensors[0].device_info["identifiers"] == {
+            ("octopus_germany", "electricity_meter_account-1_meter-no-id")
+        }
+
+    def test_meter_without_melo_still_creates_a_device(self) -> None:
+        """Keep meters without a MeLo visible even when no readings are available."""
+        account_data = {
+            "allProperties": [
+                {
+                    "electricityMalos": [
+                        {
+                            "maloNumber": "malo-1",
+                            "meters": [{"id": "meter-no-melo", "number": "0251"}],
+                        }
+                    ]
+                }
+            ]
+        }
+        normalized_data = extract_meter_data(account_data)
+        coordinator = Mock(data={"account-1": normalized_data})
+
+        sensors = _create_electricity_meter_info_sensors(
+            "account-1", normalized_data, coordinator
+        )
+
+        assert normalized_data["electricity_meter_locations"] == []
+        assert len(sensors) == 1
+        assert sensors[0].unique_id == "octopus_account-1_meter-no-melo_meter_type"
+        assert sensors[0].device_info["identifiers"] == {
+            ("octopus_germany", "electricity_meter_account-1_meter-no-melo")
+        }
+
     def test_setup_creates_register_sensor_for_fallback_meter_without_malo(
         self,
     ) -> None:
@@ -493,6 +553,35 @@ class TariffCapabilitiesTest(unittest.TestCase):
 
         add_entities.assert_called_once()
         assert add_entities.call_args.args[0][0].native_value == 10
+
+    def test_meter_discovery_adds_entities_for_new_meter_without_readings(
+        self,
+    ) -> None:
+        """Discover meters added after the initial sensor setup."""
+        account_data = {"electricity_meters": []}
+        coordinator = Mock(data={"account-1": account_data})
+        hass = Mock()
+        hass.data = {
+            "octopus_germany": {
+                "entry-1": {"coordinator": coordinator, "account_number": "account-1"}
+            }
+        }
+        entry = Mock(entry_id="entry-1", data={"account_numbers": ["account-1"]})
+        add_entities = Mock()
+
+        asyncio.run(async_setup_sensor_entry(hass, entry, add_entities))
+
+        listener = coordinator.async_add_listener.call_args.args[0]
+        add_entities.reset_mock()
+        account_data["electricity_meters"].append(
+            {"number": "meter-new", "meterType": "MME"}
+        )
+        listener()
+
+        add_entities.assert_called_once()
+        sensor = add_entities.call_args.args[0][0]
+        assert sensor.unique_id == "octopus_account-1_meter-new_meter_type"
+        assert sensor.native_value == "MME"
 
     def test_fetch_electricity_meters_follows_all_pages(self) -> None:
         api = object.__new__(OctopusGermany)
