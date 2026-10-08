@@ -1,5 +1,11 @@
 # Release Notes
 
+## Version 0.0.143 (2026-10-08)
+
+### Fixes
+
+- Remove the extra electricity meter-type entity while preserving per-meter register sensors for every meter with usable readings.
+
 ## Version 0.0.142 (2026-10-08)
 
 ### Fixes
