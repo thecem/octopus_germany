@@ -286,12 +286,6 @@ async def async_setup_entry(
                         OctopusElectricityLatestReadingSensor(acc_num, coordinator)
                     )
 
-                entities.extend(
-                    _create_electricity_meter_register_sensors(
-                        acc_num, account_data, coordinator
-                    )
-                )
-
                 # Create electricity smart-meter readings sensor for
                 # electricity-enabled accounts.
                 if account_data.get("malo_number"):
@@ -306,6 +300,12 @@ async def async_setup_entry(
                             OctopusVariableGridFeeSensor(acc_num, coordinator),
                         )
                     )
+
+            entities.extend(
+                _create_electricity_meter_register_sensors(
+                    acc_num, account_data, coordinator
+                )
+            )
 
             # Create electricity balance sensor for electricity-enabled accounts
             # with an electricity ledger.
@@ -842,7 +842,10 @@ def _create_electricity_meter_register_sensors(
         .get(account_number, {})
         .get("electricity_meter_readings", {})
     )
-    for meter in account_data.get("electricity_meters", []):
+    meters = account_data.get("electricity_meters") or []
+    if not meters and isinstance(account_data.get("meter"), dict):
+        meters = [account_data["meter"]]
+    for meter in meters:
         if not meter.get("id"):
             continue
         obis_codes = set()
