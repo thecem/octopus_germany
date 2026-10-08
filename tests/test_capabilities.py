@@ -211,6 +211,11 @@ class TariffCapabilitiesTest(unittest.TestCase):
                         {
                             "maloNumber": "malo-old",
                             "agreements": [{"isActive": False}],
+                            "meter": {
+                                "id": "meter-singular",
+                                "number": "meter-singular",
+                                "meloNumber": "melo-singular",
+                            },
                             "meters": [
                                 {
                                     "id": "meter-2",
@@ -228,7 +233,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
 
         meters = extract_meter_data(account_data)["electricity_meters"]
 
-        assert len(meters) == 4
+        assert len(meters) == 5
         assert meters[0]["number"] == "0251"
         assert meters[0]["malo_agreement_active"]
         assert meters[0]["malo_number"] == "malo-active"
@@ -236,6 +241,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
         locations = extract_meter_data(account_data)["electricity_meter_locations"]
         assert {location["melo_number"] for location in locations} == {
             "melo-active",
+            "melo-singular",
             "melo-old",
         }
 

@@ -1,5 +1,11 @@
 # Release Notes
 
+## Version 0.0.141 (2026-10-08)
+
+### Fixes
+
+- Include distinct meters from both plural and legacy singular electricity meter fields so no meter is omitted from register discovery.
+
 ## Version 0.0.140 (2026-10-08)
 
 ### Fixes

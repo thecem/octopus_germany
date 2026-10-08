@@ -184,7 +184,7 @@ Each item in `agreements` contains `code`, `name`, `type`, `is_active`, `is_revo
 
 #### Electricity Meter Register Sensors
 
-The integration creates a sensor for each OBIS register with usable numeric readings on each electricity meter returned by Octopus. If the per-MeLo meter list is empty, the account's primary meter is used as a fallback. Register sensors are created whenever readings are available, even if the account has no MALO number:
+The integration creates a sensor for each OBIS register with usable numeric readings on each electricity meter returned by Octopus. Meter discovery combines distinct meters from plural and singular API fields. If the per-MeLo meter list is empty, the account's primary meter is used as a fallback. Register sensors are created whenever readings are available, even if the account has no MALO number:
 
 - Import registers `1.8.x` (including `1.8.0`)
 - Export registers `2.8.x` (including `2.8.0`)
