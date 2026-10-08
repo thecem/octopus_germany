@@ -182,12 +182,15 @@ Each item in `agreements` contains `code`, `name`, `type`, `is_active`, `is_revo
 
 #### Electricity Meter Register Sensors
 
-The integration creates separate cumulative-energy sensors for each electricity meter returned by Octopus:
+The integration creates a sensor for each OBIS register with usable numeric readings on each electricity meter returned by Octopus:
 
-- Import register `1.8.0`
-- Export register `2.8.0`
+- Import registers `1.8.x` (including `1.8.0`)
+- Export registers `2.8.x` (including `2.8.0`)
+- Other reported OBIS codes, displayed as neutral register sensors without an assumed unit or device/state class
 
-Current and historical meters are discovered through OE's meter endpoint. Meter `activeFrom` and `activeTo` values identify the current meter. Sensors use the internal meter ID plus OBIS code for stable unique IDs and are grouped under a meter device named with the meter number (for example, `0251` or `1LGZ`). Each sensor uses kWh, energy device class and `total_increasing` state class. Attributes include meter ID/number, MALO number, active dates, latest reading time, and all register readings returned by OE with value, timestamp, origin and read type.
+Empty or missing OBIS codes and registers without usable numeric readings do not create entities (zero is a valid reading). Newly populated registers are added on coordinator updates without duplicates. Existing entities are retained if readings later become unavailable.
+
+Current and historical meters are discovered through OE's meter endpoint. Meter `activeFrom` and `activeTo` values identify the current meter. Sensors use the internal meter ID plus OBIS code for stable unique IDs and are grouped under a meter device named with the meter number (for example, `0251` or `1LGZ`). Existing `1.8.0`/`2.8.0` unique IDs are unchanged. Import/export energy sensors use kWh, energy device class and `total_increasing` state class. Attributes include meter ID/number, MALO number, active dates, latest reading time, and all usable register readings returned by OE with value, timestamp, origin and read type. History uses `value_kwh` for energy registers and `value` for other registers.
 
 #### Electricity Balance Sensor
 

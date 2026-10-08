@@ -71,6 +71,9 @@ from custom_components.octopus_germany.sensor import (
     get_electricity_meter_device_info,
     get_electricity_meter_specific_device_info,
 )
+from custom_components.octopus_germany.sensor import (
+    async_setup_entry as async_setup_sensor_entry,
+)
 from custom_components.octopus_germany.service_handlers import (
     _group_readings_by_local_date,
     _measurement_range_bounds,
@@ -329,6 +332,112 @@ class TariffCapabilitiesTest(unittest.TestCase):
             {"value": "1200.0", "registerObisCode": "1-0:1.8.0"},
         ]
         assert client.execute_async.await_count == 2
+
+    def test_register_sensors_skip_empty_registers_and_blank_obis_codes(self) -> None:
+        account_data = {"electricity_meters": [{"id": "meter-1"}, {"id": "empty"}]}
+        coordinator = Mock(
+            data={
+                "account-1": {
+                    "electricity_meter_readings": {
+                        "meter-1": [
+                            {"registerObisCode": "1-0:1.8.0", "value": "0"},
+                            {"registerObisCode": "2.8.0", "value": None},
+                            {"registerObisCode": "2.8.0", "value": ""},
+                            {"registerObisCode": "2.8.0", "value": "invalid"},
+                            {"registerObisCode": "2.8.0", "value": "NaN"},
+                            {"registerObisCode": "2.8.0", "value": "Infinity"},
+                            {"registerObisCode": "", "value": "1"},
+                            {"registerObisCode": " ", "value": "1"},
+                            {"registerObisCode": "1-0: ", "value": "1"},
+                            {"value": "1"},
+                        ]
+                    }
+                }
+            }
+        )
+
+        sensors = _create_electricity_meter_register_sensors(
+            "account-1", account_data, coordinator
+        )
+
+        assert len(sensors) == 1
+        assert sensors[0].native_value == 0
+        assert sensors[0].unique_id == "octopus_account-1_meter-1_electricity_1.8.0"
+        coordinator.data = None
+        assert not _create_electricity_meter_register_sensors(
+            "account-1", account_data, coordinator
+        )
+
+    def test_register_sensors_discover_tariff_and_other_obis_codes(self) -> None:
+        account_data = {"electricity_meters": [{"id": "meter-1", "number": "meter-1"}]}
+        coordinator = Mock(
+            last_update_success=True,
+            data={
+                "account-1": {
+                    "electricity_meter_readings": {
+                        "meter-1": [
+                            {"registerObisCode": "1-0:1.8.1", "value": "NaN"},
+                            {"registerObisCode": "1-0:1.8.1", "value": "10"},
+                            {"registerObisCode": "1.8.1", "value": "9"},
+                            {"registerObisCode": "1.8.2", "value": "20"},
+                            {"registerObisCode": "1-0:2.8.1", "value": "30"},
+                            {"registerObisCode": " 1-0:9.9.9 ", "value": "40"},
+                        ]
+                    }
+                }
+            },
+        )
+
+        sensors = _create_electricity_meter_register_sensors(
+            "account-1", account_data, coordinator
+        )
+
+        assert [sensor.native_value for sensor in sensors] == [10, 20, 30, 40]
+        assert [sensor.name for sensor in sensors] == [
+            "Import total (1.8.1)",
+            "Import total (1.8.2)",
+            "Export total (2.8.1)",
+            "Register (9.9.9)",
+        ]
+        assert len({sensor.unique_id for sensor in sensors}) == len(sensors)
+        assert len({sensor.suggested_object_id for sensor in sensors}) == len(sensors)
+        assert sensors[0].native_unit_of_measurement == "kWh"
+        assert sensors[-1].native_unit_of_measurement is None
+        assert sensors[-1].device_class is None
+        assert sensors[-1].state_class is None
+        assert sensors[-1].extra_state_attributes["reading_history"][0]["value"] == 40
+        assert len(sensors[0].extra_state_attributes["reading_history"]) == 2
+
+    def test_register_sensors_discover_later_readings_without_duplicates(self) -> None:
+        account_data = {
+            "malo_number": "malo-1",
+            "electricity_meters": [{"id": "meter-1"}],
+            "electricity_meter_readings": {},
+        }
+        coordinator = Mock(data={"account-1": account_data})
+        hass = Mock()
+        hass.data = {
+            "octopus_germany": {
+                "entry-1": {"coordinator": coordinator, "account_number": "account-1"}
+            }
+        }
+        entry = Mock(entry_id="entry-1", data={"account_numbers": ["account-1"]})
+        add_entities = Mock()
+
+        asyncio.run(async_setup_sensor_entry(hass, entry, add_entities))
+        listener = coordinator.async_add_listener.call_args.args[0]
+        entry.async_on_unload.assert_called_once_with(
+            coordinator.async_add_listener.return_value
+        )
+        add_entities.reset_mock()
+        account_data["electricity_meter_readings"]["meter-1"] = [
+            {"registerObisCode": "1.8.1", "value": "10"}
+        ]
+        listener()
+        listener()
+
+        add_entities.assert_called_once()
+        assert add_entities.call_args.args[0][0].native_value == 10
 
     def test_fetch_electricity_meters_follows_all_pages(self) -> None:
         api = object.__new__(OctopusGermany)
