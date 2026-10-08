@@ -1,5 +1,11 @@
 # Release Notes
 
+## Version 0.0.139 (2026-10-08)
+
+### Fixes
+
+- Request the meter type from the per-MeLo electricity meter endpoint so MME meters are not mislabeled as Unknown when the endpoint supplies their type.
+
 ## Version 0.0.138 (2026-10-08)
 
 ### Fixes

@@ -43,7 +43,7 @@ This custom component integrates Octopus Germany services with Home Assistant, p
 - **Gas contract tracking** with expiry countdown
 - **[octopus-energy-rates-card](https://github.com/lozzd/octopus-energy-rates-card) compatibility** for dynamic tariff visualization
 
-Electricity meter labels use API metadata: `hasSmartMeterGateway: true` identifies an iMSys (an mME connected to an SMGW), even when `meterType` is `MME`. Otherwise the reported `meterType` is used, or `Unknown` if absent. `shouldReceiveSmartMeterData` describes data availability expectations, not the physical meter type. Historical meters and their readings remain available.
+Electricity meter labels use API metadata requested from both account and per-meter queries: `hasSmartMeterGateway: true` identifies an iMSys (an mME connected to an SMGW), even when `meterType` is `MME`. Otherwise the reported `meterType` is used, or `Unknown` if absent. `shouldReceiveSmartMeterData` describes data availability expectations, not the physical meter type. Historical meters and their readings remain available.
 
 ## Installation
 

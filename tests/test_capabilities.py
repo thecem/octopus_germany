@@ -39,6 +39,7 @@ from custom_components.octopus_germany.data_processing import (
     normalize_unit_rate_forecast,
     process_ledgers,
 )
+from custom_components.octopus_germany.api.queries import ELECTRICITY_METERS_QUERY
 from custom_components.octopus_germany.entities.electricity import (
     OctopusElectricityPriceSensor,
     OctopusSection14aModuleSensor,
@@ -185,6 +186,11 @@ class TariffCapabilitiesTest(unittest.TestCase):
         electricity_fields = COMPREHENSIVE_QUERY.split("electricityMalos", 1)[1]
         electricity_fields = electricity_fields.split("gasMalos", 1)[0]
         assert "hasSmartMeterGateway" in electricity_fields
+        assert "meterType" in electricity_fields
+
+    def test_meter_discovery_query_requests_meter_type_and_gateway(self) -> None:
+        assert "meterType" in ELECTRICITY_METERS_QUERY
+        assert "hasSmartMeterGateway" in ELECTRICITY_METERS_QUERY
 
     def test_extract_meter_data_keeps_all_meters_and_contract_status(self) -> None:
         account_data = {
