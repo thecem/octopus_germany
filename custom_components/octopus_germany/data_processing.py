@@ -292,6 +292,27 @@ def extract_meter_data(account_data: dict[str, Any]) -> dict[str, Any]:
     electricity_meter_locations = []
     seen_meter_ids: set[str] = set()
     for malo in electricity_malos:
+        meter_records = malo.get("meters") or []
+        if isinstance(meter_records, dict):
+            meter_records = [meter_records]
+        elif not isinstance(meter_records, list):
+            meter_records = []
+        singular_meter = malo.get("meter")
+        if isinstance(singular_meter, dict):
+            meter_records = [*meter_records, singular_meter]
+
+        unique_meter_records = []
+        meter_ids: set[str] = set()
+        for meter in meter_records:
+            if not isinstance(meter, dict):
+                continue
+            meter_id = meter.get("id")
+            if meter_id and str(meter_id) in meter_ids:
+                continue
+            if meter_id:
+                meter_ids.add(str(meter_id))
+            unique_meter_records.append(meter)
+
         agreements = malo.get("agreements") or []
         is_active = any(
             agreement.get("isActive") is True
@@ -299,13 +320,10 @@ def extract_meter_data(account_data: dict[str, Any]) -> dict[str, Any]:
             and not agreement.get("isTerminated")
             for agreement in agreements
         )
-        meters = malo.get("meters") or (
-            [malo.get("meter")] if malo.get("meter") else []
-        )
         melo_numbers = {
             str(meter["meloNumber"])
-            for meter in meters
-            if isinstance(meter, dict) and meter.get("meloNumber")
+            for meter in unique_meter_records
+            if meter.get("meloNumber")
         }
         if malo.get("meloNumber"):
             melo_numbers.add(str(malo["meloNumber"]))
@@ -317,9 +335,7 @@ def extract_meter_data(account_data: dict[str, Any]) -> dict[str, Any]:
             }
             for melo_number in sorted(melo_numbers)
         )
-        for meter in meters:
-            if not isinstance(meter, dict):
-                continue
+        for meter in unique_meter_records:
             meter_id = meter.get("id")
             if meter_id and str(meter_id) in seen_meter_ids:
                 continue

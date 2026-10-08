@@ -692,13 +692,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     }
                 ]
 
+        extracted_meters = result_data[account_number].get("electricity_meters", [])
         meters_by_id = {
             str(existing_meter["id"]): existing_meter
-            for existing_meter in result_data[account_number].get(
-                "electricity_meters", []
-            )
+            for existing_meter in extracted_meters
             if existing_meter.get("id")
         }
+        meters_without_id = [
+            existing_meter
+            for existing_meter in extracted_meters
+            if not existing_meter.get("id")
+        ]
         for location in meter_locations:
             melo_number = location.get("melo_number")
             if not melo_number:
@@ -708,21 +712,51 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
             if discovered_meters is None:
                 continue
-            for discovered_meter in discovered_meters:
-                meter_id = discovered_meter.get("id")
+            for discovered_meter_data in discovered_meters:
+                meter_id = discovered_meter_data.get("id")
+                meter_number = discovered_meter_data.get("number")
                 if not meter_id:
+                    discovered_meter = {
+                        **discovered_meter_data,
+                        "malo_number": location.get("malo_number"),
+                        "malo_agreement_active": location.get(
+                            "malo_agreement_active", False
+                        ),
+                        "is_active": discovered_meter_data.get("activeTo") is None,
+                    }
+                    for index, existing_meter in enumerate(meters_without_id):
+                        if (
+                            meter_number
+                            and existing_meter.get("number") == meter_number
+                        ):
+                            meters_without_id[index] = {
+                                **existing_meter,
+                                **discovered_meter,
+                            }
+                            break
+                    else:
+                        meters_without_id.append(discovered_meter)
                     continue
                 meter_id = str(meter_id)
+                for index, existing_meter in enumerate(meters_without_id):
+                    if meter_number and existing_meter.get("number") == meter_number:
+                        discovered_meter_data = {
+                            **existing_meter,
+                            **discovered_meter_data,
+                        }
+                        del meters_without_id[index]
+                        break
                 meters_by_id[meter_id] = {
                     **meters_by_id.get(meter_id, {}),
-                    **discovered_meter,
+                    **discovered_meter_data,
                     "malo_number": location.get("malo_number"),
                     "malo_agreement_active": location.get(
                         "malo_agreement_active", False
                     ),
-                    "is_active": discovered_meter.get("activeTo") is None,
+                    "is_active": discovered_meter_data.get("activeTo") is None,
                 }
         result_data[account_number]["electricity_meters"] = list(meters_by_id.values())
+        result_data[account_number]["electricity_meters"].extend(meters_without_id)
 
         # Gas meter smart reading capability
         gas_meter = result_data[account_number]["gas_meter"]
