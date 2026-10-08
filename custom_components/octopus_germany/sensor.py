@@ -65,6 +65,12 @@ from .models import AccountData, CoordinatorData, has_intelligent_capability
 _LOGGER = logging.getLogger(__name__)
 
 
+def _electricity_meter_device_model(meter: dict[str, Any] | None) -> str:
+    """Return a user-facing meter model without implying an unknown type."""
+    meter_type = get_electricity_meter_type(meter)
+    return "Electricity Meter" if meter_type == "Unknown" else meter_type
+
+
 def _create_device_entities(
     account_number: str,
     account_data: AccountData,
@@ -128,18 +134,17 @@ def get_electricity_meter_device_info(
     ):
         meter_info = coordinator_data[account_number]["meter"]
         meter_number = meter_info.get("number", "unknown")
-        meter_type = get_electricity_meter_type(meter_info)
         return DeviceInfo(
             identifiers={(DOMAIN, f"electricity_meter_{account_number}")},
             name=f"Electricity Meter ({meter_number})",
             manufacturer="Octopus Energy Germany",
-            model=meter_type,
+            model=_electricity_meter_device_model(meter_info),
         )
     return DeviceInfo(
         identifiers={(DOMAIN, f"electricity_meter_{account_number}")},
         name=f"Electricity Meter ({account_number})",
         manufacturer="Octopus Energy Germany",
-        model="Unknown",
+        model="Electricity Meter",
     )
 
 
@@ -159,7 +164,7 @@ def get_electricity_meter_specific_device_info(
         identifiers={(DOMAIN, f"electricity_meter_{account_number}_{meter_id}")},
         name=f"Electricity Meter ({meter_number})",
         manufacturer="Octopus Energy Germany",
-        model=get_electricity_meter_type(meter),
+        model=_electricity_meter_device_model(meter),
     )
 
 
@@ -815,6 +820,16 @@ class OctopusElectricityMeterRegisterSensor(CoordinatorEntity, SensorEntity):
         return {
             "meter_id": self._meter_id,
             "meter_number": self._meter.get("number"),
+            "meter_type": get_electricity_meter_type(self._meter),
+            "api_meter_type": self._meter.get("meterType"),
+            "has_smart_meter_gateway": self._meter.get("hasSmartMeterGateway"),
+            "meter_type_source": (
+                "hasSmartMeterGateway"
+                if self._meter.get("hasSmartMeterGateway") is True
+                else "meterType"
+                if self._meter.get("meterType")
+                else "not_reported"
+            ),
             "malo_number": self._meter.get("malo_number"),
             "is_active": self._meter.get("is_active", False),
             "malo_agreement_active": self._meter.get("malo_agreement_active", False),
@@ -843,7 +858,7 @@ def _create_electricity_meter_register_sensors(
     account_data: AccountData,
     coordinator: OctopusDataCoordinator,
 ) -> list[SensorEntity]:
-    """Create a sensor for each OBIS register with a usable numeric reading."""
+    """Create sensors only for OBIS registers with usable readings."""
     entities: list[SensorEntity] = []
     readings_by_meter = (
         (coordinator.data or {})
@@ -886,7 +901,7 @@ def _create_register_discovery_callback(
     async_add_entities: AddEntitiesCallback,
     register_ids: set[str],
 ) -> Callable[[], None]:
-    """Track newly populated meter registers after initial sensor setup."""
+    """Track newly discovered meters and populated registers."""
 
     @callback
     def discover_registers() -> None:

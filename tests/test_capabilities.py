@@ -140,7 +140,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
         old_device = get_electricity_meter_specific_device_info("account-1", old_meter)
         new_device = get_electricity_meter_specific_device_info("account-1", new_meter)
 
-        assert old_device["model"] == "Unknown"
+        assert old_device["model"] == "Electricity Meter"
         assert new_device["model"] == "iMSys"
         assert old_device["identifiers"] != new_device["identifiers"]
         assert old_device["name"] == "Electricity Meter (meter-number-old)"
@@ -150,14 +150,17 @@ class TariffCapabilitiesTest(unittest.TestCase):
         for meter, expected in [
             ({"number": "meter-1", "meterType": "MME"}, "MME"),
             ({"meterType": "MME", "hasSmartMeterGateway": True}, "iMSys"),
-            (None, "Unknown"),
+            (None, "Electricity Meter"),
         ]:
             with self.subTest(meter=meter):
                 device = get_electricity_meter_device_info(
                     {"account-1": {"meter": meter}}, "account-1"
                 )
                 assert device["model"] == expected
-        assert get_electricity_meter_device_info({}, "account-1")["model"] == "Unknown"
+        assert (
+            get_electricity_meter_device_info({}, "account-1")["model"]
+            == "Electricity Meter"
+        )
 
     def test_electricity_sensor_attributes_classify_meter_consistently(self) -> None:
         for gateway, expected in [(True, "iMSys"), (False, "MME")]:
@@ -188,8 +191,8 @@ class TariffCapabilitiesTest(unittest.TestCase):
         assert "hasSmartMeterGateway" in electricity_fields
         assert "meterType" in electricity_fields
 
-    def test_meter_discovery_query_requests_meter_type_and_gateway(self) -> None:
-        assert "meterType" in ELECTRICITY_METERS_QUERY
+    def test_meter_discovery_query_uses_supported_fields_and_gateway(self) -> None:
+        assert "meterType" not in ELECTRICITY_METERS_QUERY
         assert "hasSmartMeterGateway" in ELECTRICITY_METERS_QUERY
 
     def test_extract_meter_data_keeps_all_meters_and_contract_status(self) -> None:
@@ -256,6 +259,8 @@ class TariffCapabilitiesTest(unittest.TestCase):
                 {
                     "id": "meter-1",
                     "number": "1LGZ",
+                    "meterType": "MME",
+                    "hasSmartMeterGateway": False,
                     "malo_number": "malo-1",
                     "malo_agreement_active": True,
                 }
@@ -293,6 +298,10 @@ class TariffCapabilitiesTest(unittest.TestCase):
         assert sensors[0].native_value == 1234.5
         assert sensors[1].native_value == 75.25
         assert sensors[0].extra_state_attributes["meter_id"] == "meter-1"
+        assert sensors[0].extra_state_attributes["meter_type"] == "MME"
+        assert sensors[0].extra_state_attributes["api_meter_type"] == "MME"
+        assert sensors[0].extra_state_attributes["has_smart_meter_gateway"] is False
+        assert sensors[0].extra_state_attributes["meter_type_source"] == "meterType"
         assert sensors[0].extra_state_attributes["malo_agreement_active"]
         assert len(sensors[0].extra_state_attributes["reading_history"]) == 25
         assert (
@@ -350,7 +359,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
         ]
         assert client.execute_async.await_count == 2
 
-    def test_register_sensors_skip_empty_registers_and_blank_obis_codes(self) -> None:
+    def test_register_sensors_skip_empty_and_blank_obis_codes(self) -> None:
         account_data = {"electricity_meters": [{"id": "meter-1"}, {"id": "empty"}]}
         coordinator = Mock(
             data={
@@ -378,8 +387,9 @@ class TariffCapabilitiesTest(unittest.TestCase):
         )
 
         assert len(sensors) == 1
-        assert sensors[0].native_value == 0
-        assert sensors[0].unique_id == "octopus_account-1_meter-1_electricity_1.8.0"
+        import_sensor = sensors[0]
+        assert import_sensor.native_value == 0
+        assert import_sensor.unique_id == "octopus_account-1_meter-1_electricity_1.8.0"
         coordinator.data = None
         assert not _create_electricity_meter_register_sensors(
             "account-1", account_data, coordinator
@@ -423,28 +433,26 @@ class TariffCapabilitiesTest(unittest.TestCase):
             "1.8.0",
             "2.8.1",
         ]
-        assert [entity.device_info["model"] for entity in register_sensors] == [
-            "MME",
-            "MME",
-        ]
+        assert all(entity.device_info["model"] == "MME" for entity in register_sensors)
 
     def test_register_sensors_are_created_for_every_meter_in_array(self) -> None:
         account_data = {
             "electricity_meters": [
-                {"id": "meter-1", "number": "1LGZ"},
-                {"id": "meter-2", "number": "2LGZ"},
+                {"id": "meter-1", "number": "1LGZ", "meterType": "MME"},
+                {
+                    "id": "meter-2",
+                    "number": "2LGZ",
+                    "meterType": "MME",
+                    "hasSmartMeterGateway": True,
+                },
             ]
         }
         coordinator = Mock(
             data={
                 "account-1": {
                     "electricity_meter_readings": {
-                        "meter-1": [
-                            {"registerObisCode": "1.8.0", "value": "10"}
-                        ],
-                        "meter-2": [
-                            {"registerObisCode": "1.8.0", "value": "20"}
-                        ],
+                        "meter-1": [{"registerObisCode": "1.8.0", "value": "10"}],
+                        "meter-2": [{"registerObisCode": "1.8.0", "value": "20"}],
                     }
                 }
             }
@@ -459,6 +467,73 @@ class TariffCapabilitiesTest(unittest.TestCase):
             "octopus_account-1_meter-2_electricity_1.8.0",
         ]
         assert [sensor.native_value for sensor in sensors] == [10, 20]
+        assert [sensor.device_info["model"] for sensor in sensors] == ["MME", "iMSys"]
+
+    def test_register_sensors_are_not_created_without_readings_for_any_meter(
+        self,
+    ) -> None:
+        account_data = {
+            "electricity_meters": [
+                {"id": f"meter-{index}", "number": f"serial-{index}"}
+                for index in range(1, 5)
+            ]
+        }
+        coordinator = Mock(data={"account-1": {"electricity_meter_readings": {}}})
+
+        sensors = _create_electricity_meter_register_sensors(
+            "account-1", account_data, coordinator
+        )
+
+        assert sensors == []
+
+    def test_register_sensors_expose_complete_history_per_obis_code(self) -> None:
+        account_data = {
+            "electricity_meters": [
+                {"id": f"meter-{index}", "number": f"serial-{index}"}
+                for index in range(1, 5)
+            ]
+        }
+        readings_by_meter = {
+            f"meter-{index}": [
+                {
+                    "registerObisCode": "1-0:1.8.0",
+                    "value": str(index * 10),
+                    "readAt": "2026-10-08T12:00:00+02:00",
+                },
+                {
+                    "registerObisCode": "1.8.0",
+                    "value": str(index * 10 - 1),
+                    "readAt": "2026-10-07T12:00:00+02:00",
+                },
+                {
+                    "registerObisCode": "1-0:2.8.0",
+                    "value": str(index),
+                    "readAt": "2026-10-08T12:00:00+02:00",
+                },
+            ]
+            for index in range(1, 5)
+        }
+        coordinator = Mock(
+            data={"account-1": {"electricity_meter_readings": readings_by_meter}}
+        )
+
+        sensors = _create_electricity_meter_register_sensors(
+            "account-1", account_data, coordinator
+        )
+
+        assert len(sensors) == 8
+        sensors_by_meter_and_code = {
+            (sensor._meter_id, sensor._obis_code): sensor for sensor in sensors
+        }
+        for index in range(1, 5):
+            import_sensor = sensors_by_meter_and_code[(f"meter-{index}", "1.8.0")]
+            export_sensor = sensors_by_meter_and_code[(f"meter-{index}", "2.8.0")]
+            assert import_sensor.native_value == index * 10
+            assert [
+                item["value_kwh"]
+                for item in import_sensor.extra_state_attributes["reading_history"]
+            ] == [index * 10, index * 10 - 1]
+            assert export_sensor.native_value == index
 
     def test_register_sensors_discover_tariff_and_other_obis_codes(self) -> None:
         account_data = {"electricity_meters": [{"id": "meter-1", "number": "meter-1"}]}
@@ -484,7 +559,18 @@ class TariffCapabilitiesTest(unittest.TestCase):
             "account-1", account_data, coordinator
         )
 
-        assert [sensor.native_value for sensor in sensors] == [10, 20, 30, 40]
+        assert [sensor._obis_code for sensor in sensors] == [
+            "1.8.1",
+            "1.8.2",
+            "2.8.1",
+            "9.9.9",
+        ]
+        assert [sensor.native_value for sensor in sensors] == [
+            10,
+            20,
+            30,
+            40,
+        ]
         assert [sensor.name for sensor in sensors] == [
             "Import total (1.8.1)",
             "Import total (1.8.2)",
@@ -522,6 +608,9 @@ class TariffCapabilitiesTest(unittest.TestCase):
             coordinator.async_add_listener.return_value
         )
         add_entities.reset_mock()
+        account_data["electricity_meters"].append(
+            {"id": "meter-2", "number": "serial-2"}
+        )
         account_data["electricity_meter_readings"]["meter-1"] = [
             {"registerObisCode": "1.8.1", "value": "10"}
         ]
@@ -529,7 +618,11 @@ class TariffCapabilitiesTest(unittest.TestCase):
         listener()
 
         add_entities.assert_called_once()
-        assert add_entities.call_args.args[0][0].native_value == 10
+        added_entities = add_entities.call_args.args[0]
+        assert len(added_entities) == 1
+        assert {(entity._meter_id, entity._obis_code) for entity in added_entities} == {
+            ("meter-1", "1.8.1")
+        }
 
     def test_fetch_electricity_meters_follows_all_pages(self) -> None:
         api = object.__new__(OctopusGermany)
@@ -564,6 +657,36 @@ class TariffCapabilitiesTest(unittest.TestCase):
         assert (
             client.execute_async.await_args_list[1].kwargs["variables"]["after"] == "c1"
         )
+
+    def test_fetch_electricity_meters_keeps_partial_data_with_graphql_errors(
+        self,
+    ) -> None:
+        api = object.__new__(OctopusGermany)
+        api.ensure_token = AsyncMock(return_value=True)
+        client = Mock()
+        client.execute_async = AsyncMock(
+            return_value={
+                "data": {
+                    "electricityMeters": {
+                        "edges": [
+                            {
+                                "node": {
+                                    "id": "meter-1",
+                                    "hasSmartMeterGateway": False,
+                                }
+                            }
+                        ],
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                    }
+                },
+                "errors": [{"message": "Optional field unavailable"}],
+            }
+        )
+        api._get_graphql_client = Mock(return_value=client)
+
+        meters = asyncio.run(api.fetch_electricity_meters("account-1", "melo-1"))
+
+        assert meters == [{"id": "meter-1", "hasSmartMeterGateway": False}]
 
     def test_standard_dynamic_tariff_has_no_intelligent_features(self) -> None:
         account_data = {

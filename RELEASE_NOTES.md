@@ -1,5 +1,34 @@
 # Release Notes
 
+## Version 0.0.147 (2026-10-08)
+
+### Fixes
+
+- Use the neutral `Electricity Meter` device model when meter type data is missing.
+
+## Version 0.0.146 (2026-10-08)
+
+### Fixes
+
+- Expose the meter classification, raw API meter type, gateway flag, and
+  classification source on register sensors.
+
+## Version 0.0.145 (2026-10-08)
+
+### Fixes
+
+- Do not infer MME from `hasSmartMeterGateway: false`; classify a meter as MME
+  only when the API explicitly reports `meterType: MME`.
+
+## Version 0.0.144 (2026-10-08)
+
+### Fixes
+
+- Create register sensors only for OBIS codes with usable numeric readings;
+  zero remains valid, and empty registers no longer create entities. Preserve
+  each register's full history, classify meter devices as iMSys or MME, and fix
+  the paginated meter query to use fields supported by its API type.
+
 ## Version 0.0.143 (2026-10-08)
 
 ### Fixes

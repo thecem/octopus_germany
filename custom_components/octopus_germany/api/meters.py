@@ -262,14 +262,28 @@ class MeterApiMixin:
                 )
                 return None
 
-            if not isinstance(response, dict) or response.get("errors"):
+            if not isinstance(response, dict):
                 _LOGGER.warning(
                     "Invalid response while fetching electricity meters for MeLo %s",
                     melo_number,
                 )
                 return None
 
-            connection = (response.get("data") or {}).get("electricityMeters") or {}
+            if response.get("errors"):
+                _LOGGER.warning(
+                    "GraphQL errors while fetching electricity meters for MeLo %s: %s",
+                    melo_number,
+                    response["errors"],
+                )
+
+            connection = (response.get("data") or {}).get("electricityMeters")
+            if not isinstance(connection, dict):
+                _LOGGER.warning(
+                    "No electricity meter data returned for MeLo %s",
+                    melo_number,
+                )
+                return None
+
             meters.extend(
                 edge["node"]
                 for edge in connection.get("edges", [])
