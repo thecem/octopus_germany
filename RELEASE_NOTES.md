@@ -1,5 +1,19 @@
 # Release Notes
 
+## Version 0.0.137 (2026-10-08)
+
+### Fixes
+
+- Create meter register sensors only for OBIS codes with usable numeric readings, rather than creating empty import/export entities.
+- Discover all reported OBIS registers, including tariff-specific `1.8.x`/`2.8.x` and other codes, and add newly populated registers on coordinator updates. Preserve existing `1.8.0`/`2.8.0` unique IDs; unknown register units are not assumed to be kWh.
+
+## Version 0.0.136 (2026-10-08)
+
+### Fixes
+
+- Correct electricity meter labels using API gateway metadata: an mME with an SMGW is shown as iMSys, while meters without type information are no longer assumed to be smart meters. Historical meters and their register readings remain available.
+- Use consistent meter type labels in electricity price and consumption sensor attributes.
+
 ## Version 0.0.135 (2026-10-03)
 
 ### Improvements

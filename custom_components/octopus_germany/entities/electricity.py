@@ -18,6 +18,9 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.dt import now as local_now
 
 from custom_components.octopus_germany.const import DOMAIN
+from custom_components.octopus_germany.data_processing import (
+    get_electricity_meter_type,
+)
 from custom_components.octopus_germany.tariff import (
     format_uk_rates,
     get_active_grid_fee,
@@ -407,7 +410,7 @@ class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):
         if meter_data and isinstance(meter_data, dict):
             meter_id = meter_data.get("id", "Unknown")
             meter_number = meter_data.get("number", "Unknown")
-            meter_type = meter_data.get("meterType", "Unknown")
+            meter_type = get_electricity_meter_type(meter_data)
             _LOGGER.debug(
                 "Found meter info: id=%s, number=%s, type=%s",
                 meter_id,

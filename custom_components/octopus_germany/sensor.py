@@ -7,6 +7,7 @@ The entities fetch and display electricity price and account information.
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -21,6 +22,8 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -28,6 +31,7 @@ if TYPE_CHECKING:
     from .coordinator import OctopusDataCoordinator
 
 from .const import DOMAIN
+from .data_processing import get_electricity_meter_type
 from .entities.charging import (
     OctopusElectricitySmartMeterReadingsSensor,
     OctopusSmartChargingSessionsSensor,
@@ -120,11 +124,11 @@ def get_electricity_meter_device_info(
     if (
         coordinator_data
         and account_number in coordinator_data
-        and "meter" in coordinator_data[account_number]
+        and coordinator_data[account_number].get("meter")
     ):
         meter_info = coordinator_data[account_number]["meter"]
         meter_number = meter_info.get("number", "unknown")
-        meter_type = meter_info.get("type", "Smart Meter")
+        meter_type = get_electricity_meter_type(meter_info)
         return DeviceInfo(
             identifiers={(DOMAIN, f"electricity_meter_{account_number}")},
             name=f"Electricity Meter ({meter_number})",
@@ -135,7 +139,7 @@ def get_electricity_meter_device_info(
         identifiers={(DOMAIN, f"electricity_meter_{account_number}")},
         name=f"Electricity Meter ({account_number})",
         manufacturer="Octopus Energy Germany",
-        model="Smart Meter",
+        model="Unknown",
     )
 
 
@@ -149,7 +153,7 @@ def get_electricity_meter_specific_device_info(
         identifiers={(DOMAIN, f"electricity_meter_{account_number}_{meter_id}")},
         name=f"Electricity Meter ({meter_number})",
         manufacturer="Octopus Energy Germany",
-        model=meter.get("meterType") or "Smart Meter",
+        model=get_electricity_meter_type(meter),
     )
 
 
@@ -407,6 +411,20 @@ async def async_setup_entry(
         async_add_entities(entities)
     else:
         _LOGGER.warning("No entities to add for any account")
+
+    register_ids = {
+        entity.unique_id
+        for entity in entities
+        if isinstance(entity, OctopusElectricityMeterRegisterSensor)
+    }
+
+    entry.async_on_unload(
+        coordinator.async_add_listener(
+            _create_register_discovery_callback(
+                account_numbers, coordinator, async_add_entities, register_ids
+            )
+        )
+    )
 
 
 class OctopusElectricityBalanceSensor(CoordinatorEntity, SensorEntity):
@@ -697,7 +715,7 @@ class OctopusElectricityLatestReadingSensor(CoordinatorEntity, SensorEntity):
 
 
 class OctopusElectricityMeterRegisterSensor(CoordinatorEntity, SensorEntity):
-    """Sensor for a cumulative import or export register on one meter."""
+    """Sensor for a populated OBIS register on one meter."""
 
     def __init__(
         self,
@@ -711,19 +729,32 @@ class OctopusElectricityMeterRegisterSensor(CoordinatorEntity, SensorEntity):
         self._meter = meter
         self._meter_id = str(meter["id"])
         self._obis_code = obis_code
-        self._purpose = "Import" if obis_code == "1.8.0" else "Export"
+        self._purpose = (
+            "Import"
+            if obis_code.startswith("1.8.")
+            else "Export"
+            if obis_code.startswith("2.8.")
+            else "Register"
+        )
         meter_number = meter.get("number") or self._meter_id
-        self._attr_name = f"{self._purpose} total ({obis_code})"
+        self._attr_name = (
+            f"Register ({obis_code})"
+            if self._purpose == "Register"
+            else f"{self._purpose} total ({obis_code})"
+        )
         self._attr_unique_id = (
             f"octopus_{account_number}_{self._meter_id}_electricity_{obis_code}"
         )
-        self._attr_device_class = SensorDeviceClass.ENERGY
-        self._attr_state_class = SensorStateClass.TOTAL_INCREASING
-        self._attr_native_unit_of_measurement = "kWh"
+        if self._purpose != "Register":
+            self._attr_device_class = SensorDeviceClass.ENERGY
+            self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+            self._attr_native_unit_of_measurement = "kWh"
         self._attr_has_entity_name = True
         self._attr_suggested_object_id = (
             f"octopus_{account_number}_{meter_number}_{self._purpose.lower()}_total"
         )
+        if obis_code not in ("1.8.0", "2.8.0"):
+            self._attr_suggested_object_id += f"_{obis_code.replace('.', '_')}"
 
     def _register_readings(self) -> list[dict[str, Any]]:
         if not self.coordinator.data:
@@ -733,11 +764,8 @@ class OctopusElectricityMeterRegisterSensor(CoordinatorEntity, SensorEntity):
         readings = readings_by_meter.get(self._meter_id, [])
         matching_readings = []
         for reading in readings:
-            register_code = str(reading.get("registerObisCode") or "").strip()
-            if (
-                register_code == self._obis_code
-                or register_code.rsplit(":", 1)[-1] == self._obis_code
-            ):
+            register_code = _register_obis_code(reading)
+            if register_code == self._obis_code:
                 matching_readings.append(reading)
         return matching_readings
 
@@ -748,7 +776,9 @@ class OctopusElectricityMeterRegisterSensor(CoordinatorEntity, SensorEntity):
             try:
                 value = reading.get("value")
                 if value is not None:
-                    return float(value)
+                    numeric_value = float(value)
+                    if math.isfinite(numeric_value):
+                        return numeric_value
             except TypeError, ValueError:
                 continue
         return None
@@ -763,10 +793,12 @@ class OctopusElectricityMeterRegisterSensor(CoordinatorEntity, SensorEntity):
                 value = float(reading["value"])
             except KeyError, TypeError, ValueError:
                 continue
+            if not math.isfinite(value):
+                continue
             history.append(
                 {
                     "read_at": reading.get("readAt"),
-                    "value_kwh": value,
+                    "value" if self._purpose == "Register" else "value_kwh": value,
                     "reading_type": reading.get("typeOfRead"),
                     "origin": reading.get("origin"),
                 }
@@ -803,15 +835,61 @@ def _create_electricity_meter_register_sensors(
     account_data: AccountData,
     coordinator: OctopusDataCoordinator,
 ) -> list[SensorEntity]:
-    """Create import and export register sensors for every known meter."""
+    """Create a sensor for each OBIS register with a usable numeric reading."""
     entities: list[SensorEntity] = []
+    readings_by_meter = (
+        (coordinator.data or {})
+        .get(account_number, {})
+        .get("electricity_meter_readings", {})
+    )
     for meter in account_data.get("electricity_meters", []):
         if not meter.get("id"):
             continue
+        obis_codes = set()
+        for reading in readings_by_meter.get(str(meter["id"]), []):
+            obis_code = _register_obis_code(reading)
+            if not obis_code:
+                continue
+            try:
+                if math.isfinite(float(reading.get("value"))):
+                    obis_codes.add(obis_code)
+            except TypeError, ValueError:
+                continue
         entities.extend(
             OctopusElectricityMeterRegisterSensor(
                 account_number, meter, obis_code, coordinator
             )
-            for obis_code in ("1.8.0", "2.8.0")
+            for obis_code in sorted(obis_codes)
         )
     return entities
+
+
+def _register_obis_code(reading: dict[str, Any]) -> str:
+    """Normalize the optional channel prefix shared by OBIS readings."""
+    return str(reading.get("registerObisCode") or "").strip().rsplit(":", 1)[-1].strip()
+
+
+def _create_register_discovery_callback(
+    account_numbers: list[str],
+    coordinator: OctopusDataCoordinator,
+    async_add_entities: AddEntitiesCallback,
+    register_ids: set[str],
+) -> Callable[[], None]:
+    """Track registers added after the initial sensor setup."""
+
+    @callback
+    def discover_registers() -> None:
+        """Add populated registers first reported by a later coordinator update."""
+        new_entities = []
+        for acc_num in account_numbers:
+            account_data = (coordinator.data or {}).get(acc_num, {})
+            for entity in _create_electricity_meter_register_sensors(
+                acc_num, account_data, coordinator
+            ):
+                if entity.unique_id not in register_ids:
+                    register_ids.add(entity.unique_id)
+                    new_entities.append(entity)
+        if new_entities:
+            async_add_entities(new_entities)
+
+    return discover_registers
