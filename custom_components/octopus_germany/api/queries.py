@@ -551,6 +551,7 @@ query ElectricityMeters(
         number
         activeFrom
         activeTo
+        meterType
         meteringDirection
         readingTransmissionType
         tariffCount
