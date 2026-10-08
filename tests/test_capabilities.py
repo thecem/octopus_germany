@@ -28,6 +28,7 @@ from custom_components.octopus_germany.data_processing import (
     extract_device_data,
     extract_gross_rate,
     extract_meter_data,
+    get_electricity_meter_type,
     get_product_type,
     merge_graphql_responses,
     merge_normalized_account_data,
@@ -63,9 +64,12 @@ from custom_components.octopus_germany.octopus_germany import (
     TokenManager,
 )
 from custom_components.octopus_germany.sensor import (
+    OctopusElectricitySmartMeterReadingsSensor,
     OctopusSmartChargingSessionsSensor,
     _create_device_entities,
     _create_electricity_meter_register_sensors,
+    get_electricity_meter_device_info,
+    get_electricity_meter_specific_device_info,
 )
 from custom_components.octopus_germany.service_handlers import (
     _group_readings_by_local_date,
@@ -96,6 +100,88 @@ from custom_components.octopus_germany.tariff import (
 
 class TariffCapabilitiesTest(unittest.TestCase):
     """Verify feature detection for supported account response shapes."""
+
+    def test_electricity_meter_type_uses_gateway_not_data_availability(self) -> None:
+        cases = [
+            ({"meterType": "MME", "hasSmartMeterGateway": True}, "iMSys"),
+            ({"meterType": "MME", "hasSmartMeterGateway": False}, "MME"),
+            ({"meterType": "MME"}, "MME"),
+            ({"meterType": "MME", "hasSmartMeterGateway": None}, "MME"),
+            ({"hasSmartMeterGateway": True}, "iMSys"),
+            ({"hasSmartMeterGateway": False}, "Unknown"),
+            ({"meterType": "CONVENTIONAL"}, "CONVENTIONAL"),
+            ({"meterType": None}, "Unknown"),
+            ({"shouldReceiveSmartMeterData": True}, "Unknown"),
+            ({}, "Unknown"),
+            (None, "Unknown"),
+        ]
+        for meter, expected in cases:
+            with self.subTest(meter=meter):
+                assert get_electricity_meter_type(meter) == expected
+
+    def test_meter_devices_distinguish_historical_meter_from_imsys(self) -> None:
+        old_meter = {
+            "id": "meter-old",
+            "number": "meter-number-old",
+            "hasSmartMeterGateway": False,
+            "activeTo": "2025-09-27",
+        }
+        new_meter = {
+            "id": "meter-new",
+            "number": "meter-number-new",
+            "meterType": "MME",
+            "hasSmartMeterGateway": True,
+        }
+
+        old_device = get_electricity_meter_specific_device_info("account-1", old_meter)
+        new_device = get_electricity_meter_specific_device_info("account-1", new_meter)
+
+        assert old_device["model"] == "Unknown"
+        assert new_device["model"] == "iMSys"
+        assert old_device["identifiers"] != new_device["identifiers"]
+        assert old_device["name"] == "Electricity Meter (meter-number-old)"
+        assert new_meter["meterType"] == "MME"
+
+    def test_account_meter_device_uses_api_type_and_handles_missing_meter(self) -> None:
+        for meter, expected in [
+            ({"number": "meter-1", "meterType": "MME"}, "MME"),
+            ({"meterType": "MME", "hasSmartMeterGateway": True}, "iMSys"),
+            (None, "Unknown"),
+        ]:
+            with self.subTest(meter=meter):
+                device = get_electricity_meter_device_info(
+                    {"account-1": {"meter": meter}}, "account-1"
+                )
+                assert device["model"] == expected
+        assert get_electricity_meter_device_info({}, "account-1")["model"] == "Unknown"
+
+    def test_electricity_sensor_attributes_classify_meter_consistently(self) -> None:
+        for gateway, expected in [(True, "iMSys"), (False, "MME")]:
+            with self.subTest(gateway=gateway):
+                coordinator = Mock(
+                    last_update_success=True,
+                    data={
+                        "account-1": {
+                            "meter": {
+                                "meterType": "MME",
+                                "hasSmartMeterGateway": gateway,
+                            },
+                            "electricity_smart_meter_readings": [{"value": "1.5"}],
+                        }
+                    },
+                )
+                price = OctopusElectricityPriceSensor("account-1", coordinator)
+                consumption = OctopusElectricitySmartMeterReadingsSensor(
+                    "account-1", coordinator
+                )
+                assert price.extra_state_attributes["meter_type"] == expected
+                assert consumption.extra_state_attributes["meter_type"] == expected
+                assert consumption.native_value == 1.5
+
+    def test_comprehensive_query_requests_gateway_for_electricity_meters(self) -> None:
+        electricity_fields = COMPREHENSIVE_QUERY.split("electricityMalos", 1)[1]
+        electricity_fields = electricity_fields.split("gasMalos", 1)[0]
+        assert "hasSmartMeterGateway" in electricity_fields
 
     def test_extract_meter_data_keeps_all_meters_and_contract_status(self) -> None:
         account_data = {

@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from .coordinator import OctopusDataCoordinator
 
 from .const import DOMAIN
+from .data_processing import get_electricity_meter_type
 from .entities.charging import (
     OctopusElectricitySmartMeterReadingsSensor,
     OctopusSmartChargingSessionsSensor,
@@ -120,11 +121,11 @@ def get_electricity_meter_device_info(
     if (
         coordinator_data
         and account_number in coordinator_data
-        and "meter" in coordinator_data[account_number]
+        and coordinator_data[account_number].get("meter")
     ):
         meter_info = coordinator_data[account_number]["meter"]
         meter_number = meter_info.get("number", "unknown")
-        meter_type = meter_info.get("type", "Smart Meter")
+        meter_type = get_electricity_meter_type(meter_info)
         return DeviceInfo(
             identifiers={(DOMAIN, f"electricity_meter_{account_number}")},
             name=f"Electricity Meter ({meter_number})",
@@ -135,7 +136,7 @@ def get_electricity_meter_device_info(
         identifiers={(DOMAIN, f"electricity_meter_{account_number}")},
         name=f"Electricity Meter ({account_number})",
         manufacturer="Octopus Energy Germany",
-        model="Smart Meter",
+        model="Unknown",
     )
 
 
@@ -149,7 +150,7 @@ def get_electricity_meter_specific_device_info(
         identifiers={(DOMAIN, f"electricity_meter_{account_number}_{meter_id}")},
         name=f"Electricity Meter ({meter_number})",
         manufacturer="Octopus Energy Germany",
-        model=meter.get("meterType") or "Smart Meter",
+        model=get_electricity_meter_type(meter),
     )
 
 

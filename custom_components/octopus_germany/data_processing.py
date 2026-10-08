@@ -257,6 +257,15 @@ def get_product_type(rate_info: Any) -> str:
     return "Simple"
 
 
+def get_electricity_meter_type(meter: dict[str, Any] | None) -> str:
+    """Distinguish an iMSys (meter plus SMGW) from the API meter type."""
+    if not meter:
+        return "Unknown"
+    if meter.get("hasSmartMeterGateway") is True:
+        return "iMSys"
+    return meter.get("meterType") or "Unknown"
+
+
 def extract_meter_data(account_data: dict[str, Any]) -> dict[str, Any]:
     """Extract property, market-location and meter data from an account."""
     properties = account_data.get("allProperties", []) or []

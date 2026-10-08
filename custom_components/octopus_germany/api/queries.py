@@ -237,6 +237,7 @@ query ComprehensiveDataQuery($accountNumber: String!, $includeIntelligent: Boole
           meterType
           number
                     meloNumber
+          hasSmartMeterGateway
           shouldReceiveSmartMeterData
           submitMeterReadingUrl
         }

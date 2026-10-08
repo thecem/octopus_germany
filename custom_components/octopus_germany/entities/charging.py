@@ -20,6 +20,9 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.dt import as_utc
 
 from custom_components.octopus_germany.const import DOMAIN
+from custom_components.octopus_germany.data_processing import (
+    get_electricity_meter_type,
+)
 
 if TYPE_CHECKING:
     from custom_components.octopus_germany.coordinator import OctopusDataCoordinator
@@ -200,7 +203,7 @@ class OctopusElectricitySmartMeterReadingsSensor(
                     {
                         "meter_id": meter_info.get("id"),
                         "meter_number": meter_info.get("number"),
-                        "meter_type": meter_info.get("type"),
+                        "meter_type": get_electricity_meter_type(meter_info),
                         "total": round(
                             total_consumption, 6
                         ),  # More precision for total

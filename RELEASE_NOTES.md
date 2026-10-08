@@ -1,5 +1,12 @@
 # Release Notes
 
+## Version 0.0.136 (2026-10-08)
+
+### Fixes
+
+- Correct electricity meter labels using API gateway metadata: an mME with an SMGW is shown as iMSys, while meters without type information are no longer assumed to be smart meters. Historical meters and their register readings remain available.
+- Use consistent meter type labels in electricity price and consumption sensor attributes.
+
 ## Version 0.0.135 (2026-10-03)
 
 ### Improvements

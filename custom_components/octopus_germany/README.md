@@ -148,7 +148,7 @@ using the example, replace `a_xxxxxxxx` with your lower-case account number and
   - `valid_to`: End date of validity
   - `meter_id`: ID of your meter
   - `meter_number`: Number of your meter
-  - `meter_type`: Type of your meter (MME, iMSys, etc.)
+  - `meter_type`: API-based meter classification: iMSys when `hasSmartMeterGateway` is true (mME + SMGW), otherwise the reported `meterType` (e.g. MME), or Unknown if absent
   - `account_number`: Your Octopus Energy account number
   - `malo_number`: Your electricity meter point number
   - `melo_number`: Your electricity meter number
@@ -163,6 +163,8 @@ using the example, replace `a_xxxxxxxx` with your lower-case account number and
   - `agreements`: All electricity agreements returned by OE, including past, current and scheduled entries, with validity, status and available price tiers
 
 Agreement price entries expose the original gross/net values in cents per kWh, normalized values in EUR per kWh, VAT percentage, price validity and Time-of-Use activation windows where available.
+
+Electricity meter device labels and consumption sensor `meter_type` attributes use the same classification. `shouldReceiveSmartMeterData` describes data availability expectations, not the physical meter type. Historical meters and their register readings remain available; missing type information does not imply a smart meter.
 
 Each item in `agreements` contains `code`, `name`, `type`, `is_active`, `is_revoked`, `is_terminated`, `valid_from`, `valid_to` and `prices`. Each price entry can contain `name`, `gross_cents_per_kwh`, `gross_eur_per_kwh`, `net_cents_per_kwh`, `net_eur_per_kwh`, `vat_percent`, `price_valid_from`, `price_valid_to` and `activation_rules`.
 
