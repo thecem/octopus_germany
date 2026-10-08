@@ -374,6 +374,49 @@ class TariffCapabilitiesTest(unittest.TestCase):
             "account-1", account_data, coordinator
         )
 
+    def test_setup_creates_register_sensor_for_fallback_meter_without_malo(
+        self,
+    ) -> None:
+        account_data = {
+            "meter": {
+                "id": "meter-1",
+                "number": "1LGZ",
+                "meterType": "MME",
+                "hasSmartMeterGateway": False,
+            },
+            "electricity_meter_readings": {
+                "meter-1": [
+                    {"registerObisCode": "1-0:1.8.0", "value": "10"},
+                    {"registerObisCode": "1-0:2.8.1", "value": "3"},
+                ]
+            },
+        }
+        coordinator = Mock(data={"account-1": account_data})
+        hass = Mock()
+        hass.data = {
+            "octopus_germany": {
+                "entry-1": {"coordinator": coordinator, "account_number": "account-1"}
+            }
+        }
+        entry = Mock(entry_id="entry-1", data={"account_numbers": ["account-1"]})
+        add_entities = Mock()
+
+        asyncio.run(async_setup_sensor_entry(hass, entry, add_entities))
+
+        register_sensors = [
+            entity
+            for entity in add_entities.call_args.args[0]
+            if entity.unique_id.startswith("octopus_account-1_meter-1_electricity_")
+        ]
+        assert [entity._obis_code for entity in register_sensors] == [
+            "1.8.0",
+            "2.8.1",
+        ]
+        assert [entity.device_info["model"] for entity in register_sensors] == [
+            "MME",
+            "MME",
+        ]
+
     def test_register_sensors_discover_tariff_and_other_obis_codes(self) -> None:
         account_data = {"electricity_meters": [{"id": "meter-1", "number": "meter-1"}]}
         coordinator = Mock(

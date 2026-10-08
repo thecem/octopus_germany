@@ -1,5 +1,11 @@
 # Release Notes
 
+## Version 0.0.140 (2026-10-08)
+
+### Fixes
+
+- Create meter register sensors from the primary meter when the per-MeLo meter list is empty, and do not require a MALO number when valid OBIS readings are available.
+
 ## Version 0.0.139 (2026-10-08)
 
 ### Fixes
