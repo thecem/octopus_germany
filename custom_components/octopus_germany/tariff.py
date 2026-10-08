@@ -138,15 +138,21 @@ def normalize_variable_grid_fees(
         start_time = rate.get("rateTypeIntervalStart")
         end_time = rate.get("rateTypeIntervalEnd")
         if start_time == "00:00:00" and end_time == "00:00:00":
-            _LOGGER.warning(
-                "OE variable grid fee contains an all-day fallback interval: "
+            _LOGGER.debug(
+                "Octopus Energy (OE) API returned an all-day grid fee interval "
+                "(00:00:00 to 00:00:00). Used as a fallback only when no valid "
+                "specific interval matches; an all-day rate alone does not "
+                "indicate an error. If time-varying grid fees are expected, "
+                "the API schedule may be incomplete: "
                 "grid_operator=%s, grid_operator_code=%s, module=%s, "
-                "rate_type=%s, rate_cents_per_kwh=%s",
+                "rate_type=%s, rate_cents_per_kwh=%s, valid_from=%s, valid_to=%s",
                 grid_operator_name,
                 rate.get("gridOperatorCode"),
                 value.get("module"),
                 rate.get("gridFeeKwhRateType"),
                 cents,
+                rate.get("validFrom"),
+                rate.get("validTo"),
             )
         rates.append(
             {

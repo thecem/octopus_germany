@@ -1382,6 +1382,77 @@ class TariffCapabilitiesTest(unittest.TestCase):
             assert fee_sensor.native_value == 0.1052
             assert fee_sensor.extra_state_attributes["rate_type"] == "PEAK"
 
+    def test_all_day_grid_fee_logs_debug_context_without_repeated_warnings(
+        self,
+    ) -> None:
+        value = {
+            "module": "MODULE_1",
+            "gridFees": [
+                {
+                    "gridFeeKwhRateType": "STANDARD",
+                    "rateTypeIntervalStart": "00:00:00",
+                    "rateTypeIntervalEnd": "00:00:00",
+                    "gridOperatorCode": "operator-1",
+                    "gridFeeInCentsPerKwh": "6.530000",
+                    "validFrom": "2026-01-01T00:00:00+01:00",
+                    "validTo": None,
+                }
+            ],
+        }
+        logger_name = "custom_components.octopus_germany.tariff"
+        with self.assertNoLogs(logger_name, level="WARNING"):
+            for _ in range(3):
+                grid_fees = normalize_variable_grid_fees(value, "Grid Operator")
+
+        assert (
+            get_active_grid_fee(
+                grid_fees, datetime.fromisoformat("2026-10-08T15:00:00+02:00")
+            )["rate_eur_per_kwh"]
+            == 0.0653
+        )
+
+        with self.assertLogs(logger_name, level="DEBUG") as logs:
+            normalize_variable_grid_fees(value, "Grid Operator")
+
+        assert len(logs.records) == 1
+        assert logs.records[0].levelname == "DEBUG"
+        message = logs.records[0].getMessage()
+        for expected in (
+            "Octopus Energy (OE) API",
+            "00:00:00 to 00:00:00",
+            "fallback only when no valid specific interval matches",
+            "an all-day rate alone does not indicate an error",
+            "If time-varying grid fees are expected",
+            "the API schedule may be incomplete",
+            "grid_operator=Grid Operator",
+            "grid_operator_code=operator-1",
+            "module=MODULE_1",
+            "rate_type=STANDARD",
+            "rate_cents_per_kwh=6.530000",
+            "valid_from=2026-01-01T00:00:00+01:00",
+            "valid_to=None",
+        ):
+            with self.subTest(expected=expected):
+                assert expected in message
+
+    def test_specific_grid_fee_interval_does_not_log_fallback(self) -> None:
+        with self.assertNoLogs(
+            "custom_components.octopus_germany.tariff", level="DEBUG"
+        ):
+            normalize_variable_grid_fees(
+                {
+                    "module": "MODULE_3",
+                    "gridFees": [
+                        {
+                            "gridFeeKwhRateType": "PEAK",
+                            "rateTypeIntervalStart": "17:00:00",
+                            "rateTypeIntervalEnd": "21:00:00",
+                            "gridFeeInCentsPerKwh": "13.460000",
+                        }
+                    ],
+                }
+            )
+
     def test_grid_fee_fallback_does_not_override_specific_interval(self) -> None:
         grid_fees = normalize_variable_grid_fees(
             {

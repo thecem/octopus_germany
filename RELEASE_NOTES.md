@@ -1,5 +1,11 @@
 # Release Notes
 
+## Version 0.0.138 (2026-10-08)
+
+### Fixes
+
+- Stop repeated warnings for all-day grid-fee intervals supplied by Octopus Energy (OE). These are now DEBUG diagnostics with operator, module, rate and validity details, explaining fallback behavior and potentially incomplete API schedules without assuming a backend error. Grid-fee selection is unchanged.
+
 ## Version 0.0.137 (2026-10-08)
 
 ### Fixes

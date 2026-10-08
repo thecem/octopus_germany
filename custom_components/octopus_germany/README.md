@@ -65,6 +65,8 @@ The integration is configured via the Home Assistant UI:
 
 Base account and meter data are polled every 30 minutes by default. When Intelligent tariff support is detected, device and dispatch data use a separate three-minute coordinator. Both intervals can be configured in the integration options from 1 to 60 minutes. Electricity price sensors also update locally at Time-of-Use tariff boundaries, without waiting for the next base poll. Variable grid-fee entries with a `00:00:00` to `00:00:00` interval are treated as fallbacks behind specific intervals.
 
+All-day grid-fee intervals supplied by the Octopus Energy (OE) API are logged at DEBUG level, not as recurring warnings. The diagnostic includes the grid operator, module, rate and validity period. An all-day rate alone is not evidence of a backend error; if time-varying fees are expected, the API schedule may be incomplete.
+
 Smart-meter readings are requested only for accounts reporting smart-meter support, and Intelligent entities are created only when the corresponding capability or connected Intelligent devices are available.
 
 CSV exports load smart-meter readings through paginated monthly range queries in the configured Home Assistant timezone. The API layer retains source, quality, device and register metadata when OE provides it; internally consistent intervals can still represent estimated data.
