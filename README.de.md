@@ -22,7 +22,8 @@ Wenn du über [meinen Empfehlungslink](https://octopusenergy.de/empfehlungen?ref
 
 - Kontodaten (Strom/Gas)
 - Aktuelle Tarifpreise (inkl. Dynamic/TOU)
-- Paragraph-14a-Netzentgelte mit von OE gemeldetem Modul, aktuellem Preisanteil und Tagesplan
+- Paragraph-14a-Netzentgelte mit von OE gemeldetem Modul, standardisierten NT/ST/HT-Attributen und vollstaendigem Tagesplan
+- Kombinierter Bruttopreis aus Octopus-Tarif und zeitvariablem Netzentgelt mit Tagesplan der Tarif-/Modul-3-Preiskombinationen und Zeitintervalle; numerische Werte bleiben fuer Templates und Automationen verfuegbar
 - Alle von OE gelieferten vergangenen, aktiven und zukuenftigen Stromvertraege mit verfuegbaren Brutto-/Netto-Preisen und MwSt. in den Attributen des Strompreis-Sensors
 - SmartFlex-Geraetestatus, Dispatching, Session-Daten
 - Schalter fuer Smart Control und Boost Charge

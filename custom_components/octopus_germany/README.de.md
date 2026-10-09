@@ -55,7 +55,8 @@ Wichtig:
 - Smart Charging Sessions
 - Historische Smart-Meter-Verbrauchswerte
 - Von OE gemeldetes Paragraph-14a-Modul
-- Aktuell wirksamer variabler Netzentgeltanteil in EUR/kWh mit vollstaendigem Tagesplan als Attribut
+- Aktuell wirksamer variabler Netzentgeltanteil in EUR/kWh. `module_3_rates` bietet `NT`, `ST` und `HT`, jeweils mit `periods`. Preis (netto) und Gueltigkeit stehen einmal pro Periode; die zugehoerigen Start-/Endzeitintervalle sind darunter gruppiert. Das originale API-`rates`-Array bleibt erhalten.
+- Kombinierter Bruttopreis-Sensor: Octopus-Bruttopreis plus die mit gemeldeter Umsatzsteuer hochgerechnete Abweichung der aktiven Netto-Grid-Fee zur STANDARD-Basisrate. `price_combinations` gruppiert gleiche Tarif-/Modul-3-Preise des aktuellen Tages und enthaelt die passenden Zeitintervalle. Numerische Preiswerte und Strings mit fest acht Nachkommastellen (`*_display`) werden bereitgestellt. Der State zeigt ebenfalls acht Nachkommastellen; bestehende numerische Preisattribute bleiben fuer Templates und Automationen erhalten. Der Sensor setzt voraus, dass die Octopus-Preisrate die STANDARD-Netzentgelt-Basis bereits enthaelt; der gemeldete Modulwert ist nur informativ. Bei fehlender VAT oder uneindeutiger STANDARD-Rate bleibt der Sensor unavailable.
 - Der Strompreis-Sensor enthaelt unter `agreements` alle von OE gelieferten vergangenen, aktuellen und zukuenftigen Stromvertraege mit Status, Laufzeit sowie den verfuegbaren Brutto-, Netto- und MwSt.-Preisstufen. `agreement_prices` enthaelt die Preisstufen des aktuell ausgewaehlten Vertrags.
 
 Jeder Eintrag in `agreements` enthaelt `code`, `name`, `type`, `is_active`, `is_revoked`, `is_terminated`, `valid_from`, `valid_to` und `prices`. Die Preise enthalten, soweit von OE geliefert, Cent/kWh und EUR/kWh fuer Brutto und Netto, `vat_percent`, die Preisgueltigkeit sowie Aktivierungszeitfenster.

@@ -221,7 +221,12 @@ Current and historical meters are discovered through OE's meter endpoint. Meter 
   - This value alone does not prove that optional module 3 billing has been selected
 - **Variable grid fee unique ID**: `octopus_<account_number>_variable_grid_fee`
   - Shows only the currently active grid fee component in EUR/kWh, not the complete electricity price
-  - Attributes include rate type, current interval, next change, validity, grid operator and the complete daily schedule
+  - Attributes include rate type, current interval, next change, validity, grid operator, the complete `rates` array, and standardized `module_3_rates`
+  - `module_3_rates` provides stable `NT`, `ST`, and `HT` keys, each with `periods`. Each period stores its net EUR/cent rates and validity once, with applicable start/end `intervals` nested below. The original API `rates` array is retained.
+- **Combined electricity price entity**: `sensor.octopus_<account_number>_electricity_price_with_variable_grid_fee`
+  - Gross Octopus tariff price plus the active net grid-fee difference from the STANDARD baseline, converted using the VAT rate reported with the active tariff
+  - `price_combinations` groups today's equal tariff and Module 3 prices, with applicable intervals nested below each combination. It includes numeric price values and fixed-eight-decimal `*_display` strings. The state retains eight decimal places; the existing numeric attributes remain available for templates and automations
+  - Assumes the Octopus tariff price already includes the STANDARD net grid fee; the OE-reported module is informational and does not prove which billing module is applied. The entity is unavailable if the price/VAT or a unique STANDARD baseline is missing.
 
 A successful schedule response is cached for the local day. State changes at tariff boundaries are calculated locally without another API request. Sensors are only created when the OE backend returns grid fee data.
 

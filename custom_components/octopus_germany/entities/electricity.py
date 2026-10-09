@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, time, timedelta
+from decimal import Decimal, InvalidOperation
+from itertools import pairwise
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import (
@@ -30,12 +33,11 @@ from custom_components.octopus_germany.tariff import (
     get_next_price_change,
     is_product_current,
     is_time_between,
+    parse_product_datetime,
     parse_tariff_time,
 )
 
 if TYPE_CHECKING:
-    from datetime import time
-
     from custom_components.octopus_germany.coordinator import OctopusDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,6 +70,327 @@ def _agreement_attributes(products: list[dict[str, Any]]) -> list[dict[str, Any]
         }
         for product in products
     ]
+
+
+def _current_electricity_product(
+    account_data: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Return the most recently started electricity agreement valid now."""
+    products = account_data.get("products", [])
+    return next(
+        (
+            product
+            for product in sorted(
+                products,
+                key=lambda item: item.get("validFrom", ""),
+                reverse=True,
+            )
+            if product.get("validFrom") and is_product_current(product)
+        ),
+        None,
+    )
+
+
+def _current_product_gross_price(
+    product: dict[str, Any],
+    current_time: Any,
+) -> float | None:
+    """Return the active gross electricity rate in EUR/kWh."""
+    if product.get("isTimeOfUse", False):
+        forecast_rate = get_current_forecast_rate(product, current_time)
+        if forecast_rate is not None:
+            return forecast_rate
+        if product.get("type") == "TimeOfUse":
+            timeslot_rate = get_active_timeslot_rate(product, current_time.time())
+            if timeslot_rate is not None:
+                return timeslot_rate
+    try:
+        return float(product.get("grossRate", "0")) / 100
+    except ValueError, TypeError:
+        return None
+
+
+def _current_product_vat_fraction(
+    product: dict[str, Any],
+    current_time: Any,
+) -> float | None:
+    """Return the active product VAT as a fraction, without assuming a rate."""
+    vat_values = []
+    for price in product.get("prices") or []:
+        vat_value = price.get("vat_percent")
+        if vat_value is None:
+            continue
+        activation_rules = price.get("activation_rules") or []
+        if activation_rules and not any(
+            (start := parse_tariff_time(rule.get("from_time")))
+            and (end := parse_tariff_time(rule.get("to_time")))
+            and is_time_between(current_time.time(), start, end)
+            for rule in activation_rules
+        ):
+            continue
+        try:
+            vat = Decimal(str(vat_value))
+        except InvalidOperation, TypeError, ValueError:
+            continue
+        vat_values.append(vat / 100 if vat > 1 else vat)
+
+    if not vat_values:
+        return None
+    unique_values = set(vat_values)
+    return float(unique_values.pop()) if len(unique_values) == 1 else None
+
+
+def _module_3_rates(rates: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Expose Module 3 rates once per validity period and intervals below them."""
+    result = {}
+    for band, rate_type in (
+        ("NT", "offpeak"),
+        ("ST", "standard"),
+        ("HT", "peak"),
+    ):
+        periods: dict[tuple[Any, ...], dict[str, Any]] = {}
+        for rate in rates:
+            if str(rate.get("rate_type") or "").lower() != rate_type:
+                continue
+            period_key = (
+                rate.get("rate_cents_per_kwh"),
+                rate.get("rate_eur_per_kwh"),
+                rate.get("valid_from"),
+                rate.get("valid_to"),
+            )
+            period = periods.setdefault(
+                period_key,
+                {
+                    "rate_eur_per_kwh_net": rate.get("rate_eur_per_kwh"),
+                    "rate_cents_per_kwh_net": rate.get("rate_cents_per_kwh"),
+                    "valid_from": rate.get("valid_from"),
+                    "valid_to": rate.get("valid_to"),
+                    "intervals": [],
+                },
+            )
+            period["intervals"].append(
+                {
+                    "start_time": rate.get("start_time"),
+                    "end_time": rate.get("end_time"),
+                }
+            )
+        result[band] = {"periods": list(periods.values())}
+    return result
+
+
+def _valid_grid_fee_rates(
+    grid_fee_data: dict[str, Any], rate_type: str, current_time: Any
+) -> list[dict[str, Any]]:
+    """Return currently valid fee entries for one rate type."""
+    current_utc = current_time.astimezone(UTC)
+    valid_rates = []
+    for rate in grid_fee_data.get("rates") or []:
+        if str(rate.get("rate_type", "")).upper() != rate_type:
+            continue
+        valid_from = parse_product_datetime(rate.get("valid_from"))
+        valid_to = parse_product_datetime(rate.get("valid_to"))
+        if valid_from and current_utc < valid_from:
+            continue
+        if valid_to and current_utc >= valid_to:
+            continue
+        valid_rates.append(rate)
+    return valid_rates
+
+
+def _standard_grid_fee_rate(
+    grid_fee_data: dict[str, Any], current_time: Any
+) -> float | None:
+    """Return a unique active ST baseline rate in EUR/kWh."""
+    standard_rates = _valid_grid_fee_rates(grid_fee_data, "STANDARD", current_time)
+    try:
+        unique_rates = {float(rate["rate_eur_per_kwh"]) for rate in standard_rates}
+    except KeyError, TypeError, ValueError:
+        return None
+    return unique_rates.pop() if len(unique_rates) == 1 else None
+
+
+def _tariff_type_label(product: dict[str, Any], current_time: datetime) -> str:
+    """Return the active named tariff rate, falling back to product type."""
+    current_local_time = current_time.time()
+    has_scheduled_rates = False
+    for schedule in (product.get("timeslots") or [], product.get("prices") or []):
+        for rate in schedule:
+            activation_rules = rate.get("activation_rules") or []
+            has_scheduled_rates = has_scheduled_rates or bool(activation_rules)
+            for rule in activation_rules:
+                start = parse_tariff_time(rule.get("from_time"))
+                end = parse_tariff_time(rule.get("to_time"))
+                if (
+                    not start
+                    or not end
+                    or not is_time_between(current_local_time, start, end)
+                ):
+                    continue
+                rate_name = str(rate.get("name") or "").strip()
+                if rate_name:
+                    return rate_name.upper()
+
+    if has_scheduled_rates:
+        return (
+            "TOU"
+            if product.get("isTimeOfUse")
+            else str(product.get("type") or "UNKNOWN").upper()
+        )
+
+    product_text = " ".join(
+        str(product.get(field) or "") for field in ("code", "name", "description")
+    ).upper()
+    normalized_text = "".join(
+        character if character.isalnum() else " " for character in product_text
+    )
+    tokens = set(normalized_text.split())
+    if "GO" in tokens:
+        return "GO"
+    if "HEAT" in tokens:
+        return "HEAT"
+    if "STANDARD" in tokens:
+        return "STANDARD"
+    return (
+        "TOU"
+        if product.get("isTimeOfUse")
+        else str(product.get("type") or "UNKNOWN").upper()
+    )
+
+
+def _price_schedule_boundaries(
+    product: dict[str, Any],
+    grid_fee_data: dict[str, Any],
+    current_time: datetime,
+) -> list[datetime]:
+    """Collect UTC boundaries for today's tariff, VAT, and grid-fee periods."""
+    timezone = current_time.tzinfo or UTC
+    day_start = datetime.combine(current_time.date(), time.min, tzinfo=timezone)
+    day_end = datetime.combine(
+        current_time.date() + timedelta(days=1), time.min, tzinfo=timezone
+    )
+    utc_start = day_start.astimezone(UTC)
+    utc_end = day_end.astimezone(UTC)
+    boundaries = {utc_start, utc_end}
+
+    def add_datetime(value: str | None) -> None:
+        parsed = parse_product_datetime(value)
+        if parsed and utc_start < parsed < utc_end:
+            boundaries.add(parsed)
+
+    def add_daily_time(value: str | None) -> None:
+        parsed = parse_tariff_time(value) if value else None
+        if parsed is None:
+            return
+        for day in (current_time.date(), current_time.date() + timedelta(days=1)):
+            boundary = datetime.combine(day, parsed, tzinfo=timezone).astimezone(UTC)
+            if utc_start < boundary < utc_end:
+                boundaries.add(boundary)
+
+    for field in ("validFrom", "validTo"):
+        add_datetime(product.get(field))
+    for forecast in product.get("unitRateForecast") or []:
+        add_datetime(forecast.get("validFrom"))
+        add_datetime(forecast.get("validTo"))
+
+    for schedule in (
+        product.get("timeslots") or [],
+        product.get("prices") or [],
+    ):
+        for entry in schedule:
+            add_datetime(entry.get("price_valid_from"))
+            add_datetime(entry.get("price_valid_to"))
+            for rule in entry.get("activation_rules") or []:
+                add_daily_time(rule.get("from_time"))
+                add_daily_time(rule.get("to_time"))
+
+    for rate in grid_fee_data.get("rates") or []:
+        add_datetime(rate.get("valid_from"))
+        add_datetime(rate.get("valid_to"))
+        add_daily_time(rate.get("start_time"))
+        add_daily_time(rate.get("end_time"))
+
+    return sorted(boundaries)
+
+
+def _price_combinations(
+    product: dict[str, Any],
+    grid_fee_data: dict[str, Any],
+    current_time: datetime,
+) -> list[dict[str, Any]]:
+    """Group today's equal tariff and Module 3 prices with their intervals."""
+    bands = {"OFFPEAK": "NT", "STANDARD": "ST", "PEAK": "HT"}
+    timezone = current_time.tzinfo or UTC
+    boundaries = _price_schedule_boundaries(product, grid_fee_data, current_time)
+    combinations: dict[tuple[Any, ...], dict[str, Any]] = {}
+
+    for start, end in pairwise(boundaries):
+        midpoint = start + (end - start) / 2
+        local_midpoint = midpoint.astimezone(timezone)
+        if not is_product_current(product, local_midpoint):
+            continue
+        tariff_price = _current_product_gross_price(product, local_midpoint)
+        vat_fraction = _current_product_vat_fraction(product, local_midpoint)
+        active_rate = get_active_grid_fee(grid_fee_data, local_midpoint)
+        standard_rate = _standard_grid_fee_rate(grid_fee_data, local_midpoint)
+        if (
+            tariff_price is None
+            or vat_fraction is None
+            or active_rate is None
+            or standard_rate is None
+        ):
+            continue
+
+        module_3_band = bands.get(str(active_rate.get("rate_type") or "").upper())
+        if module_3_band is None:
+            continue
+        try:
+            tariff_price_decimal = Decimal(str(tariff_price))
+            active_rate_decimal = Decimal(str(active_rate["rate_eur_per_kwh"]))
+            standard_rate_decimal = Decimal(str(standard_rate))
+            vat_decimal = Decimal(str(vat_fraction))
+        except InvalidOperation, KeyError, TypeError, ValueError:
+            continue
+
+        adjustment_decimal = (active_rate_decimal - standard_rate_decimal) * (
+            Decimal(1) + vat_decimal
+        )
+        combined_decimal = tariff_price_decimal + adjustment_decimal
+        tariff_type = _tariff_type_label(product, local_midpoint)
+        key = (
+            tariff_type,
+            module_3_band,
+            tariff_price_decimal,
+            active_rate_decimal,
+            adjustment_decimal,
+            combined_decimal,
+        )
+        combination = combinations.setdefault(
+            key,
+            {
+                "label": f"{tariff_type} + {module_3_band}",
+                "tariff_type": tariff_type,
+                "module_3_band": module_3_band,
+                "tariff_price_gross_eur_per_kwh": float(tariff_price_decimal),
+                "module_3_rate_net_eur_per_kwh": float(active_rate_decimal),
+                "grid_fee_adjustment_gross_eur_per_kwh": float(adjustment_decimal),
+                "combined_price_gross_eur_per_kwh": float(combined_decimal),
+                "tariff_price_gross_eur_per_kwh_display": f"{tariff_price_decimal:.8f}",
+                "module_3_rate_net_eur_per_kwh_display": f"{active_rate_decimal:.8f}",
+                "grid_fee_adjustment_gross_eur_per_kwh_display": (
+                    f"{adjustment_decimal:.8f}"
+                ),
+                "combined_price_gross_eur_per_kwh_display": f"{combined_decimal:.8f}",
+                "intervals": [],
+            },
+        )
+        combination["intervals"].append(
+            {
+                "start": start.astimezone(timezone).isoformat(),
+                "end": end.astimezone(timezone).isoformat(),
+            }
+        )
+
+    return list(combinations.values())
 
 
 class OctopusSection14aModuleSensor(CoordinatorEntity, SensorEntity):
@@ -164,6 +487,7 @@ class OctopusVariableGridFeeSensor(CoordinatorEntity, SensorEntity):
         data = self._data()
         active_rate = get_active_grid_fee(data)
         next_change = get_next_grid_fee_change(data)
+        rates = data.get("rates") or []
         return {
             "module": data.get("module"),
             "rate_type": active_rate.get("rate_type") if active_rate else None,
@@ -174,7 +498,8 @@ class OctopusVariableGridFeeSensor(CoordinatorEntity, SensorEntity):
             "valid_to": active_rate.get("valid_to") if active_rate else None,
             "grid_operator_code": data.get("grid_operator_code"),
             "grid_operator_name": data.get("grid_operator_name"),
-            "rates": data.get("rates") or [],
+            "module_3_rates": _module_3_rates(rates),
+            "rates": rates,
         }
 
     @property
@@ -223,6 +548,176 @@ class OctopusVariableGridFeeSensor(CoordinatorEntity, SensorEntity):
     def device_info(self) -> DeviceInfo:
         """Return account device information."""
         return _account_device_info(self._account_number)
+
+
+class OctopusCombinedElectricityPriceSensor(CoordinatorEntity, SensorEntity):
+    """Expose gross tariff price adjusted by the active variable grid fee."""
+
+    def __init__(
+        self, account_number: str, coordinator: OctopusDataCoordinator
+    ) -> None:
+        """Initialize the combined electricity price sensor."""
+        super().__init__(coordinator)
+        self._account_number = account_number
+        self._attr_name = (
+            f"Octopus {account_number} Electricity Price with Variable Grid Fee"
+        )
+        self._attr_unique_id = (
+            f"octopus_{account_number}_electricity_price_with_variable_grid_fee"
+        )
+        self._attr_device_class = SensorDeviceClass.MONETARY
+        self._attr_native_unit_of_measurement = "€/kWh"
+        self._attr_state_class = SensorStateClass.TOTAL
+        self._attr_suggested_display_precision = 8
+        self._attr_has_entity_name = False
+        self._cancel_boundary_update = None
+
+    def _account_data(self) -> dict[str, Any]:
+        if not self.coordinator.data:
+            return {}
+        return self.coordinator.data.get(self._account_number, {})
+
+    def _price_components(self) -> dict[str, Any] | None:
+        account_data = self._account_data()
+        current_time = local_now()
+        product = _current_electricity_product(account_data)
+        if not product:
+            return None
+
+        base_price = _current_product_gross_price(product, current_time)
+        vat_fraction = _current_product_vat_fraction(product, current_time)
+        grid_fee_data = account_data.get("variable_grid_fees") or {}
+        active_rate = get_active_grid_fee(grid_fee_data, current_time)
+        standard_rate = _standard_grid_fee_rate(grid_fee_data, current_time)
+        if (
+            base_price is None
+            or vat_fraction is None
+            or active_rate is None
+            or standard_rate is None
+        ):
+            return None
+
+        try:
+            base_price_decimal = Decimal(str(base_price))
+            active_net_rate_decimal = Decimal(str(active_rate["rate_eur_per_kwh"]))
+            standard_net_rate_decimal = Decimal(str(standard_rate))
+            vat_fraction_decimal = Decimal(str(vat_fraction))
+        except InvalidOperation, KeyError, TypeError, ValueError:
+            return None
+        adjustment_gross_decimal = (
+            active_net_rate_decimal - standard_net_rate_decimal
+        ) * (Decimal(1) + vat_fraction_decimal)
+        combined_price_decimal = base_price_decimal + adjustment_gross_decimal
+        active_net_rate = float(active_net_rate_decimal)
+        adjustment_gross = float(adjustment_gross_decimal)
+        price_attributes = {
+            "combined_price_eur_per_kwh": float(combined_price_decimal),
+            "base_price_gross_eur_per_kwh": base_price,
+            "standard_grid_fee_net_eur_per_kwh": standard_rate,
+            "active_grid_fee_net_eur_per_kwh": active_net_rate,
+            "grid_fee_adjustment_gross_eur_per_kwh": adjustment_gross,
+        }
+        return {
+            **price_attributes,
+            **{
+                f"{key}_display": f"{Decimal(str(value)):.8f}"
+                for key, value in price_attributes.items()
+            },
+            "vat_percent": vat_fraction * 100,
+            "rate_type": active_rate.get("rate_type"),
+            "interval_start": active_rate.get("start_time"),
+            "interval_end": active_rate.get("end_time"),
+            "module": grid_fee_data.get("module"),
+            "product_code": product.get("code"),
+            "price_date": current_time.date().isoformat(),
+            "price_combinations": _price_combinations(
+                product, grid_fee_data, current_time
+            ),
+            "formula": (
+                "gross tariff + (active net grid fee - standard net grid fee) "
+                "* (1 + VAT)"
+            ),
+            "calculation_basis": (
+                "Assumes the Octopus gross tariff price already includes the "
+                "standard net grid fee; the reported module is informational."
+            ),
+        }
+
+    @property
+    def native_value(self) -> float | None:
+        components = self._price_components()
+        return components.get("combined_price_eur_per_kwh") if components else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose the gross base price and net-to-gross grid adjustment."""
+        return self._price_components() or {
+            "calculation_available": False,
+            "reason": "Missing tariff VAT, active grid fee, or unique STANDARD baseline",
+        }
+
+    @property
+    def available(self) -> bool:
+        return (
+            self.coordinator.last_update_success
+            and self._price_components() is not None
+        )
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return account device information."""
+        return _account_device_info(self._account_number)
+
+    async def async_added_to_hass(self) -> None:
+        """Schedule updates at tariff and grid-fee boundaries."""
+        await super().async_added_to_hass()
+        self._schedule_boundary_update()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Cancel the scheduled boundary update."""
+        if self._cancel_boundary_update:
+            self._cancel_boundary_update()
+            self._cancel_boundary_update = None
+        await super().async_will_remove_from_hass()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._schedule_boundary_update()
+        self.async_write_ha_state()
+
+    @callback
+    def _handle_boundary_update(self, _now: Any) -> None:
+        self._cancel_boundary_update = None
+        self.async_write_ha_state()
+        self._schedule_boundary_update()
+
+    @callback
+    def _schedule_boundary_update(self) -> None:
+        if self._cancel_boundary_update:
+            self._cancel_boundary_update()
+            self._cancel_boundary_update = None
+        if not self.hass:
+            return
+
+        account_data = self._account_data()
+        current_time = local_now()
+        product = _current_electricity_product(account_data)
+        if not product:
+            return
+
+        boundaries = [
+            get_next_price_change(product, current_time),
+            get_next_grid_fee_change(
+                account_data.get("variable_grid_fees") or {}, current_time
+            ),
+        ]
+        valid_boundaries = [change for change in boundaries if change is not None]
+        if not valid_boundaries:
+            return
+        next_change = min(valid_boundaries)
+        self._cancel_boundary_update = async_track_point_in_time(
+            self.hass, self._handle_boundary_update, next_change
+        )
 
 
 class OctopusElectricityPriceSensor(CoordinatorEntity, SensorEntity):

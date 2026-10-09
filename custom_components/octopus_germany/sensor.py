@@ -43,6 +43,7 @@ from .entities.devices import (
     OctopusVehicleLastSessionSocSensor,
 )
 from .entities.electricity import (
+    OctopusCombinedElectricityPriceSensor,
     OctopusElectricityPriceSensor,
     OctopusSection14aModuleSensor,
     OctopusVariableGridFeeSensor,
@@ -311,6 +312,10 @@ async def async_setup_entry(
                             OctopusVariableGridFeeSensor(acc_num, coordinator),
                         )
                     )
+                    if products:
+                        entities.append(
+                            OctopusCombinedElectricityPriceSensor(acc_num, coordinator)
+                        )
 
             entities.extend(
                 _create_electricity_meter_register_sensors(

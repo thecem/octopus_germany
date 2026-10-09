@@ -41,6 +41,7 @@ from custom_components.octopus_germany.data_processing import (
     process_ledgers,
 )
 from custom_components.octopus_germany.entities.electricity import (
+    OctopusCombinedElectricityPriceSensor,
     OctopusElectricityPriceSensor,
     OctopusSection14aModuleSensor,
     OctopusVariableGridFeeSensor,
@@ -1572,6 +1573,36 @@ class TariffCapabilitiesTest(unittest.TestCase):
                     "grid_operator_name": "Grid Operator",
                     "rates": [
                         {
+                            "rate_type": "STANDARD",
+                            "start_time": "06:00:00",
+                            "end_time": "11:00:00",
+                            "valid_from": "2026-01-01T00:00:00+01:00",
+                            "valid_to": None,
+                            "grid_operator_code": "operator-1",
+                            "rate_cents_per_kwh": "5.480000",
+                            "rate_eur_per_kwh": 0.0548,
+                        },
+                        {
+                            "rate_type": "STANDARD",
+                            "start_time": "15:00:00",
+                            "end_time": "17:00:00",
+                            "valid_from": "2026-01-01T00:00:00+01:00",
+                            "valid_to": None,
+                            "grid_operator_code": "operator-1",
+                            "rate_cents_per_kwh": "5.480000",
+                            "rate_eur_per_kwh": 0.0548,
+                        },
+                        {
+                            "rate_type": "STANDARD",
+                            "start_time": "22:00:00",
+                            "end_time": "23:00:00",
+                            "valid_from": "2026-01-01T00:00:00+01:00",
+                            "valid_to": None,
+                            "grid_operator_code": "operator-1",
+                            "rate_cents_per_kwh": "5.480000",
+                            "rate_eur_per_kwh": 0.0548,
+                        },
+                        {
                             "rate_type": "PEAK",
                             "start_time": "17:00:00",
                             "end_time": "22:00:00",
@@ -1580,7 +1611,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
                             "grid_operator_code": "operator-1",
                             "rate_cents_per_kwh": "10.520000",
                             "rate_eur_per_kwh": 0.1052,
-                        }
+                        },
                     ],
                 }
             }
@@ -1593,9 +1624,221 @@ class TariffCapabilitiesTest(unittest.TestCase):
             return_value=datetime.fromisoformat("2026-09-20T18:00:00+02:00"),
         ):
             assert module_sensor.native_value == "MODULE_1"
-            assert module_sensor.extra_state_attributes["rate_count"] == 1
+            assert module_sensor.extra_state_attributes["rate_count"] == 4
             assert fee_sensor.native_value == 0.1052
             assert fee_sensor.extra_state_attributes["rate_type"] == "PEAK"
+            assert (
+                fee_sensor.extra_state_attributes["rates"]
+                == coordinator.data["account-1"]["variable_grid_fees"]["rates"]
+            )
+            module_3_ht = fee_sensor.extra_state_attributes["module_3_rates"]["HT"]
+            assert module_3_ht["periods"] == [
+                {
+                    "rate_eur_per_kwh_net": 0.1052,
+                    "rate_cents_per_kwh_net": "10.520000",
+                    "valid_from": "2026-01-01T00:00:00+01:00",
+                    "valid_to": None,
+                    "intervals": [{"start_time": "17:00:00", "end_time": "22:00:00"}],
+                }
+            ]
+            module_3_st = fee_sensor.extra_state_attributes["module_3_rates"]["ST"]
+            assert module_3_st["periods"] == [
+                {
+                    "rate_eur_per_kwh_net": 0.0548,
+                    "rate_cents_per_kwh_net": "5.480000",
+                    "valid_from": "2026-01-01T00:00:00+01:00",
+                    "valid_to": None,
+                    "intervals": [
+                        {"start_time": "06:00:00", "end_time": "11:00:00"},
+                        {"start_time": "15:00:00", "end_time": "17:00:00"},
+                        {"start_time": "22:00:00", "end_time": "23:00:00"},
+                    ],
+                }
+            ]
+
+    def test_combined_electricity_price_uses_module3_delta_and_vat(self) -> None:
+        coordinator = Mock(
+            last_update_success=True,
+            data={
+                "account-1": {
+                    "products": [
+                        {
+                            "code": "OCTOPUS_GO",
+                            "name": "Octopus Go",
+                            "type": "TimeOfUse",
+                            "isTimeOfUse": True,
+                            "validFrom": "2026-01-01T00:00:00+01:00",
+                            "validTo": "2027-01-01T00:00:00+01:00",
+                            "grossRate": "0",
+                            "timeslots": [
+                                {
+                                    "name": "GO",
+                                    "rate": "19.4327",
+                                    "activation_rules": [
+                                        {
+                                            "from_time": "00:00:00",
+                                            "to_time": "05:00:00",
+                                        }
+                                    ],
+                                },
+                                {
+                                    "name": "STANDARD",
+                                    "rate": "29.4406",
+                                    "activation_rules": [
+                                        {
+                                            "from_time": "05:00:00",
+                                            "to_time": "00:00:00",
+                                        }
+                                    ],
+                                },
+                            ],
+                            "prices": [
+                                {
+                                    "name": "GO",
+                                    "vat_percent": "19",
+                                    "activation_rules": [
+                                        {
+                                            "from_time": "00:00:00",
+                                            "to_time": "05:00:00",
+                                        }
+                                    ],
+                                },
+                                {
+                                    "name": "STANDARD",
+                                    "vat_percent": "19",
+                                    "activation_rules": [
+                                        {
+                                            "from_time": "05:00:00",
+                                            "to_time": "00:00:00",
+                                        }
+                                    ],
+                                },
+                            ],
+                        }
+                    ],
+                    "variable_grid_fees": {
+                        "module": "MODULE_1",
+                        "rates": [
+                            {
+                                "rate_type": "OFFPEAK",
+                                "start_time": "00:00:00",
+                                "end_time": "06:00:00",
+                                "valid_from": "2026-01-01T00:00:00+01:00",
+                                "valid_to": None,
+                                "rate_eur_per_kwh": 0.0164,
+                            },
+                            {
+                                "rate_type": "OFFPEAK",
+                                "start_time": "11:00:00",
+                                "end_time": "15:00:00",
+                                "valid_from": "2026-01-01T00:00:00+01:00",
+                                "valid_to": None,
+                                "rate_eur_per_kwh": 0.0164,
+                            },
+                            {
+                                "rate_type": "STANDARD",
+                                "start_time": "06:00:00",
+                                "end_time": "11:00:00",
+                                "valid_from": "2026-01-01T00:00:00+01:00",
+                                "valid_to": None,
+                                "rate_eur_per_kwh": 0.0548,
+                            },
+                            {
+                                "rate_type": "PEAK",
+                                "start_time": "17:00:00",
+                                "end_time": "22:00:00",
+                                "valid_from": "2026-01-01T00:00:00+01:00",
+                                "valid_to": None,
+                                "rate_eur_per_kwh": 0.1052,
+                            },
+                        ],
+                    },
+                }
+            },
+        )
+        sensor = OctopusCombinedElectricityPriceSensor("account-1", coordinator)
+
+        assert sensor.suggested_display_precision == 8
+        with patch(
+            "custom_components.octopus_germany.entities.electricity.local_now",
+            return_value=datetime.fromisoformat("2026-09-20T18:00:00+02:00"),
+        ):
+            assert round(sensor.native_value, 6) == 0.354382
+            attributes = sensor.extra_state_attributes
+            assert attributes["rate_type"] == "PEAK"
+            assert attributes["vat_percent"] == 19
+            assert attributes["combined_price_eur_per_kwh"] == 0.354382
+            assert attributes["combined_price_eur_per_kwh_display"] == "0.35438200"
+            assert attributes["base_price_gross_eur_per_kwh_display"] == "0.29440600"
+            assert (
+                attributes["standard_grid_fee_net_eur_per_kwh_display"] == "0.05480000"
+            )
+            assert attributes["active_grid_fee_net_eur_per_kwh_display"] == "0.10520000"
+            assert (
+                attributes["grid_fee_adjustment_gross_eur_per_kwh_display"]
+                == "0.05997600"
+            )
+            combinations = attributes["price_combinations"]
+            assert attributes["price_date"] == "2026-09-20"
+            assert [item["label"] for item in combinations] == [
+                "GO + NT",
+                "STANDARD + NT",
+                "STANDARD + ST",
+                "STANDARD + HT",
+            ]
+            assert combinations[0]["combined_price_gross_eur_per_kwh_display"] == (
+                "0.14863100"
+            )
+            assert combinations[0]["intervals"] == [
+                {
+                    "start": "2026-09-20T00:00:00+02:00",
+                    "end": "2026-09-20T05:00:00+02:00",
+                },
+            ]
+
+        with patch(
+            "custom_components.octopus_germany.entities.electricity.local_now",
+            return_value=datetime.fromisoformat("2026-09-20T12:00:00+02:00"),
+        ):
+            assert round(sensor.native_value, 6) == 0.24871
+            assert sensor.extra_state_attributes["rate_type"] == "OFFPEAK"
+
+    def test_combined_electricity_price_requires_reported_vat_and_standard_rate(
+        self,
+    ) -> None:
+        coordinator = Mock(
+            last_update_success=True,
+            data={
+                "account-1": {
+                    "products": [
+                        {
+                            "type": "Simple",
+                            "validFrom": "2026-01-01T00:00:00+01:00",
+                            "grossRate": "30",
+                        }
+                    ],
+                    "variable_grid_fees": {
+                        "rates": [
+                            {
+                                "rate_type": "PEAK",
+                                "start_time": "17:00:00",
+                                "end_time": "22:00:00",
+                                "valid_from": "2026-01-01T00:00:00+01:00",
+                                "rate_eur_per_kwh": 0.1052,
+                            }
+                        ]
+                    },
+                }
+            },
+        )
+        sensor = OctopusCombinedElectricityPriceSensor("account-1", coordinator)
+
+        with patch(
+            "custom_components.octopus_germany.entities.electricity.local_now",
+            return_value=datetime.fromisoformat("2026-09-20T18:00:00+02:00"),
+        ):
+            assert sensor.native_value is None
+            assert sensor.available is False
 
     def test_all_day_grid_fee_logs_debug_context_without_repeated_warnings(
         self,

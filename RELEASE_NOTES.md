@@ -1,5 +1,57 @@
 # Release Notes
 
+## Version 0.0.159 (2026-10-09)
+
+### Fixes
+
+- Classify each price combination from the active tariff slot, so GO and
+  STANDARD periods are labeled separately within the same product.
+
+## Version 0.0.158 (2026-10-09)
+
+### Features
+
+- Add today's grouped `price_combinations` schedule to the combined electricity
+  price sensor, pairing tariff and Module 3 rates with their active intervals.
+
+## Version 0.0.157 (2026-10-09)
+
+### Fixes
+
+- Add fixed-eight-decimal display attributes for combined electricity prices
+  while retaining numeric attributes for calculations and automations.
+
+## Version 0.0.156 (2026-10-09)
+
+### Fixes
+
+- Remove redundant `rates_by_type` attributes; retain raw `rates` and normalized
+  Module 3 NT/ST/HT periods.
+
+## Version 0.0.155 (2026-10-09)
+
+### Fixes
+
+- Deduplicate Module 3 rate and validity fields per tariff period, grouping its
+  individual time intervals underneath while keeping the complete source arrays.
+
+## Version 0.0.154 (2026-10-09)
+
+### Fixes
+
+- Show combined electricity prices at eight decimal places and use decimal
+  arithmetic for the net grid-fee/VAT adjustment. Add normalized Module 3 NT/ST/HT
+  rate attributes while retaining the complete source rate arrays.
+
+## Version 0.0.153 (2026-10-09)
+
+### Features
+
+- Add a combined gross electricity-price sensor that applies the active variable
+  grid-fee difference against the STANDARD baseline, using reported tariff VAT.
+- Expose grid-fee periods grouped by OFFPEAK, STANDARD, and PEAK while retaining
+  the original complete `rates` array.
+
 ## Version 0.0.152 (2026-10-09)
 
 ### Fixes
