@@ -15,7 +15,9 @@ This custom component integrates Octopus Germany services with Home Assistant, p
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K71LPRM2)
 
 **⚡ New to Octopus Energy Germany?**
-[![Octopus Energy Referral](https://img.shields.io/badge/🐙_Get_150€_Bonus-Join_Octopus_Energy-00D9FF?style=for-the-badge&logoColor=white)](https://octopusenergy.de/empfehlungen?referralCode=free-cat-744)
+[![Octopus Energy Referral](https://img.shields.io/badge/🐙_Get_150€_as_a_new_customer-Join_Octopus_Energy-00D9FF?style=for-the-badge&logoColor=white)](https://octopusenergy.de/empfehlungen?referralCode=free-cat-744)
+
+Sign up through my referral link and receive **150 €** as a bill credit. Eligibility conditions apply.
 
 ## Features
 
@@ -44,6 +46,15 @@ This custom component integrates Octopus Germany services with Home Assistant, p
 - **[octopus-energy-rates-card](https://github.com/lozzd/octopus-energy-rates-card) compatibility** for dynamic tariff visualization
 
 Electricity meter labels use API metadata requested from both account and per-meter queries: `hasSmartMeterGateway: true` identifies an iMSys (an mME connected to an SMGW), even when `meterType` is `MME`. Otherwise the reported `meterType` is used, or `Unknown` if absent. `shouldReceiveSmartMeterData` describes data availability expectations, not the physical meter type. Historical meters and their readings remain available.
+
+## API Support
+
+For API-related questions, consult the official Octopus Energy Germany documentation:
+
+- REST API: [developer.oeg-kraken.energy](https://developer.oeg-kraken.energy/)
+- GraphQL API (OEG Kraken backend): [developer.oeg-kraken.energy/graphql](https://developer.oeg-kraken.energy/graphql/)
+
+This integration primarily uses the OEG Kraken GraphQL API. Variable grid-fee queries still use the legacy OE GraphQL backend.
 
 ## Installation
 
@@ -211,7 +222,7 @@ Your support helps cover development time, testing infrastructure, and keeps the
 
 ### 🚀 Join the Community
 - **Contributing**: Pull requests are welcome! Whether it's bug fixes, new features, or documentation improvements
-- **New to Octopus Energy?**: Get 100€ bonus with my [referral link](https://octopusenergy.de/empfehlungen?referralCode=free-cat-744) when signing up
+- **New to Octopus Energy?**: Receive **150 €** as a bill credit when you sign up through [my referral link](https://octopusenergy.de/empfehlungen?referralCode=free-cat-744), subject to eligibility conditions.
 - **Found a bug or have an idea?**: Check the [discussions](https://github.com/thecem/octopus_germany/discussions) or [open an issue](https://github.com/thecem/octopus_germany/issues)
 
 Every contribution, whether code, feedback, or financial support, helps make this integration better for everyone!

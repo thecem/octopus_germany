@@ -14,6 +14,10 @@ Diese Custom Integration bindet Octopus Energy Germany in Home Assistant ein. Si
 **Support das Projekt**
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K71LPRM2)
 
+## Freund*innen werben
+
+Wenn du über [meinen Empfehlungslink](https://octopusenergy.de/empfehlungen?referralCode=free-cat-744) zu Octopus Energy wechselst, erhältst du **150 €** als Rechnungsgutschrift. Es gelten die Teilnahmebedingungen von Octopus Energy.
+
 ## Funktionsumfang
 
 - Kontodaten (Strom/Gas)

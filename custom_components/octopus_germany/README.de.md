@@ -7,6 +7,10 @@ Sprache / Language: [Deutsch](README.de.md) | [English](README.md)
 
 Diese Dokumentation beschreibt die Entitaeten und die Bedienung innerhalb der Integration.
 
+## Freund*innen werben
+
+Wenn du über [meinen Empfehlungslink](https://octopusenergy.de/empfehlungen?referralCode=free-cat-744) zu Octopus Energy wechselst, erhältst du **150 €** als Rechnungsgutschrift. Es gelten die Teilnahmebedingungen von Octopus Energy.
+
 ## Installation und Konfiguration
 
 Die Einrichtung erfolgt in Home Assistant ueber:
