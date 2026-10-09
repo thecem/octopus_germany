@@ -96,6 +96,7 @@ To keep this start page compact, detailed documentation is split across focused 
   - Starts/stops immediate boost charging (if available)
 - `octopus_germany.set_device_preferences`
   - Set target SoC (%) and target time for a specific device
+  - Applies to all seven days; success confirms Octopus API acceptance, not vehicle propagation
 - `octopus_germany.get_smart_meter_readings`
   - Fetch historical iMSys readings for one day
 - `octopus_germany.export_smart_meter_csv`

@@ -233,13 +233,13 @@ class DeviceApiMixin:
               mode: CHARGE,
               unit: PERCENTAGE,
               schedules: [
-                {{ dayOfWeek: MONDAY, time: "{formatted_time}", max: {target_percentage} }},
-                {{ dayOfWeek: TUESDAY, time: "{formatted_time}", max: {target_percentage} }},
-                {{ dayOfWeek: WEDNESDAY, time: "{formatted_time}", max: {target_percentage} }},
-                {{ dayOfWeek: THURSDAY, time: "{formatted_time}", max: {target_percentage} }},
-                {{ dayOfWeek: FRIDAY, time: "{formatted_time}", max: {target_percentage} }},
-                {{ dayOfWeek: SATURDAY, time: "{formatted_time}", max: {target_percentage} }},
-                {{ dayOfWeek: SUNDAY, time: "{formatted_time}", max: {target_percentage} }}
+                {{ dayOfWeek: MONDAY, time: "{formatted_time}", max: "{target_percentage}" }},
+                {{ dayOfWeek: TUESDAY, time: "{formatted_time}", max: "{target_percentage}" }},
+                {{ dayOfWeek: WEDNESDAY, time: "{formatted_time}", max: "{target_percentage}" }},
+                {{ dayOfWeek: THURSDAY, time: "{formatted_time}", max: "{target_percentage}" }},
+                {{ dayOfWeek: FRIDAY, time: "{formatted_time}", max: "{target_percentage}" }},
+                {{ dayOfWeek: SATURDAY, time: "{formatted_time}", max: "{target_percentage}" }},
+                {{ dayOfWeek: SUNDAY, time: "{formatted_time}", max: "{target_percentage}" }}
               ]
             }}
           ) {{
@@ -290,6 +290,11 @@ class DeviceApiMixin:
                             target_time,
                         )
 
+                return False
+
+            device = (response.get("data") or {}).get("setDevicePreferences")
+            if not device or not device.get("id"):
+                _LOGGER.error("API did not confirm the device preferences update")
                 return False
 
         except Exception:

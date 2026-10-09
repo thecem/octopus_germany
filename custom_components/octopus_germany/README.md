@@ -362,6 +362,10 @@ Per-device entity IDs use the stable Octopus device UUID. Display names remain h
   - `target_percentage` (required): Target state of charge (20-100% in 5% steps)
   - `target_time` (required): Target completion time (04:00-17:00)
 
+The target percentage and completion time apply to all seven days of the week.
+Success confirms acceptance by the Octopus API, not propagation to the vehicle.
+API errors or missing update confirmations cause the service call to fail.
+
 **Example:**
 ```yaml
 service: octopus_germany.set_device_preferences

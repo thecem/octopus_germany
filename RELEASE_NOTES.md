@@ -1,5 +1,14 @@
 # Release Notes
 
+## Version 0.0.148 (2026-10-09)
+
+### Fixes
+
+- Send SmartFlex charging schedule target percentages as strings, restoring
+  target SoC updates through `set_device_preferences`.
+- Report failed preference updates when the API does not return a device
+  confirmation, instead of silently treating an empty response as success.
+
 ## Version 0.0.147 (2026-10-08)
 
 ### Fixes
