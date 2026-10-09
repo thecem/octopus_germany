@@ -72,6 +72,10 @@ service: octopus_germany.refresh_intelligent_data
 
 Set target SoC and target time for a specific EV/charge point.
 
+Both settings apply to all seven days. Success confirms acceptance by the Octopus
+API, not propagation to the vehicle. API errors or missing update confirmations
+cause the service call to fail.
+
 Parameters:
 
 - `device_id` (required): Device UUID
