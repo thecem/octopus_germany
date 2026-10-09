@@ -71,9 +71,16 @@ service: octopus_germany.refresh_intelligent_data
 
 Setzt Ziel-SoC und Zielzeit fuer ein EV/Charge Point.
 
+Waehle das Fahrzeug oder den Ladepunkt anhand seines Namens aus der
+Home-Assistant-Liste aus. Das Account-Servicegeraet wird nicht angeboten;
+Home Assistant ordnet die Auswahl automatisch der Octopus-Geraete-ID zu.
+In YAML sind sowohl die Home-Assistant-Geraeteregister-ID als auch die
+Octopus-Geraete-UUID gueltig; HA-IDs werden automatisch aufgeloest.
+Entity-IDs sind kein gueltiger Ersatz.
+
 Parameter:
 
-- `device_id` (required): Geraete-UUID
+- `device_id` (required): Im UI per Name ausgewaehlt; in YAML HA-Geraeteregister-ID oder Octopus-Geraete-UUID
 - `target_percentage` (required): 20-100 in 5%-Schritten
 - `target_time` (required): `HH:MM` zwischen 04:00 und 17:00
 

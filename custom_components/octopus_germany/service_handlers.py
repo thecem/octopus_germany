@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import device_registry as dr
 
 from .api.smart_meter import SmartMeterFetchError
 from .const import DOMAIN
@@ -54,6 +55,29 @@ def _require_field(value: Any, msg: str) -> Any:
         return value
     _raise_validation_error(msg)
     raise ValueError(msg)
+
+
+def _resolve_octopus_device_id(hass: HomeAssistant, device_id: str) -> str:
+    """Resolve a Home Assistant device selector ID to the Octopus device ID."""
+    try:
+        device = dr.async_get(hass).devices.get(device_id)
+    except RuntimeError:
+        return device_id
+
+    if device is None:
+        return device_id
+
+    for domain, identifier in device.identifiers:
+        prefix = "device_"
+        if domain == DOMAIN and identifier.startswith(prefix):
+            return identifier.removeprefix(prefix)
+
+    _raise_validation_error(
+        "Selected Home Assistant device is not an Octopus SmartFlex device"
+    )
+    raise ValueError(
+        "Selected Home Assistant device is not an Octopus SmartFlex device"
+    )
 
 
 def _parse_iso_date(date_str: Any, field_name: str) -> date:
@@ -203,9 +227,12 @@ async def async_register_services(
 
     async def handle_set_device_preferences(call: ServiceCall) -> dict[str, bool]:
         """Handle the set_device_preferences service call."""
-        device_id = _require_field(
-            call.data.get(ATTR_DEVICE_ID),
-            "Device ID is required",
+        device_id = _resolve_octopus_device_id(
+            hass,
+            _require_field(
+                call.data.get(ATTR_DEVICE_ID),
+                "Device ID is required",
+            ),
         )
         target_percentage = call.data.get(ATTR_TARGET_PERCENTAGE)
         target_time = call.data.get(ATTR_TARGET_TIME)

@@ -358,11 +358,11 @@ Per-device entity IDs use the stable Octopus device UUID. Display names remain h
 - **Service ID**: `octopus_germany.set_device_preferences`
 - **Description**: Configure charging preferences for an electric vehicle or charge point
 - **Parameters**:
-  - `device_id` (required): The device ID (available in device attributes)
+  - `device_id` (required): The UI dropdown selects by vehicle/charge-point name. YAML accepts either the Home Assistant device registry ID or the Octopus device UUID; HA registry IDs are resolved automatically.
   - `target_percentage` (required): Target state of charge (20-100% in 5% steps)
   - `target_time` (required): Target completion time (04:00-17:00)
 
-The target percentage and completion time apply to all seven days of the week.
+The Home Assistant action form lists vehicles and charge points by their registered names, excluding the account service device. The dropdown supplies a Home Assistant device registry ID, which the service resolves to the Octopus ID. YAML calls may use either the Home Assistant registry ID or the Octopus device UUID; entity IDs are not accepted. The target percentage and completion time apply to all seven days of the week.
 Success confirms acceptance by the Octopus API, not propagation to the vehicle.
 API errors or missing update confirmations cause the service call to fail.
 

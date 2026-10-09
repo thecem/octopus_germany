@@ -5,7 +5,10 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.binary_sensor import (
+    BinarySensorDeviceClass,
+    BinarySensorEntity,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.dt import as_local, as_utc, parse_datetime, utcnow
@@ -630,6 +633,7 @@ class OctopusPluggedInBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._attr_name = f"Octopus {account_number} {device_name} Plugged"
         self._attr_unique_id = f"octopus_{account_number}_{device_id}_plugged"
         self._attr_icon = "mdi:power-plug"
+        self._attr_device_class = BinarySensorDeviceClass.PLUG
         self._attr_has_entity_name = False
 
     def _get_device_data(self) -> dict | None:

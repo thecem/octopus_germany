@@ -72,13 +72,18 @@ service: octopus_germany.refresh_intelligent_data
 
 Set target SoC and target time for a specific EV/charge point.
 
+Choose a vehicle or charge point by its name from the Home Assistant dropdown.
+The account service device is excluded, and Home Assistant resolves the
+selection to its Octopus device ID. YAML calls may use either the Home Assistant
+device registry ID or the Octopus device UUID; entity IDs are not accepted.
+
 Both settings apply to all seven days. Success confirms acceptance by the Octopus
 API, not propagation to the vehicle. API errors or missing update confirmations
 cause the service call to fail.
 
 Parameters:
 
-- `device_id` (required): Device UUID
+- `device_id` (required): The dropdown selects by name. YAML may use either the Home Assistant device registry ID or the Octopus device UUID.
 - `target_percentage` (required): 20-100 in 5% steps
 - `target_time` (required): `HH:MM` between 04:00 and 17:00
 

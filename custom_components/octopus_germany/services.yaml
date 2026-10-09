@@ -3,12 +3,17 @@ set_device_preferences:
   description: Set charging preferences for an electric vehicle device using the new API
   fields:
     device_id:
-      name: Device ID
-      description: The device ID of the electric vehicle (get from device list)
+      name: Vehicle or Charge Point
+      description: Choose by name from the dropdown. In YAML, use either the Home Assistant device registry ID or the Octopus device UUID; Home Assistant IDs are resolved automatically.
       required: true
-      example: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
       selector:
-        text:
+        device:
+          filter:
+            - integration: octopus_germany
+          entity:
+            - domain: binary_sensor
+              device_class: plug
+              integration: octopus_germany
     target_percentage:
       name: Target state of charge
       description: Target state of charge (20-100% in 5% steps)

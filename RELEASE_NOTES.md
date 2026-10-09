@@ -1,5 +1,34 @@
 # Release Notes
 
+## Version 0.0.152 (2026-10-09)
+
+### Fixes
+
+- Clarify that preference service YAML accepts either a Home Assistant device
+  registry ID or the Octopus device UUID.
+
+## Version 0.0.151 (2026-10-09)
+
+### Fixes
+
+- Clarify that the preference service dropdown selects a vehicle or charge
+  point by its Home Assistant name and resolves the Octopus ID automatically.
+
+## Version 0.0.150 (2026-10-09)
+
+### Fixes
+
+- Restrict the preference device dropdown to vehicle-specific plugged sensors,
+  excluding the account service device.
+
+## Version 0.0.149 (2026-10-09)
+
+### Features
+
+- Add a Home Assistant device dropdown for `set_device_preferences`, resolving
+  the selected vehicle or charge point to its Octopus device ID while keeping
+  UUID-based YAML calls compatible.
+
 ## Version 0.0.148 (2026-10-09)
 
 ### Fixes
