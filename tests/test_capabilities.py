@@ -1378,16 +1378,20 @@ class TariffCapabilitiesTest(unittest.TestCase):
         )
         api._get_graphql_client = Mock(return_value=client)
 
-        readings = asyncio.run(
-            api.fetch_electricity_measurements_range(
-                "property-1",
-                "malo-1",
-                "2026-09-18T22:00:00+00:00",
-                "2026-09-19T22:00:00+00:00",
-                "Europe/Berlin",
-                "15min",
+        with patch(
+            "custom_components.octopus_germany.api.meters.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as page_delay:
+            readings = asyncio.run(
+                api.fetch_electricity_measurements_range(
+                    "property-1",
+                    "malo-1",
+                    "2026-09-18T22:00:00+00:00",
+                    "2026-09-19T22:00:00+00:00",
+                    "Europe/Berlin",
+                    "15min",
+                )
             )
-        )
 
         assert len(readings) == 1
         assert readings[0]["value"] == "0E-18"
@@ -1397,6 +1401,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
         assert client.execute_async.await_args_list[1].kwargs["variables"]["after"] == (
             "cursor-1"
         )
+        page_delay.assert_awaited_once_with(2.0)
 
     def test_measurement_range_reports_rate_limit(self) -> None:
         api = object.__new__(OctopusGermany)
@@ -1417,19 +1422,77 @@ class TariffCapabilitiesTest(unittest.TestCase):
             )
         )
 
-        with self.assertRaisesRegex(SmartMeterFetchError, "rate limit"):
-            asyncio.run(
+        with patch(
+            "custom_components.octopus_germany.api.meters.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as retry_delay:
+            with self.assertRaisesRegex(SmartMeterFetchError, "rate limit") as err:
+                asyncio.run(
+                    api.fetch_electricity_measurements_range(
+                        "property-1",
+                        "malo-1",
+                        "2026-09-18T22:00:00+00:00",
+                        "2026-09-19T22:00:00+00:00",
+                        "Europe/Berlin",
+                        "15min",
+                    )
+                )
+        assert "KT-CT-1199" in str(err.exception)
+        assert "Too many requests." in str(err.exception)
+        assert api._15min_retry_until is not None
+        assert [call.args[0] for call in retry_delay.await_args_list] == [5, 15, 30]
+
+    def test_measurement_range_retries_rate_limit(self) -> None:
+        api = object.__new__(OctopusGermany)
+        api._15min_retry_until = None
+        api.ensure_token = AsyncMock(return_value=True)
+        client = Mock()
+        client.execute_async = AsyncMock(
+            side_effect=[
+                {
+                    "errors": [
+                        {
+                            "message": "Too many requests.",
+                            "extensions": {"errorCode": "KT-CT-1199"},
+                        }
+                    ]
+                },
+                {
+                    "data": {
+                        "property": {
+                            "measurements": {
+                                "edges": [],
+                                "pageInfo": {
+                                    "hasNextPage": False,
+                                    "endCursor": None,
+                                },
+                            }
+                        }
+                    }
+                },
+            ]
+        )
+        api._get_graphql_client = Mock(return_value=client)
+
+        with patch(
+            "custom_components.octopus_germany.api.meters.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as retry_delay:
+            readings = asyncio.run(
                 api.fetch_electricity_measurements_range(
                     "property-1",
                     "malo-1",
-                    "2026-09-18T22:00:00+00:00",
-                    "2026-09-19T22:00:00+00:00",
+                    "2026-09-01T00:00:00+00:00",
+                    "2026-10-01T00:00:00+00:00",
                     "Europe/Berlin",
                     "15min",
                 )
             )
 
-        assert api._15min_retry_until is not None
+        assert readings == []
+        assert client.execute_async.await_count == 2
+        retry_delay.assert_awaited_once_with(5)
+        assert api._15min_retry_until is None
 
     def test_measurement_range_uses_local_midnights_across_dst(self) -> None:
         assert _measurement_range_bounds(

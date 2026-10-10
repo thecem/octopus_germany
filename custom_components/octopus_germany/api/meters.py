@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from .queries import (
@@ -21,6 +22,9 @@ from .smart_meter import SMART_METER_ERROR_BACKOFF, SmartMeterFetchError
 _LOGGER = logging.getLogger(__name__)
 
 _MEASUREMENT_PAGE_SIZE = 100
+_MEASUREMENT_PAGE_DELAY = 2.0
+_RATE_LIMIT_RETRY_DELAYS = (5, 15, 30)
+_RATE_LIMIT_BACKOFF = timedelta(minutes=15)
 _READING_FREQUENCIES = {
     "15min": "RAW_INTERVAL",
     "hour": "HOUR_INTERVAL",
@@ -550,6 +554,7 @@ class MeterApiMixin:
         client = self._get_graphql_client()
         readings: list[dict[str, Any]] = []
         cursor = None
+        rate_limit_attempt = 0
 
         while True:
             variables = {
@@ -586,14 +591,43 @@ class MeterApiMixin:
 
             errors = response.get("errors") or []
             if errors:
-                self._15min_retry_until = now + SMART_METER_ERROR_BACKOFF
-                error_code = errors[0].get("extensions", {}).get("errorCode")
+                first_error = errors[0]
+                error_code = (first_error.get("extensions") or {}).get("errorCode")
+                error_message = first_error.get("message") or "Unknown GraphQL error"
+                _LOGGER.warning(
+                    "Smart-meter range GraphQL error (code=%s): %s",
+                    error_code or "unknown",
+                    error_message,
+                )
                 if error_code == "KT-CT-1199":
-                    msg = "Smart-meter measurement API rate limit reached"
+                    if rate_limit_attempt < len(_RATE_LIMIT_RETRY_DELAYS):
+                        delay = _RATE_LIMIT_RETRY_DELAYS[rate_limit_attempt]
+                        rate_limit_attempt += 1
+                        _LOGGER.warning(
+                            "Retrying smart-meter page after rate limit in %s seconds "
+                            "(attempt %s/%s)",
+                            delay,
+                            rate_limit_attempt,
+                            len(_RATE_LIMIT_RETRY_DELAYS),
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    self._15min_retry_until = datetime.now(UTC) + _RATE_LIMIT_BACKOFF
+                    msg = (
+                        "Smart-meter measurement API rate limit reached "
+                        f"({error_code}): {error_message}"
+                    )
                 else:
-                    msg = "Smart-meter measurement GraphQL request failed"
+                    self._15min_retry_until = (
+                        datetime.now(UTC) + SMART_METER_ERROR_BACKOFF
+                    )
+                    msg = (
+                        "Smart-meter measurement GraphQL request failed "
+                        f"(code={error_code or 'unknown'}): {error_message}"
+                    )
                 raise SmartMeterFetchError(msg)
 
+            rate_limit_attempt = 0
             property_data = (response.get("data") or {}).get("property") or {}
             measurements = property_data.get("measurements") or {}
             for edge in measurements.get("edges") or []:
@@ -627,6 +661,7 @@ class MeterApiMixin:
             if not next_cursor or next_cursor == cursor:
                 msg = "Smart-meter measurement pagination returned no new cursor"
                 raise SmartMeterFetchError(msg)
+            await asyncio.sleep(_MEASUREMENT_PAGE_DELAY)
             cursor = next_cursor
 
         if self._15min_retry_until is not None:

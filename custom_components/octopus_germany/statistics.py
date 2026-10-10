@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 from homeassistant.util.dt import as_utc
 
+from .api.smart_meter import SmartMeterFetchError
 from .const import DOMAIN
 
 if TYPE_CHECKING:
@@ -34,8 +36,7 @@ except ImportError:
 _LOGGER = logging.getLogger(__name__)
 
 
-_BACKFILL_START_DAY_OFFSET = 2
-_BACKFILL_END_DAY_OFFSET = 8
+_STATISTICS_LOOKBACK_DAYS = 7
 _HISTORICAL_LOOKBACK_DAYS = 7
 
 
@@ -44,22 +45,13 @@ def _determine_dates_to_import(
     imported_stats_dates: dict[str, set[str]],
 ) -> list[str]:
     """Determine daily date strings that should be imported for one account."""
-    yesterday = (datetime.now(UTC).date() - timedelta(days=1)).isoformat()
+    today = datetime.now(UTC).date()
     imported_dates = imported_stats_dates.setdefault(account_num, set())
-
-    dates_to_import: list[str] = []
-    if yesterday not in imported_dates:
-        dates_to_import.append(yesterday)
-
-    # On first run, backfill a small history window.
-    if not imported_dates:
-        for days_back in range(_BACKFILL_START_DAY_OFFSET, _BACKFILL_END_DAY_OFFSET):
-            backfill_date = (
-                datetime.now(UTC).date() - timedelta(days=days_back)
-            ).isoformat()
-            dates_to_import.append(backfill_date)
-
-    return dates_to_import
+    return [
+        (today - timedelta(days=days_back)).isoformat()
+        for days_back in range(1, _STATISTICS_LOOKBACK_DAYS + 1)
+        if (today - timedelta(days=days_back)).isoformat() not in imported_dates
+    ]
 
 
 async def _get_last_running_sum(
@@ -156,39 +148,100 @@ async def async_import_consumption_statistics(
         if not dates_to_import:
             continue
 
-        running_sum = await _get_last_running_sum(hass, statistic_id, dates_to_import)
-
-        all_statistics = []
-
-        for date_str in sorted(dates_to_import):
-            if date_str in imported_stats_dates[account_num]:
-                continue
-
-            try:
-                readings = await api.fetch_electricity_15min_readings(
-                    account_num, property_id, date_str
-                )
-            except (RuntimeError, ValueError, TypeError) as err:
-                _LOGGER.warning(
-                    "Failed to fetch 15-min readings for %s: %s", date_str, err
-                )
-                continue
-
-            if not readings:
-                continue
-
-            hourly_buckets = _build_hourly_buckets(readings)
-            entries, running_sum = _build_statistic_entries(hourly_buckets, running_sum)
-            all_statistics.extend(entries)
-
-            imported_stats_dates[account_num].add(date_str)
-            _LOGGER.debug(
-                "Prepared %d hourly statistics for %s on %s (running sum: %.3f)",
-                len(hourly_buckets),
-                account_num,
-                date_str,
-                running_sum,
+        timezone = hass.config.time_zone
+        local_timezone = ZoneInfo(timezone)
+        first_date = date.fromisoformat(min(dates_to_import))
+        last_date = date.fromisoformat(max(dates_to_import))
+        start_at = (
+            datetime.combine(first_date, time.min, tzinfo=local_timezone)
+            .astimezone(UTC)
+            .isoformat()
+        )
+        end_at = (
+            datetime.combine(
+                last_date + timedelta(days=1), time.min, tzinfo=local_timezone
             )
+            .astimezone(UTC)
+            .isoformat()
+        )
+        market_supply_point_id = account_data.get("malo_number")
+        if not market_supply_point_id:
+            _LOGGER.warning(
+                "Skipping smart-meter statistics for %s: no market supply point ID",
+                account_num,
+            )
+            continue
+
+        try:
+            readings = await api.fetch_electricity_measurements_range(
+                property_id,
+                market_supply_point_id,
+                start_at,
+                end_at,
+                timezone,
+                "15min",
+            )
+        except SmartMeterFetchError as err:
+            _LOGGER.warning(
+                "Failed to fetch 15-min statistics for %s across %s to %s: %s",
+                account_num,
+                first_date,
+                last_date,
+                err,
+            )
+            continue
+        except (RuntimeError, ValueError, TypeError) as err:
+            _LOGGER.warning(
+                "Failed to fetch 15-min statistics for %s across %s to %s: %s",
+                account_num,
+                first_date,
+                last_date,
+                err,
+            )
+            continue
+
+        readings_by_date: dict[str, list[dict[str, Any]]] = {}
+        for reading in readings:
+            start_time = reading.get("start_time")
+            if not start_time:
+                continue
+            try:
+                local_date = (
+                    datetime.fromisoformat(start_time)
+                    .astimezone(local_timezone)
+                    .date()
+                    .isoformat()
+                )
+            except TypeError, ValueError:
+                continue
+            readings_by_date.setdefault(local_date, []).append(reading)
+
+        running_sum = await _get_last_running_sum(hass, statistic_id, dates_to_import)
+        all_statistics = []
+        requested_dates = set(dates_to_import)
+        current_date = first_date
+        while current_date <= last_date:
+            date_str = current_date.isoformat()
+            day_readings = readings_by_date.get(date_str, [])
+            if day_readings:
+                hourly_buckets = _build_hourly_buckets(day_readings)
+                if date_str in imported_stats_dates[account_num]:
+                    running_sum += sum(hourly_buckets.values())
+                elif date_str in requested_dates:
+                    entries, running_sum = _build_statistic_entries(
+                        hourly_buckets, running_sum
+                    )
+                    all_statistics.extend(entries)
+                    imported_stats_dates[account_num].add(date_str)
+                    _LOGGER.debug(
+                        "Prepared %d hourly statistics for %s on %s "
+                        "(running sum: %.3f)",
+                        len(hourly_buckets),
+                        account_num,
+                        date_str,
+                        running_sum,
+                    )
+            current_date += timedelta(days=1)
 
         if all_statistics:
             meter_info = account_data.get("meter", {})

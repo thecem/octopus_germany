@@ -1,5 +1,26 @@
 # Release Notes
 
+## Version 0.0.162 (2026-10-10)
+
+### Fixes
+
+- Retry transient smart-meter API rate limits with bounded backoff and apply a
+  shorter cooldown if the export still cannot proceed.
+
+## Version 0.0.161 (2026-10-10)
+
+### Fixes
+
+- Throttle paginated smart-meter range requests to reduce Octopus API rate-limit
+  failures and include the GraphQL error code/message in export errors.
+
+## Version 0.0.160 (2026-10-10)
+
+### Fixes
+
+- Space paginated smart-meter range requests and expose the GraphQL error code,
+  message, period, and resolution when a CSV export fails.
+
 ## Version 0.0.159 (2026-10-09)
 
 ### Fixes

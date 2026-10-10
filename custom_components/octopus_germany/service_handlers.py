@@ -494,9 +494,11 @@ async def async_register_services(
                         )
                 except SmartMeterFetchError as err:
                     msg = (
-                        "Smart meter data is temporarily unavailable. "
-                        "Please retry the export later."
+                        "Smart meter data is temporarily unavailable for "
+                        f"{range_start.isoformat()} to {range_end.isoformat()} "
+                        f"at {resolution} resolution: {err}"
                     )
+                    _LOGGER.exception("%s", msg)
                     raise HomeAssistantError(msg) from err
                 except (RuntimeError, ValueError, TypeError) as err:
                     _LOGGER.warning(
