@@ -1,0 +1,30 @@
+export_monthly_cost_reports_dec_2024_to_aug_2026:
+  alias: Export Octopus monthly cost reports (Dec 2024-Aug 2026)
+  description: Runs one cost report per month, sequentially, with a 10-second pause between reports. Replace the account and verify the contract baseline and effective dates before running.
+  mode: single
+  variables:
+    octopus_account_number: "A-REPLACE-ME"
+    contract_start_network_charge_ct_kwh: 7.65
+    # Set these dates for the metering point, or leave empty when not applicable.
+    module3_start_date: ""
+    module1_start_date: ""
+  sequence:
+    - repeat:
+        count: 21
+        sequence:
+          - action: octopus_germany.export_cost_report
+            data:
+              account_number: "{{ octopus_account_number }}"
+              period: month
+              year: "{{ 2024 + ((10 + repeat.index) // 12) }}"
+              month: "{{ ((10 + repeat.index) % 12) + 1 }}"
+              contract_start_network_charge_ct_kwh: "{{ contract_start_network_charge_ct_kwh }}"
+              module3_start_date: "{{ module3_start_date }}"
+              module1_start_date: "{{ module1_start_date }}"
+            response_variable: monthly_cost_report_result
+          - if:
+              - condition: template
+                value_template: "{{ not repeat.last }}"
+            then:
+              - delay:
+                  seconds: 10

@@ -168,6 +168,8 @@ Der Service prueft auch `/config/octopus_germany/grid_fee_schedules.json`. Fehlt
 
 Service-Antwort und Event `octopus_germany_cost_report_result` enthalten Download-Link, Tageszahlen und Warnungen. Der Download-Link laeuft nach 30 Tagen ab. Bei mindestens einem unvollstaendigen Tag bleibt der Monatsgesamtpreis leer.
 
+Fuer einen einmaligen, monatlichen Ruecklauf von Dezember 2024 bis August 2026 mit 10 Sekunden Pause siehe das [Script-Beispiel](examples/export_monthly_cost_reports.yaml). Vor dem Start Konto, Vertragsbaseline und Wirksamkeitsdaten anpassen und pruefen.
+
 ### `octopus_germany.submit_meter_readings`
 
 Schreibt Strom- oder Gas-Zaehlerstaende in die OE-API.

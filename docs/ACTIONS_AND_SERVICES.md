@@ -156,6 +156,8 @@ The service also checks `/config/octopus_germany/grid_fee_schedules.json`. If th
 
 The response and `octopus_germany_cost_report_result` event include the download URL, day counts, and warnings. A persistent download link expires after 30 days; an incomplete day leaves the monthly total blank.
 
+For a one-time sequential export of December 2024 through August 2026 with a 10-second pause between months, see [the script example](examples/export_monthly_cost_reports.yaml). Replace the account and verify the contract baseline and effective dates before running it.
+
 ### `octopus_germany.submit_meter_readings`
 
 Submits electricity or gas register readings to the OE API. Results are returned by the service and fired as `octopus_germany_meter_readings_submission_result`.
