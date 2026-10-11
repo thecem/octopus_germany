@@ -1,5 +1,12 @@
 # Release Notes
 
+## Version 0.0.183 (2026-10-11)
+
+### Fixes
+
+- Declare the Home Assistant HTTP integration as an after-dependency for the
+  authenticated export download endpoint.
+
 ## Version 0.0.182 (2026-10-11)
 
 ### Documentation
