@@ -84,6 +84,8 @@ Smart-meter CSV exports use paginated monthly ranges in the configured Home Assi
 
 Cost reports use agreement prices and the network operator's time-valid API rates. The report is an estimate, not a supplier invoice or a legal decision. See [Electricity Cost Report](../../docs/COST_REPORT.md) for its formulas, inputs, CSV rows, and regulatory context.
 
+When API rates are missing, an optional [operator-specific hourly schedule file](../../docs/examples/grid_fee_schedules.example.json) can supply separate values for each hour and validity period.
+
 Generated CSV files are stored under `/config/octopus_germany/exports`. Each export creates a persistent Home Assistant notification with a file-scoped browser-download link that expires after 30 days.
 
 ## Documentation Structure

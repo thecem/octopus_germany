@@ -130,13 +130,13 @@ Parameters:
 
 Exports a daily/monthly electricity-cost estimate for a month or calendar year. It uses agreement-specific price tiers and API grid fees for the metering point's network operator. Detailed calculations, parameter rationale, CSV structure, incomplete-data behavior, and legal context are in [Electricity Cost Report](COST_REPORT.md).
 
+
 - `account_number` (required); `property_id` (optional)
 - `period` and `year` (required); `month` required for monthly reports
 - `contract_start_network_charge_ct_kwh` (required; default `7.65` is an unverified reference)
 - `module3_start_date`, `module3_rates_json` (optional)
-- `module1_start_date` (optional); `module1_annual_credit_net_eur` (required, default zero)
+- `module1_start_date` (optional); `module1_annual_credit_net_eur` (optional; blank uses the matching file's yearly value, otherwise zero)
 - `vat_percent` (fallback, default 19); `filename` (optional)
-
 Example `module3_rates_json` for a historical schedule:
 
 ```json
@@ -151,6 +151,8 @@ Example `module3_rates_json` for a historical schedule:
 ```
 
 This is one network operator's 2025 schedule, valid only from 1 April through 31 December 2025, and the prefilled values are accepted only for their matching operator. Replace the rates and validity dates with the schedule for your metering point. Set `module3_start_date` to the effective date you declared or selected. `valid_to` is exclusive.
+
+The service also checks `/config/octopus_germany/grid_fee_schedules.json`. If the file is missing or has no entry for the detected operator code and report year, the response warns that it can be created from the [schedule-file example](examples/grid_fee_schedules.example.json). Each validity period stores all 24 hours independently; the service never merges adjacent hours. API rates take precedence, then explicit JSON entries fill gaps, followed by file rates. The file's Module 1 amount is used only when `module1_annual_credit_net_eur` is left blank. The response includes the file path and match status.
 
 The response and `octopus_germany_cost_report_result` event include the download URL, day counts, and warnings. A persistent download link expires after 30 days; an incomplete day leaves the monthly total blank.
 

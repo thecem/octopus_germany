@@ -1,5 +1,14 @@
 # Release Notes
 
+## Version 0.0.186 (2026-10-11)
+
+### Features
+
+- Load operator- and year-specific hourly grid-fee schedules from an optional
+  JSON file, retain all 24 separate hourly entries and multiple validity
+  periods, warn on missing or unmatched files, and use a file-based Module 1
+  credit when no explicit annual amount is supplied.
+
 ## Version 0.0.185 (2026-10-11)
 
 ### Features

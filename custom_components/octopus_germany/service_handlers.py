@@ -32,6 +32,7 @@ from .file_exports import (
     async_register_export_download_view,
     export_file_path,
 )
+from .grid_fee_schedule import load_grid_fee_schedule
 from .services import async_request_intelligent_refresh
 from .tariff import (
     normalize_variable_grid_fees,
@@ -957,13 +958,11 @@ async def async_register_services(
         module1_start = _optional_service_date(
             call.data.get(ATTR_MODULE1_START_DATE), ATTR_MODULE1_START_DATE
         )
-        module1_annual = _decimal_service_value(
-            call.data.get(ATTR_MODULE1_ANNUAL_CREDIT, 0), ATTR_MODULE1_ANNUAL_CREDIT
-        )
+        module1_annual_input = call.data.get(ATTR_MODULE1_ANNUAL_CREDIT)
         vat_percent = _decimal_service_value(
             call.data.get(ATTR_VAT_PERCENT, 19), ATTR_VAT_PERCENT
         )
-        if baseline < 0 or module1_annual < 0 or not 0 <= vat_percent <= 100:
+        if baseline < 0 or not 0 <= vat_percent <= 100:
             _raise_validation_error(
                 "Network baseline and Module 1 must be non-negative; VAT must be 0-100"
             )
@@ -1016,6 +1015,77 @@ async def async_register_services(
                     "not the operator for those example rates. Enter this operator's rates in "
                     "module3_rates_json."
                 )
+        schedule_path = Path(
+            hass.config.path("octopus_germany/grid_fee_schedules.json")
+        )
+        user_schedule = None
+        schedule_error = False
+        schedule_file_status = "missing"
+        if schedule_path.is_file():
+            try:
+                user_schedule = load_grid_fee_schedule(
+                    schedule_path,
+                    grid_operator_code,
+                    year,
+                    timezone,
+                )
+            except (OSError, json.JSONDecodeError, ValueError) as err:
+                schedule_error = True
+                schedule_file_status = "invalid"
+                preset_warnings.append(
+                    "The user grid-fee schedule file could not be used: "
+                    f"{err}. Check /config/octopus_germany/grid_fee_schedules.json."
+                )
+            if user_schedule is None and not schedule_error:
+                schedule_file_status = "unmatched"
+                preset_warnings.append(
+                    "No user grid-fee schedule matches the detected network-operator "
+                    f"code and report year ({grid_operator_code or 'unknown'}, {year}). "
+                    "Add that operator and year to "
+                    "/config/octopus_germany/grid_fee_schedules.json if needed."
+                )
+            else:
+                if user_schedule is not None:
+                    schedule_file_status = "matched"
+                    if eam_2025_prefill:
+                        manual_module3_rates = list(user_schedule["rates"])
+                    else:
+                        manual_module3_rates.extend(user_schedule["rates"])
+                if (
+                    user_schedule is not None
+                    and user_schedule.get("status") == "provisional"
+                ):
+                    preset_warnings.append(
+                        f"The {year} user grid-fee schedule is marked provisional; "
+                        "verify its final published rates before relying on the report."
+                    )
+        else:
+            preset_warnings.append(
+                "No user grid-fee schedule file was found at "
+                "/config/octopus_germany/grid_fee_schedules.json. If you need "
+                "operator-specific hourly or historical rates, create it from "
+                "docs/examples/grid_fee_schedules.example.json."
+            )
+
+        if module1_annual_input in (None, ""):
+            schedule_module1_credit = (
+                user_schedule.get("module1_credit_net_eur")
+                if user_schedule is not None
+                else None
+            )
+            module1_annual = schedule_module1_credit or Decimal(0)
+            if module1_start is not None and schedule_module1_credit is None:
+                preset_warnings.append(
+                    "No Module 1 annual credit was entered or found in the matching "
+                    "schedule file; zero is used. Verify the credit or enter it in "
+                    "module1_annual_credit_net_eur."
+                )
+        else:
+            module1_annual = _decimal_service_value(
+                module1_annual_input, ATTR_MODULE1_ANNUAL_CREDIT
+            )
+        if module1_annual < 0:
+            _raise_validation_error("Module 1 must be non-negative")
         readings_by_date: dict[str, list[dict[str, Any]]] = {}
         grid_fees_by_month: dict[tuple[int, int], dict[str, Any] | None] = {}
         range_start = start_date
@@ -1058,6 +1128,22 @@ async def async_register_services(
             readings_by_date.update(_group_readings_by_local_date(readings, timezone))
             range_start = range_end + timedelta(days=1)
 
+        if (
+            user_schedule is not None
+            and module3_start is None
+            and not any(
+                str(fee_data.get("module") or "").upper() == "MODULE_3"
+                for fee_data in grid_fees_by_month.values()
+                if fee_data
+            )
+        ):
+            preset_warnings.append(
+                "The matching file schedule was found, but Module 3 has no selected "
+                "effective date and the API does not report MODULE_3. Set "
+                "module3_start_date after confirming the declared effective date; "
+                "the file's hourly rates were not used."
+            )
+
         if not readings_by_date:
             _raise_validation_error(
                 "No smart meter readings found for the selected period"
@@ -1089,6 +1175,30 @@ async def async_register_services(
             module1_annual_net_eur=module1_annual,
             vat_percent=vat_percent,
         )
+        if user_schedule is not None:
+            basis_rows.append(
+                {
+                    "record_type": "BASIS",
+                    "date": "BASIS",
+                    "basis_key": "user_grid_fee_schedule",
+                    "basis_value": json.dumps(
+                        {
+                            "file": str(schedule_path),
+                            "grid_operator_code": user_schedule["grid_operator_code"],
+                            "year": user_schedule["year"],
+                            "status": user_schedule.get("status"),
+                            "source_note": user_schedule.get("source_note"),
+                            "module1_credit_net_eur": user_schedule.get(
+                                "module1_credit_net_eur"
+                            ),
+                            "schedules": user_schedule.get("schedules"),
+                        },
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                        default=str,
+                    ),
+                }
+            )
         module1_fallback_days = sum(
             "API STANDARD grid fee fallback" in str(row.get("module3_rate_basis") or "")
             for row in report_rows
@@ -1202,6 +1312,8 @@ async def async_register_services(
             "output_file": str(output_path),
             "download_url": download_url,
             "warnings": warnings,
+            "grid_fee_schedule_file": str(schedule_path),
+            "grid_fee_schedule_file_status": schedule_file_status,
         }
         hass.bus.async_fire(f"{DOMAIN}_cost_report_result", result)
         return result

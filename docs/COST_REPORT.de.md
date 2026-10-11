@@ -38,6 +38,14 @@ Ein passender API-Satz hat Vorrang; manuelle Werte fuellen fehlende Intervalle. 
 
 Das Serviceformular enthaelt als Komfortfunktion den 2025-Zeitplan eines VNB als Vorbelegung. Er wird nur angewendet, wenn der erkannte Netzbetreiber-Code zu dieser Vorbelegung passt. Gueltig ist das Beispiel vom 1. April bis 31. Dezember 2025; fuer andere Netzbetreiber oder Zeitraeume die tatsaechlichen Saetze eintragen. Nicht fuer Februar 2026 wiederverwenden.
 
+### Datei mit eigenen Zeitplaenen
+
+Der Service kann auch `/config/octopus_germany/grid_fee_schedules.json` lesen und waehlt einen Eintrag anhand des vom Konto erkannten Netzbetreiber-Codes und des Abfragejahrs aus. Eine Startdatei mit Beispieldaten liegt unter [`grid_fee_schedules.example.json`](examples/grid_fee_schedules.example.json). Diese Datei an den Config-Pfad kopieren, den Code-Platzhalter ersetzen und alle Betraege und Gueltigkeitsdaten mit den aktuellen Unterlagen fuer den Zaehlerpunkt abgleichen.
+
+Jahreseintraege enthalten ein `schedules`-Array fuer einen oder mehrere, nicht ueberlappende Gueltigkeitszeitraeume. Jeder Zeitraum hat `valid_from`, ein exklusives `valid_to`, Netto-`rates_net_ct_per_kwh` und genau 24 `hourly_rate_types` fuer die Stunden 0 bis 23. Benachbarte Stunden bleiben getrennt. Akzeptierte Bezeichnungen sind `NT`/`ST`/`HT` und `OFFPEAK`/`STANDARD`/`PEAK`; `null` bedeutet, dass fuer diese Stunde kein Dateisatz vorliegt. Vorrang haben API-Saetze, dann explizite Service-JSON-Werte; passende Dateisaetze fuellen verbleibende Luecken.
+
+Der optionale Jahreswert `module1_credit_net_eur` wird nur verwendet, wenn `module1_annual_credit_net_eur` im Serviceaufruf leer ist. Ein expliziter Servicewert, auch null, hat Vorrang. `basis_rate_net_ct_per_kwh` ist ein Informationswert und **nicht** die Vertragsbaseline der Arbeitspreisanpassung. Passender Zeitplan und Stundenwerte werden in einer `BASIS`-CSV-Zeile dokumentiert. Fehlende, ungueltige oder nicht passende Dateien erzeugen eine Warnung, statt unbemerkt ignoriert zu werden.
+
 ### Grundpreis
 
 Der Bericht verwendet, wenn vorhanden, den gueltigkeitsdatierten Brutto-Monatsgrundpreis des Agreements. Ist nur der Nettobetrag vorhanden, wird der MwSt.-Ersatzwert angewendet. Der Monatsbetrag wird mit `Monatsbetrag * 12 / 365` in einen Tagessatz umgerechnet und fuer jeden tatsaechlichen Tag des Berichtszeitraums angesetzt. So entspricht die Berechnung einer tagweisen Abrechnung, statt jeden Kalendermonat mit demselben Grundpreis anzusetzen.
@@ -57,7 +65,7 @@ Ist `module1_start_date` gesetzt, wird `module1_annual_credit_net_eur` durch die
 | `module3_start_date` | Optionales, vom Kunden angegebenes Wirksamkeitsdatum von Modul 3; bestimmt den Einsatz zeitvariabler Saetze. |
 | `module3_rates_json` | Optionale manuelle Netto-Zeitfenster fuer Zeitraeume, in denen passende API-Saetze fehlen. |
 | `module1_start_date` | Optionales Wirksamkeitsdatum fuer die zeitanteilige Modul-1-Gutschrift. |
-| `module1_annual_credit_net_eur` | Jaehrliche Nettogutschrift fuer das ausgewaehlte Abfragejahr; Vorgabe ist null. |
+| `module1_annual_credit_net_eur` | Optionale Nettogutschrift fuer das ausgewaehlte Abfragejahr; ein expliziter Wert (auch null) hat Vorrang, sonst gilt der passende Dateiwert oder null. |
 | `vat_percent` | MwSt.-Ersatzwert, wenn eine Agreement-Preisstufe keinen Satz enthaelt; Vorgabe 19 %. |
 | `filename` | Optionaler Ausgabedateiname. |
 

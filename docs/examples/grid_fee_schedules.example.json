@@ -1,0 +1,72 @@
+{
+  "format_version": 1,
+  "description": "Example only. Replace the operator code and verify every value against the network operator's documents.",
+  "grid_operators": [
+    {
+      "grid_operator_code": "REPLACE_WITH_GRID_OPERATOR_CODE",
+      "grid_operator_name": "Replace with the name shown for your metering point",
+      "years": [
+        {
+          "year": 2024,
+          "status": "historical-example",
+          "source_note": "User-provided reference values; verify before use.",
+          "module1_credit_net_eur": 124.60,
+          "schedules": [
+            {
+              "valid_from": "2024-01-01",
+              "valid_to": "2025-01-01",
+              "basis_rate_net_ct_per_kwh": 7.65,
+              "rates_net_ct_per_kwh": {},
+              "hourly_rate_types": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]
+            }
+          ]
+        },
+        {
+          "year": 2025,
+          "status": "example",
+          "source_note": "User-provided reference values; verify before use.",
+          "module1_credit_net_eur": 117.03,
+          "schedules": [
+            {
+              "valid_from": "2025-04-01",
+              "valid_to": "2026-01-01",
+              "basis_rate_net_ct_per_kwh": 6.64,
+              "rates_net_ct_per_kwh": {"NT": 1.99, "ST": 6.64, "HT": 12.75},
+              "hourly_rate_types": ["NT", "NT", "NT", "NT", "NT", "NT", "ST", "ST", "ST", "ST", "ST", "NT", "NT", "NT", "NT", "ST", "ST", "HT", "HT", "HT", "HT", "HT", "ST", "NT"]
+            }
+          ]
+        },
+        {
+          "year": 2026,
+          "status": "example",
+          "source_note": "User-provided reference values; verify before use.",
+          "module1_credit_net_eur": 108.33,
+          "schedules": [
+            {
+              "valid_from": "2026-01-01",
+              "valid_to": "2027-01-01",
+              "basis_rate_net_ct_per_kwh": 5.48,
+              "rates_net_ct_per_kwh": {"NT": 1.64, "ST": 5.48, "HT": 10.52},
+              "hourly_rate_types": ["NT", "NT", "NT", "NT", "NT", "NT", "ST", "ST", "ST", "ST", "ST", "NT", "NT", "NT", "NT", "ST", "ST", "HT", "HT", "HT", "HT", "HT", "ST", "NT"]
+            }
+          ]
+        },
+        {
+          "year": 2027,
+          "status": "provisional",
+          "source_note": "User-provided provisional reference values; verify the final published schedule before use.",
+          "module1_credit_net_eur": 108.10,
+          "schedules": [
+            {
+              "valid_from": "2027-01-01",
+              "valid_to": "2028-01-01",
+              "basis_rate_net_ct_per_kwh": 5.45,
+              "rates_net_ct_per_kwh": {"NT": 1.63, "ST": 5.45, "HT": 10.46},
+              "hourly_rate_types": ["NT", "NT", "NT", "NT", "NT", "NT", "ST", "ST", "ST", "ST", "ST", "NT", "NT", "NT", "NT", "ST", "ST", "HT", "HT", "HT", "HT", "HT", "ST", "NT"]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

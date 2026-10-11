@@ -146,7 +146,7 @@ Erstellt eine taegliche und monatliche Kostenschaetzung als CSV. Der Bericht nut
 - `period` und `year` (erforderlich); `month` bei Monatsberichten erforderlich
 - `contract_start_network_charge_ct_kwh` (erforderlich; Vorgabe `7.65` ist ein unbestaetigter Referenzwert)
 - `module3_start_date`, `module3_rates_json` (optional)
-- `module1_start_date` (optional); `module1_annual_credit_net_eur` (erforderlich, Vorgabe null)
+- `module1_start_date` (optional); `module1_annual_credit_net_eur` (optional; leer nutzt den Jahreswert aus der passenden Datei, sonst null)
 - `vat_percent` (MwSt.-Ersatzwert, Vorgabe 19); `filename` (optional)
 
 Beispiel fuer `module3_rates_json` mit historischen Zeitfenstern:
@@ -163,6 +163,8 @@ Beispiel fuer `module3_rates_json` mit historischen Zeitfenstern:
 ```
 
 Dies ist der 2025-Zeitplan eines Netzbetreibers und gilt nur vom 1. April bis 31. Dezember 2025. Die vorausgefuellten Werte werden nur fuer den passenden Netzbetreiber-Code verwendet. Fuer den eigenen Zaehlerpunkt die Saetze und Gueltigkeitsdaten aus dem passenden Preisblatt einsetzen. `module3_start_date` auf das erklaerte/gewaehlte Wirksamkeitsdatum setzen; `valid_to` ist exklusiv.
+
+Der Service prueft auch `/config/octopus_germany/grid_fee_schedules.json`. Fehlt die Datei oder ein Eintrag fuer Netzbetreiber-Code und Abfragejahr, weist die Service-Antwort auf das [Dateibeispiel](examples/grid_fee_schedules.example.json) hin. Jeder Gueltigkeitszeitraum enthaelt alle 24 Stunden einzeln; benachbarte Stunden werden nicht zusammengefasst. API-Saetze haben Vorrang, danach fuellen explizite JSON-Eintraege API-Luecken und zuletzt Dateisaetze. Der Modul-1-Jahresbetrag aus der Datei wird nur verwendet, wenn `module1_annual_credit_net_eur` leer bleibt. Pfad und Trefferstatus stehen in der Antwort.
 
 Service-Antwort und Event `octopus_germany_cost_report_result` enthalten Download-Link, Tageszahlen und Warnungen. Der Download-Link laeuft nach 30 Tagen ab. Bei mindestens einem unvollstaendigen Tag bleibt der Monatsgesamtpreis leer.
 

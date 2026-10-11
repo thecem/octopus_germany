@@ -71,6 +71,8 @@ Fuer eine kompakte Startseite sind die Details aufgeteilt:
   - [docs/ACTIONS_AND_SERVICES.de.md](docs/ACTIONS_AND_SERVICES.de.md)
 - Kostenbericht mit Berechnungen, Eingaben, CSV-Aufbau und Rechtsrahmen:
   - [docs/COST_REPORT.de.md](docs/COST_REPORT.de.md)
+- Vorlage fuer netzbetreiber- und jahresspezifische Stundenwerte:
+  - [docs/examples/grid_fee_schedules.example.json](docs/examples/grid_fee_schedules.example.json)
 
 ## Aktionen und Dienste auf einen Blick
 

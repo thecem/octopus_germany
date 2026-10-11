@@ -38,6 +38,14 @@ A matching API interval takes precedence; manual entries fill missing intervals.
 
 The service form includes one network operator's 2025 schedule as a convenience preset. It is applied only when the detected network-operator code matches that preset. It is valid from 1 April through 31 December 2025; replace it with the relevant operator's rates for other operators or periods. Do not use the 2025 preset for February 2026.
 
+### User-maintained schedule file
+
+The service can also read `/config/octopus_germany/grid_fee_schedules.json`, selecting an entry by the network-operator code detected from the account and the requested report year. A starter file containing the example data is available as [`grid_fee_schedules.example.json`](examples/grid_fee_schedules.example.json). Copy it to the config path, replace the operator-code placeholder, and verify every amount and validity period against current documents for the metering point.
+
+Each year contains a `schedules` array for one or more non-overlapping validity periods. Each period includes `valid_from`, exclusive `valid_to`, net `rates_net_ct_per_kwh`, and exactly 24 `hourly_rate_types` entries indexed from 0 through 23. Adjacent hours remain separate. `NT`/`ST`/`HT` and `OFFPEAK`/`STANDARD`/`PEAK` are accepted labels; `null` means no file rate for that hour. API rates take precedence, then explicit service JSON rates, then matching file rates fill any remaining gaps.
+
+The year's optional `module1_credit_net_eur` is used only when `module1_annual_credit_net_eur` is blank in the service call. An explicit service value, including zero, takes precedence. `basis_rate_net_ct_per_kwh` is informational and is **not** the contract-start baseline used in the unit-price adjustment. The matched schedule and its hourly values are recorded in a `BASIS` CSV row. Missing, invalid, or unmatched files generate a service warning rather than being silently ignored.
+
 ### Standing charge
 
 The report uses the agreement's validity-dated gross monthly standing charge when available. If only the net monthly amount is available, it applies the VAT fallback. The monthly amount is converted to a daily amount using `monthly amount * 12 / 365`, then applied to each actual day in the report period. This reflects tariffs billed by day rather than assigning the same standing charge to every calendar month.
@@ -57,7 +65,7 @@ When `module1_start_date` is set, `module1_annual_credit_net_eur` is divided by 
 | `module3_start_date` | Optional customer-declared/selected Module 3 effective date; controls when time-variable rates are used. |
 | `module3_rates_json` | Optional manual net-rate intervals for periods when the API lacks matching rates. |
 | `module1_start_date` | Optional effective date for prorating the Module 1 credit. |
-| `module1_annual_credit_net_eur` | Net annual credit for the selected report year; defaults to zero. |
+| `module1_annual_credit_net_eur` | Optional net annual credit for the selected report year; an explicit value (including zero) wins, otherwise the matching file value is used, then zero. |
 | `vat_percent` | VAT fallback when an agreement price tier has no VAT value; defaults to 19%. |
 | `filename` | Optional output filename. |
 

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import tempfile
 import unittest
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -66,6 +67,7 @@ from custom_components.octopus_germany.file_exports import (
     async_register_export_download_view,
     export_file_path,
 )
+from custom_components.octopus_germany.grid_fee_schedule import load_grid_fee_schedule
 from custom_components.octopus_germany.lifecycle import (
     _migrate_legacy_device_entity_ids,
 )
@@ -2800,6 +2802,136 @@ class TariffCapabilitiesTest(unittest.TestCase):
         )
         self.assertEqual(rates[0]["start_time"], "23:00:00")
         self.assertEqual(rates[0]["end_time"], "06:00:00")
+
+    def test_grid_fee_schedule_keeps_all_24_user_selected_hours(self) -> None:
+        """Load every hourly type independently and map NT/ST/HT labels."""
+        profile = ["NT"] * 6 + ["ST"] * 5 + ["NT"] * 4
+        profile += ["ST"] * 2 + ["HT"] * 5 + ["ST", "NT"]
+        schedule = {
+            "format_version": 1,
+            "grid_operators": [
+                {
+                    "grid_operator_code": "example-vnb",
+                    "years": [
+                        {
+                            "year": 2026,
+                            "valid_from": "2026-01-01",
+                            "valid_to": "2027-01-01",
+                            "module1_credit_net_eur": 108.33,
+                            "basis_rate_net_ct_per_kwh": 5.48,
+                            "rates_net_ct_per_kwh": {
+                                "NT": 1.64,
+                                "ST": 5.48,
+                                "HT": 10.52,
+                            },
+                            "hourly_rate_types": profile,
+                        }
+                    ],
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            schedule_path = Path(temp_dir) / "grid_fee_schedules.json"
+            schedule_path.write_text(json.dumps(schedule), encoding="utf-8")
+            loaded = load_grid_fee_schedule(
+                schedule_path, "example-vnb", 2026, "Europe/Berlin"
+            )
+
+        self.assertIsNotNone(loaded)
+        assert loaded is not None
+        rates = loaded["rates"]
+        self.assertEqual(len(rates), 24)
+        self.assertEqual(rates[0]["start_time"], "00:00:00")
+        self.assertEqual(rates[0]["end_time"], "01:00:00")
+        self.assertEqual(rates[0]["rate_type"], "OFFPEAK")
+        self.assertEqual(rates[6]["rate_type"], "STANDARD")
+        self.assertEqual(rates[17]["rate_type"], "PEAK")
+        self.assertEqual(rates[23]["start_time"], "23:00:00")
+        self.assertEqual(rates[23]["end_time"], "00:00:00")
+        self.assertEqual(rates[0]["rate_eur_per_kwh"], Decimal("0.0164"))
+        self.assertEqual(loaded["module1_credit_net_eur"], Decimal("108.33"))
+
+    def test_shipped_grid_fee_schedule_example_selects_by_operator_and_year(
+        self,
+    ) -> None:
+        """Load the example's final/provisional years without guessing operators."""
+        example_path = (
+            Path(__file__).parents[1]
+            / "docs"
+            / "examples"
+            / "grid_fee_schedules.example.json"
+        )
+        final_year = load_grid_fee_schedule(
+            example_path, "REPLACE_WITH_GRID_OPERATOR_CODE", 2026, "Europe/Berlin"
+        )
+        provisional_year = load_grid_fee_schedule(
+            example_path, "REPLACE_WITH_GRID_OPERATOR_CODE", 2027, "Europe/Berlin"
+        )
+
+        self.assertIsNotNone(final_year)
+        self.assertEqual(len(final_year["rates"]), 24)
+        self.assertEqual(final_year["rates"][0]["rate_type"], "OFFPEAK")
+        self.assertEqual(provisional_year["status"], "provisional")
+        self.assertIsNone(
+            load_grid_fee_schedule(
+                example_path, "another-operator", 2026, "Europe/Berlin"
+            )
+        )
+        self.assertIsNone(
+            load_grid_fee_schedule(
+                example_path,
+                "REPLACE_WITH_GRID_OPERATOR_CODE",
+                2028,
+                "Europe/Berlin",
+            )
+        )
+
+    def test_grid_fee_schedule_supports_multiple_periods_within_one_year(
+        self,
+    ) -> None:
+        """Keep all hourly intervals when a network fee changes mid-year."""
+        hourly_rate_types = ["NT"] * 24
+        schedule = {
+            "format_version": 1,
+            "grid_operators": [
+                {
+                    "grid_operator_code": "example-vnb",
+                    "years": [
+                        {
+                            "year": 2026,
+                            "module1_credit_net_eur": 108.33,
+                            "schedules": [
+                                {
+                                    "valid_from": "2025-12-01",
+                                    "valid_to": "2026-07-01",
+                                    "rates_net_ct_per_kwh": {"NT": 1.5},
+                                    "hourly_rate_types": hourly_rate_types,
+                                },
+                                {
+                                    "valid_from": "2026-07-01",
+                                    "valid_to": "2027-01-01",
+                                    "rates_net_ct_per_kwh": {"NT": 1.75},
+                                    "hourly_rate_types": hourly_rate_types,
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            schedule_path = Path(temp_dir) / "grid_fee_schedules.json"
+            schedule_path.write_text(json.dumps(schedule), encoding="utf-8")
+            loaded = load_grid_fee_schedule(
+                schedule_path, "example-vnb", 2026, "Europe/Berlin"
+            )
+
+        self.assertIsNotNone(loaded)
+        assert loaded is not None
+        self.assertEqual(len(loaded["rates"]), 48)
+        self.assertEqual(loaded["rates"][0]["rate_cents_per_kwh"], "1.5")
+        self.assertEqual(loaded["rates"][24]["rate_cents_per_kwh"], "1.75")
+        self.assertEqual(loaded["rates"][23]["valid_to"], "2026-07-01T00:00:00+02:00")
 
     def test_standing_charge_monthly_api_rate_matches_daily_invoice_rate(self) -> None:
         """Convert a monthly API amount into the contract's per-day price."""

@@ -20,20 +20,20 @@ Die Einrichtung erfolgt in Home Assistant ueber:
 3. Octopus Germany auswaehlen
 4. Login-Daten eingeben
 
+## Dokumentationsstruktur
 
 - Entitaeten und Attribute: siehe [Entitaeten-Ueberblick](#entitaeten-ueberblick)
-- Aktionen und Dienste mit Praxisbeispielen:
-  - [docs/ACTIONS_AND_SERVICES.de.md](../../docs/ACTIONS_AND_SERVICES.de.md)
-- Stromkostenbericht mit Formeln, Parametern, CSV-Aufbau und Rechtsrahmen:
-  - [docs/COST_REPORT.de.md](../../docs/COST_REPORT.de.md)
-- Kompakte Projekt-Startseite:
-  - [README.de.md](../../README.de.md)
+- [Aktionen und Dienste](../../docs/ACTIONS_AND_SERVICES.de.md)
+- [Stromkostenbericht und Berechnungen](../../docs/COST_REPORT.de.md)
+- [Beispieldatei fuer Netzbetreiber-Zeitplaene](../../docs/examples/grid_fee_schedules.example.json)
 
 ## Smart-Meter- und Kostenberichte
 
 Smart-Meter-Jahresdateien werden ueber paginierte Monatsabfragen in der konfigurierten Home-Assistant-Zeitzone erstellt. Quelle und Messqualitaet werden als Metadaten zurueckgegeben; auch intern konsistente Intervalle koennen geschaetzt sein.
 
 Kostenberichte verwenden Agreement-Preise und zeitgueltige API-Netzentgelte. Sie sind Schaetzungen, keine Lieferantenrechnung und keine Rechtsentscheidung. Formeln, Eingaben, unvollstaendige Daten und regulatorischer Kontext sind im [Leitfaden zum Stromkostenbericht](../../docs/COST_REPORT.de.md) beschrieben.
+
+Fehlen API-Saetze, kann eine optionale Datei stunden- und gueltigkeitsbezogene Werte je Netzbetreiber enthalten. Die [Beispieldatei](../../docs/examples/grid_fee_schedules.example.json) zeigt das Format mit einzeln erhaltenen Stunden 0 bis 23.
 
 CSV-Dateien werden unter `/config/octopus_germany/exports` gespeichert. Zu jedem Export erscheint eine persistente Home-Assistant-Benachrichtigung mit einem dateigebundenen Download-Link, der nach 30 Tagen ablaeuft.
 

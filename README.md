@@ -98,6 +98,8 @@ To keep this start page compact, detailed documentation is split across focused 
   - [`docs/ACTIONS_AND_SERVICES.md`](docs/ACTIONS_AND_SERVICES.md)
 - Cost-report formulas, parameters, CSV fields, and regulatory context:
   - [`docs/COST_REPORT.md`](docs/COST_REPORT.md)
+- Per-operator hourly grid-fee schedule file:
+  - [`docs/examples/grid_fee_schedules.example.json`](docs/examples/grid_fee_schedules.example.json)
 
 ### Quick Action Overview
 

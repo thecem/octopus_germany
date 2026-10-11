@@ -164,7 +164,7 @@ export_smart_meter_csv:
 
 export_cost_report:
   name: Export electricity cost report
-  description: Create a daily CSV cost breakdown from agreement prices, smart-meter readings, and variable grid fees. The CSV shows applied net and gross grid-fee rates in ct/kWh by tariff/time block and appends the calculation basis. Files are saved under /config/octopus_germany/exports and a persistent Home Assistant notification provides a browser-download link valid for 30 days. Required contractual assumptions are explicit inputs; missing API rates remain marked incomplete.
+  description: Create a daily CSV cost breakdown from agreement prices, smart-meter readings, and variable grid fees. The service checks /config/octopus_germany/grid_fee_schedules.json for the detected network-operator code and report year; if missing or unmatched, the service response warns that it can be created from docs/examples/grid_fee_schedules.example.json. API rates take precedence, followed by explicit service rates and matching file rates. Files are saved under /config/octopus_germany/exports with a browser-download notification.
   fields:
     account_number:
       name: Account Number
@@ -237,7 +237,7 @@ export_cost_report:
         date:
     module3_rates_json:
       name: Manual Module 3 grid-fee rates
-      description: A sample variable-grid-fee schedule from one VNB's 2025 price sheet is prefilled, valid 2025-04-01 through 2025-12-31. It is applied only to its matching operator; replace it for another VNB. Set module3_start_date to activate Module 3. Optional valid_from/valid_to are ISO timestamps, with valid_to exclusive. Time-variable API rates are used from the selected Module 3 effective date even if the API module label is MODULE_1. When no Module 3 rate is available, the API STANDARD grid-fee fallback is identified in the report and warning.
+      description: Optional manual hourly rates; the prefilled 2025 example is only used for its matching network operator. A matching user schedule file at /config/octopus_germany/grid_fee_schedules.json replaces that prefill. Explicit API rates take precedence; entered JSON rates fill gaps before file rates. Set module3_start_date for the declared/selected effective date when the API does not report MODULE_3. Times are local; valid_to is exclusive. Unavailable rates fall back to API STANDARD and are reported as warnings.
       required: false
       default: >-
         [{"rate_type":"OFFPEAK","start_time":"23:00:00","end_time":"06:00:00","rate_cents_per_kwh":1.99,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},{"rate_type":"STANDARD","start_time":"06:00:00","end_time":"11:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},{"rate_type":"OFFPEAK","start_time":"11:00:00","end_time":"15:00:00","rate_cents_per_kwh":1.99,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},{"rate_type":"STANDARD","start_time":"15:00:00","end_time":"17:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},{"rate_type":"PEAK","start_time":"17:00:00","end_time":"22:00:00","rate_cents_per_kwh":12.75,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},{"rate_type":"STANDARD","start_time":"22:00:00","end_time":"23:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"}]
@@ -251,9 +251,8 @@ export_cost_report:
         date:
     module1_annual_credit_net_eur:
       name: Module 1 annual credit (net)
-      description: Net annual Module 1 credit reported for the applicable network operator and selected report year; use 0 when not applicable
-      required: true
-      default: 0
+      description: Optional net annual Module 1 credit for the selected report year. When left empty, a matching user schedule file is used; if neither is available, zero is used and reported when a Module 1 start date is set.
+      required: false
       selector:
         number:
           min: 0
