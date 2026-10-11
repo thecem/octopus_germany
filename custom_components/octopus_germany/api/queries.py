@@ -55,6 +55,34 @@ query AccountCapabilities($accountNumber: String!) {
 }
 """
 
+AGREEMENT_STANDING_CHARGES_QUERY = """
+query AgreementStandingCharges($accountNumber: String!) {
+  account(accountNumber: $accountNumber) {
+    allProperties {
+      id
+      electricityMalos {
+        maloNumber
+        agreements {
+          id
+          validFrom
+          validTo
+          product {
+            code
+          }
+          netMonthlyStandingCharge
+          standingChargeGrossRateInformation {
+            date
+            grossRate
+            rateValidToDate
+            vatRate
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
 INTELLIGENT_DATA_QUERY = """
 query IntelligentDataQuery($accountNumber: String!) {
   completedDispatches(accountNumber: $accountNumber) {

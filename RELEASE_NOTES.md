@@ -1,5 +1,19 @@
 # Release Notes
 
+## Version 0.0.164 (2026-10-11)
+
+### Fixes
+
+- Move agreement standing-charge fields to a separate lightweight query so the
+  comprehensive account query stays below the OEG complexity limit.
+
+## Version 0.0.163 (2026-10-10)
+
+### Features
+
+- Fetch agreement standing charges and expose net monthly amounts plus
+  validity-dated gross rates in electricity agreement attributes.
+
 ## Version 0.0.162 (2026-10-10)
 
 ### Fixes

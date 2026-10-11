@@ -82,6 +82,10 @@ Smart-meter readings are requested only for accounts reporting smart-meter suppo
 
 CSV exports load smart-meter readings through paginated monthly range queries in the configured Home Assistant timezone. The API layer retains source, quality, device and register metadata when OE provides it; internally consistent intervals can still represent estimated data.
 
+Yearly exports are split into one range per calendar month. The range API paginates at 100 readings per page, spaces requests by two seconds, retries `KT-CT-1199` rate limits with bounded delays, and applies a shorter cooldown if the API continues to limit requests. The startup statistics backfill requests its pending date window as one range rather than issuing one request per day.
+
+The OEG API enforces a GraphQL complexity limit of 200. Keep the comprehensive account query below that ceiling: agreement standing-charge fields are loaded with a separate lightweight query and merged onto agreements by agreement ID, with product and validity dates as fallback keys. If that optional query fails, core account refresh continues and standing-charge agreement attributes remain empty.
+
 ## Documentation Structure
 
 To keep the repository start page compact, action details are documented in:
@@ -173,13 +177,15 @@ using the example, replace `a_xxxxxxxx` with your lower-case account number and
   - `unit_rate_forecast`: (For Dynamic tariffs) Native German API unit rate forecast data
   - `agreement_is_active`, `agreement_is_revoked`, `agreement_is_terminated`: Status of the currently selected agreement
   - `agreement_prices`: Gross, net and VAT details for every price tier in the current agreement
-  - `agreements`: All electricity agreements returned by OE, including past, current and scheduled entries, with validity, status and available price tiers
+  - `agreements`: All electricity agreements returned by OE, including past, current and scheduled entries, with validity, status, unit-price tiers, net monthly standing charge and validity-dated gross standing charge rates
+
+  Agreement standing-charge fields are retrieved separately from the comprehensive account query to keep that query within the OEG complexity budget.
 
 Agreement price entries expose the original gross/net values in cents per kWh, normalized values in EUR per kWh, VAT percentage, price validity and Time-of-Use activation windows where available.
 
 Electricity meter device labels and consumption sensor `meter_type` attributes use the same classification, with type metadata requested from both account and per-meter API queries. `shouldReceiveSmartMeterData` describes data availability expectations, not the physical meter type. Historical meters and their register readings remain available; missing type information does not imply a smart meter.
 
-Each item in `agreements` contains `code`, `name`, `type`, `is_active`, `is_revoked`, `is_terminated`, `valid_from`, `valid_to` and `prices`. Each price entry can contain `name`, `gross_cents_per_kwh`, `gross_eur_per_kwh`, `net_cents_per_kwh`, `net_eur_per_kwh`, `vat_percent`, `price_valid_from`, `price_valid_to` and `activation_rules`.
+Each item in `agreements` contains `code`, `name`, `type`, `is_active`, `is_revoked`, `is_terminated`, `valid_from`, `valid_to`, `standing_charge_net_eur_per_month`, `standing_charge_gross_rates` and `prices`. Gross standing charge entries can contain `gross_eur_per_month`, `vat_percent`, `valid_from` and `valid_to`. Unit price entries can contain `name`, `gross_cents_per_kwh`, `gross_eur_per_kwh`, `net_cents_per_kwh`, `net_eur_per_kwh`, `vat_percent`, `price_valid_from`, `price_valid_to` and `activation_rules`.
 
 #### Electricity Latest Reading Sensor
 

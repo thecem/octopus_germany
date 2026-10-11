@@ -8,7 +8,10 @@ from unittest.mock import AsyncMock, Mock, patch
 import voluptuous as vol
 
 from custom_components.octopus_germany import _async_fetch_account_data
-from custom_components.octopus_germany.api.queries import ELECTRICITY_METERS_QUERY
+from custom_components.octopus_germany.api.queries import (
+    AGREEMENT_STANDING_CHARGES_QUERY,
+    ELECTRICITY_METERS_QUERY,
+)
 from custom_components.octopus_germany.binary_sensor import (
     _create_intelligent_binary_entities,
 )
@@ -2018,6 +2021,80 @@ class TariffCapabilitiesTest(unittest.TestCase):
         )
         assert "devices(accountNumber: $accountNumber)" in INTELLIGENT_DATA_QUERY
 
+    def test_standing_charges_use_a_separate_lightweight_query(self) -> None:
+        assert "netMonthlyStandingCharge" not in COMPREHENSIVE_QUERY
+        assert "standingChargeGrossRateInformation" not in COMPREHENSIVE_QUERY
+        assert "netMonthlyStandingCharge" in AGREEMENT_STANDING_CHARGES_QUERY
+        assert "standingChargeGrossRateInformation" in AGREEMENT_STANDING_CHARGES_QUERY
+        assert "validFrom" in AGREEMENT_STANDING_CHARGES_QUERY
+        assert "validTo" in AGREEMENT_STANDING_CHARGES_QUERY
+
+    def test_standing_charge_results_merge_only_to_matching_agreements(self) -> None:
+        account = {
+            "allProperties": [
+                {
+                    "id": "property-1",
+                    "electricityMalos": [
+                        {
+                            "maloNumber": "malo-1",
+                            "agreements": [
+                                {
+                                    "id": "agreement-1",
+                                    "validFrom": "2026-09-01T00:00:00+02:00",
+                                    "validTo": "2028-09-01T00:00:00+02:00",
+                                    "product": {"code": "SECURE"},
+                                },
+                                {
+                                    "id": "agreement-2",
+                                    "validFrom": "2024-12-23T00:00:00+01:00",
+                                    "validTo": "2026-09-01T00:00:00+02:00",
+                                    "product": {"code": "OLD"},
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+        standing_charges = {
+            "allProperties": [
+                {
+                    "id": "property-1",
+                    "electricityMalos": [
+                        {
+                            "maloNumber": "malo-1",
+                            "agreements": [
+                                {
+                                    "id": "agreement-1",
+                                    "product": {"code": "SECURE"},
+                                    "validFrom": "2026-09-01T00:00:00+02:00",
+                                    "validTo": "2028-09-01T00:00:00+02:00",
+                                    "netMonthlyStandingCharge": "14.00",
+                                    "standingChargeGrossRateInformation": [
+                                        {
+                                            "date": "2026-09-01",
+                                            "grossRate": "16.66",
+                                            "rateValidToDate": "2028-09-01",
+                                            "vatRate": "19",
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+
+        OctopusGermany._merge_agreement_standing_charges(account, standing_charges)
+
+        agreements = account["allProperties"][0]["electricityMalos"][0]["agreements"]
+        assert agreements[0]["netMonthlyStandingCharge"] == "14.00"
+        assert agreements[0]["standingChargeGrossRateInformation"][0]["grossRate"] == (
+            "16.66"
+        )
+        assert "netMonthlyStandingCharge" not in agreements[1]
+
     def test_capability_api_error_disables_intelligent_features(self) -> None:
         api = object.__new__(OctopusGermany)
         api._capabilities_by_account = {}
@@ -2313,6 +2390,15 @@ class TariffCapabilitiesTest(unittest.TestCase):
                                         "isActive": True,
                                         "isRevoked": False,
                                         "isTerminated": True,
+                                        "netMonthlyStandingCharge": "13.90",
+                                        "standingChargeGrossRateInformation": [
+                                            {
+                                                "date": "2025-07-01",
+                                                "grossRate": "16.541",
+                                                "rateValidToDate": "2026-07-01",
+                                                "vatRate": "19",
+                                            }
+                                        ],
                                         "validFrom": "2025-07-01T00:00:00+02:00",
                                         "validTo": "2026-12-23T00:00:00+01:00",
                                         "product": {
@@ -2403,7 +2489,18 @@ class TariffCapabilitiesTest(unittest.TestCase):
         agreements = sensor.extra_state_attributes["agreements"]
         assert len(agreements) == 2
         assert agreements[0]["is_active"] is True
+        assert agreements[0]["standing_charge_net_eur_per_month"] == "13.90"
+        assert agreements[0]["standing_charge_gross_rates"] == [
+            {
+                "gross_eur_per_month": "16.541",
+                "vat_percent": "19",
+                "valid_from": "2025-07-01",
+                "valid_to": "2026-07-01",
+            }
+        ]
         assert agreements[1]["code"] == "FUTURE"
+        assert agreements[1]["standing_charge_net_eur_per_month"] is None
+        assert agreements[1]["standing_charge_gross_rates"] == []
         assert agreements[1]["prices"][0]["gross_eur_per_kwh"] == 0.336651
 
     def test_price_sensor_keeps_agreements_without_current_product(self) -> None:

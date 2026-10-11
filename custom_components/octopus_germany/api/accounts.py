@@ -23,6 +23,7 @@ from .queries import (
     ACCOUNT_CAPABILITIES_QUERY,
     ACCOUNT_DISCOVERY_QUERY,
     ACCOUNT_DISCOVERY_QUERY_LEGACY,
+    AGREEMENT_STANDING_CHARGES_QUERY,
     COMPREHENSIVE_QUERY,
     INTELLIGENT_DATA_QUERY,
 )
@@ -32,6 +33,86 @@ _LOGGER = logging.getLogger(__name__)
 
 class AccountApiMixin:
     """Mixin that provides account/capability and orchestration API calls."""
+
+    async def fetch_agreement_standing_charges(
+        self, account_number: str
+    ) -> dict[str, Any] | None:
+        """Fetch compact standing-charge data separately from the main account query."""
+        if not await self.ensure_token():
+            return None
+        try:
+            response = await self._get_graphql_client().execute_async(
+                query=AGREEMENT_STANDING_CHARGES_QUERY,
+                variables={"accountNumber": account_number},
+            )
+        except Exception as err:
+            _LOGGER.warning(
+                "Could not fetch agreement standing charges for account %s: %s",
+                account_number,
+                err,
+            )
+            return None
+
+        if not isinstance(response, dict) or response.get("errors"):
+            _LOGGER.warning(
+                "Agreement standing-charge query returned errors for account %s: %s",
+                account_number,
+                response.get("errors") if isinstance(response, dict) else response,
+            )
+            return None
+        return response.get("data", {}).get("account")
+
+    @staticmethod
+    def _merge_agreement_standing_charges(
+        account_data: dict[str, Any], standing_charge_data: dict[str, Any]
+    ) -> None:
+        """Merge optional standing-charge values onto matching account agreements."""
+        source_properties = {
+            prop.get("id"): prop
+            for prop in standing_charge_data.get("allProperties") or []
+            if prop.get("id") is not None
+        }
+        for target_property in account_data.get("allProperties") or []:
+            source_property = source_properties.get(target_property.get("id"))
+            if source_property is None:
+                continue
+            source_malos = {
+                malo.get("maloNumber"): malo
+                for malo in source_property.get("electricityMalos") or []
+            }
+            for target_malo in target_property.get("electricityMalos") or []:
+                source_malo = source_malos.get(target_malo.get("maloNumber"))
+                if source_malo is None:
+                    continue
+                source_agreements = source_malo.get("agreements") or []
+                for agreement in target_malo.get("agreements") or []:
+                    product_code = (agreement.get("product") or {}).get("code")
+                    match = next(
+                        (
+                            candidate
+                            for candidate in source_agreements
+                            if (
+                                agreement.get("id") is not None
+                                and candidate.get("id") == agreement.get("id")
+                            )
+                            or (
+                                (candidate.get("product") or {}).get("code")
+                                == product_code
+                                and candidate.get("validFrom")
+                                == agreement.get("validFrom")
+                                and candidate.get("validTo") == agreement.get("validTo")
+                            )
+                        ),
+                        None,
+                    )
+                    if match is None:
+                        continue
+                    agreement["netMonthlyStandingCharge"] = match.get(
+                        "netMonthlyStandingCharge"
+                    )
+                    agreement["standingChargeGrossRateInformation"] = (
+                        match.get("standingChargeGrossRateInformation") or []
+                    )
 
     # Consolidated query to get both accounts list and initial data in one API call
     async def fetch_accounts_with_initial_data(self) -> list[dict[str, Any]] | None:
@@ -195,6 +276,16 @@ class AccountApiMixin:
             if response is None:
                 _LOGGER.error("API returned None response")
                 return None
+
+            main_account = (response.get("data") or {}).get("account")
+            if main_account:
+                standing_charge_data = await self.fetch_agreement_standing_charges(
+                    account_number
+                )
+                if standing_charge_data:
+                    self._merge_agreement_standing_charges(
+                        main_account, standing_charge_data
+                    )
 
             # Initialize the result structure - note that 'products' is an empty list
             # since we removed that field from the query

@@ -27,6 +27,12 @@ Die Einrichtung erfolgt in Home Assistant ueber:
 - Kompakte Projekt-Startseite:
   - [README.de.md](../../README.de.md)
 
+## API-Abfragen und Smart-Meter-Exporte
+
+Jahres-CSV-Exporte werden in Monatsbereiche geteilt. Die Range-API paginiert mit 100 Messwerten je Seite, wartet zwei Sekunden zwischen Seiten und wiederholt `KT-CT-1199` mit begrenzten Wartezeiten. Bei anhaltendem Rate-Limit gilt eine verkuerzte Sperre. Der Statistik-Backfill fragt ausstehende Tage als einen Datumsbereich statt mit einem API-Aufruf pro Tag ab.
+
+Die OEG-API begrenzt die GraphQL-Komplexitaet auf 200. Die Comprehensive-Query muss darunter bleiben. Agreement-Grundpreise werden deshalb ueber eine separate, schlanke Query geladen und per Agreement-ID, ersatzweise Produktcode und Gueltigkeit, zugeordnet. Schlaegt diese optionale Query fehl, bleibt der Kernabruf verfuegbar; Agreement-Grundpreisattribute bleiben dann leer.
+
 ## Entitaeten (Ueberblick)
 
 ### Binary Sensors
@@ -57,7 +63,7 @@ Wichtig:
 - Von OE gemeldetes Paragraph-14a-Modul
 - Aktuell wirksamer variabler Netzentgeltanteil in EUR/kWh. `module_3_rates` bietet `NT`, `ST` und `HT`, jeweils mit `periods`. Preis (netto) und Gueltigkeit stehen einmal pro Periode; die zugehoerigen Start-/Endzeitintervalle sind darunter gruppiert. Das originale API-`rates`-Array bleibt erhalten.
 - Kombinierter Bruttopreis-Sensor: Octopus-Bruttopreis plus die mit gemeldeter Umsatzsteuer hochgerechnete Abweichung der aktiven Netto-Grid-Fee zur STANDARD-Basisrate. `price_combinations` gruppiert gleiche Tarif-/Modul-3-Preise des aktuellen Tages und enthaelt die passenden Zeitintervalle. Numerische Preiswerte und Strings mit fest acht Nachkommastellen (`*_display`) werden bereitgestellt. Der State zeigt ebenfalls acht Nachkommastellen; bestehende numerische Preisattribute bleiben fuer Templates und Automationen erhalten. Der Sensor setzt voraus, dass die Octopus-Preisrate die STANDARD-Netzentgelt-Basis bereits enthaelt; der gemeldete Modulwert ist nur informativ. Bei fehlender VAT oder uneindeutiger STANDARD-Rate bleibt der Sensor unavailable.
-- Der Strompreis-Sensor enthaelt unter `agreements` alle von OE gelieferten vergangenen, aktuellen und zukuenftigen Stromvertraege mit Status, Laufzeit sowie den verfuegbaren Brutto-, Netto- und MwSt.-Preisstufen. `agreement_prices` enthaelt die Preisstufen des aktuell ausgewaehlten Vertrags.
+- Der Strompreis-Sensor enthaelt unter `agreements` alle von OE gelieferten vergangenen, aktuellen und zukuenftigen Stromvertraege mit Status, Laufzeit, Brutto-/Netto-Arbeitspreisen und MwSt. sowie Netto-Monatsgrundpreis und brutto ausgewiesenen Grundpreisstufen mit Gueltigkeitsdaten. Grundpreise kommen aus einer separaten, schlanken Agreement-Query. `agreement_prices` enthaelt die Arbeitspreisstufen des aktuell ausgewaehlten Vertrags.
 
 Jeder Eintrag in `agreements` enthaelt `code`, `name`, `type`, `is_active`, `is_revoked`, `is_terminated`, `valid_from`, `valid_to` und `prices`. Die Preise enthalten, soweit von OE geliefert, Cent/kWh und EUR/kWh fuer Brutto und Netto, `vat_percent`, die Preisgueltigkeit sowie Aktivierungszeitfenster.
 

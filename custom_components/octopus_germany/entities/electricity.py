@@ -66,6 +66,11 @@ def _agreement_attributes(products: list[dict[str, Any]]) -> list[dict[str, Any]
             "is_terminated": product.get("isTerminated"),
             "valid_from": product.get("validFrom"),
             "valid_to": product.get("validTo"),
+            "standing_charge_net_eur_per_month": product.get(
+                "standing_charge_net_eur_per_month"
+            ),
+            "standing_charge_gross_rates": product.get("standing_charge_gross_rates")
+            or [],
             "prices": product.get("prices") or [],
         }
         for product in products

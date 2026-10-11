@@ -209,6 +209,20 @@ def normalize_agreement_products(
                     "description": product.get("description", ""),
                     "name": product.get("fullName", "Unknown"),
                     "type": product_type,
+                    "standing_charge_net_eur_per_month": agreement.get(
+                        "netMonthlyStandingCharge"
+                    ),
+                    "standing_charge_gross_rates": [
+                        {
+                            "gross_eur_per_month": rate.get("grossRate"),
+                            "vat_percent": rate.get("vatRate"),
+                            "valid_from": rate.get("date"),
+                            "valid_to": rate.get("rateValidToDate"),
+                        }
+                        for rate in agreement.get("standingChargeGrossRateInformation")
+                        or []
+                        if isinstance(rate, dict)
+                    ],
                     "validFrom": agreement.get("validFrom"),
                     "validTo": agreement.get("validTo"),
                     "isTimeOfUse": product.get("isTimeOfUse", False),
