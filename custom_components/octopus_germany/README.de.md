@@ -20,34 +20,26 @@ Die Einrichtung erfolgt in Home Assistant ueber:
 3. Octopus Germany auswaehlen
 4. Login-Daten eingeben
 
-## Dokumentationsstruktur
 
-- Actions und Services mit Praxisbeispielen:
+- Entitaeten und Attribute: siehe [Entitaeten-Ueberblick](#entitaeten-ueberblick)
+- Aktionen und Dienste mit Praxisbeispielen:
   - [docs/ACTIONS_AND_SERVICES.de.md](../../docs/ACTIONS_AND_SERVICES.de.md)
+- Stromkostenbericht mit Formeln, Parametern, CSV-Aufbau und Rechtsrahmen:
+  - [docs/COST_REPORT.de.md](../../docs/COST_REPORT.de.md)
 - Kompakte Projekt-Startseite:
   - [README.de.md](../../README.de.md)
 
-## API-Abfragen und Smart-Meter-Exporte
+## Smart-Meter- und Kostenberichte
 
-Jahres-CSV-Exporte werden in Monatsbereiche geteilt. Die Range-API paginiert mit 100 Messwerten je Seite, wartet zwei Sekunden zwischen Seiten und wiederholt `KT-CT-1199` mit begrenzten Wartezeiten. Bei anhaltendem Rate-Limit gilt eine verkuerzte Sperre. Der Statistik-Backfill fragt ausstehende Tage als einen Datumsbereich statt mit einem API-Aufruf pro Tag ab.
+Smart-Meter-Jahresdateien werden ueber paginierte Monatsabfragen in der konfigurierten Home-Assistant-Zeitzone erstellt. Quelle und Messqualitaet werden als Metadaten zurueckgegeben; auch intern konsistente Intervalle koennen geschaetzt sein.
 
-Die OEG-API begrenzt die GraphQL-Komplexitaet auf 200. Die Comprehensive-Query muss darunter bleiben. Agreement-Grundpreise werden deshalb ueber eine separate, schlanke Query geladen und per Agreement-ID, ersatzweise Produktcode und Gueltigkeit, zugeordnet. Schlaegt diese optionale Query fehl, bleibt der Kernabruf verfuegbar; Agreement-Grundpreisattribute bleiben dann leer.
+Kostenberichte verwenden Agreement-Preise und zeitgueltige API-Netzentgelte. Sie sind Schaetzungen, keine Lieferantenrechnung und keine Rechtsentscheidung. Formeln, Eingaben, unvollstaendige Daten und regulatorischer Kontext sind im [Leitfaden zum Stromkostenbericht](../../docs/COST_REPORT.de.md) beschrieben.
 
-Der Service `octopus_germany.export_cost_report` erstellt Tagesdetails und pro Monat eine klassische `MONTH_TOTAL YYYY-MM`-Zeile mit Tarif-/Netzzeitbloecken, verwendeten Netto-/Brutto-Netzentgeltsaetzen, Grundpreis, Modul-1-Gutschrift und explizitem Brutto-Gesamtpreis. Bei unvollstaendigen Tagen bleibt der Monatsgesamtpreis leer. Der Service nutzt Agreement-Preisbezeichnungen und API-Netzentgelte des tatsaechlichen Netzbetreibers samt Gueltigkeitsintervallen; auch Waermestromtarife werden unter eigener Bezeichnung gefuehrt. BK6-22-300 (Marktprozesse) und BK8-22/010-A (Netzentgeltregeln und Kalkulationsrahmen) bilden den regulatorischen Kontext; der Service entscheidet nicht ueber Rechtsansprueche und ersetzt keine Lieferantenrechnung.
-
-Jede Kosten-CSV endet mit einem `BASIS`-Abschnitt, der die eingegebenen Annahmen, Agreement-Preise, Grundpreisdaten und die monatlichen API-Netzentgeltsaetze der Berechnung dokumentiert.
-
-Monatliche API-Grundpreise werden auf Basis von `12 / 365` in einen Tagessatz umgerechnet und mit der tatsaechlichen Tageszahl des Abrechnungsmonats angesetzt.
-
-Fuer historische Modul-3-Zeitraeume nimmt der Kostenbericht ein vom Kunden gesetztes Wirksamkeitsdatum und optional manuelle zeitvariable Netzentgeltsaetze an. API-Saetze werden ab diesem Datum auch dann verwendet, wenn die API noch `MODULE_1` meldet. Fehlen Modul-3-Intervalle, wird der API-`STANDARD`-Netzentgeltsatz verwendet und explizit gekennzeichnet.
-
-Die Vertragsbaseline ist der Netto-Netzentgeltanteil, der bereits im urspruenglichen Brutto-AP enthalten war. Der Bericht passt nur die Differenz zum aktuell gueltigen VNB-Satz an. Die Vorgabe `7.65 ct/kWh` ist ein unbestaetigter Platzhalter und muss am urspruenglichen Vertrag/Preisblatt geprueft werden.
-
-Smart-Meter- und Kosten-CSV-Dateien werden unter `/config/octopus_germany/exports` gespeichert. Zu jedem Export erscheint eine persistente Home-Assistant-Benachrichtigung mit direkt im Browser nutzbarem Download-Link. Das dateigebundene Token wird in HAs privatem Speicher aufbewahrt und laeuft nach 30 Tagen ab.
+CSV-Dateien werden unter `/config/octopus_germany/exports` gespeichert. Zu jedem Export erscheint eine persistente Home-Assistant-Benachrichtigung mit einem dateigebundenen Download-Link, der nach 30 Tagen ablaeuft.
 
 ## Entitaeten (Ueberblick)
 
-### Binary Sensors
+### Binaersensoren
 
 - binary_sensor.octopus_<account_number>_<device_id>_intelligent_dispatching
   - on waehrend aktivem Dispatch
@@ -65,13 +57,14 @@ Wichtig:
 - Die API liefert fuer Fahrzeuge kein dediziertes isPlugged Feld.
 - Bei deaktiviertem Smart Control ist der Steckstatus daher nicht immer eindeutig.
 
-### Sensors
+### Sensoren
 
 - Strompreis, Stromsaldo, letzter Stromzaehlerstand
 - Gasprodukte, Gassaldo, Gaszaehler, Gasvertrag
 - Fahrzeugdaten (SoC, Battery Size)
 - Smart Charging Sessions
 - Historische Smart-Meter-Verbrauchswerte
+- Registersensoren je Zaehler und verwertbarem OBIS-Code; Null ist ein gueltiger Wert, Messwerthistorie bleibt als Attribut erhalten
 - Von OE gemeldetes Paragraph-14a-Modul
 - Aktuell wirksamer variabler Netzentgeltanteil in EUR/kWh. `module_3_rates` bietet `NT`, `ST` und `HT`, jeweils mit `periods`. Preis (netto) und Gueltigkeit stehen einmal pro Periode; die zugehoerigen Start-/Endzeitintervalle sind darunter gruppiert. Das originale API-`rates`-Array bleibt erhalten.
 - Kombinierter Bruttopreis-Sensor: Octopus-Bruttopreis plus die mit gemeldeter Umsatzsteuer hochgerechnete Abweichung der aktiven Netto-Grid-Fee zur STANDARD-Basisrate. `price_combinations` gruppiert gleiche Tarif-/Modul-3-Preise des aktuellen Tages und enthaelt die passenden Zeitintervalle. Numerische Preiswerte und Strings mit fest acht Nachkommastellen (`*_display`) werden bereitgestellt. Der State zeigt ebenfalls acht Nachkommastellen; bestehende numerische Preisattribute bleiben fuer Templates und Automationen erhalten. Der Sensor setzt voraus, dass die Octopus-Preisrate die STANDARD-Netzentgelt-Basis bereits enthaelt; der gemeldete Modulwert ist nur informativ. Bei fehlender VAT oder uneindeutiger STANDARD-Rate bleibt der Sensor unavailable.
@@ -85,23 +78,25 @@ Hinweis:
 - `MODULE_1` wird neutral als OE-Backend-Wert angezeigt und beweist allein nicht, dass Modul 3 als Abrechnungsoption gewaehlt wurde.
 - Eine erfolgreiche Netzentgelt-Antwort wird fuer den lokalen Tag gecacht; Zeitfensterwechsel werden lokal berechnet.
 
-### Switches
+### Schalter
 
 - switch.octopus_<account_number>_<device_id>_smart_control
 - switch.octopus_germany_<account_number>_<device_id>_boost_charge
 
 Geraetebezogene Entitaets-IDs verwenden die stabile Octopus-Geraete-UUID. Der Anzeigename bleibt lesbar, sodass gleiche Namen nicht zu Kollisionen fuehren.
 
-## Services
+## Dienste
 
-- octopus_germany.set_device_preferences
-- octopus_germany.get_smart_meter_readings
-- octopus_germany.export_smart_meter_csv
-- octopus_germany.submit_meter_readings
+- `octopus_germany.refresh_intelligent_data`
+- `octopus_germany.set_device_preferences`
+- `octopus_germany.get_smart_meter_readings`
+- `octopus_germany.export_smart_meter_csv`
+- `octopus_germany.export_cost_report`
+- `octopus_germany.submit_meter_readings`
 
 CSV-Exporte laden Smart-Meter-Werte ueber paginierte Monatsabfragen in der konfigurierten Home-Assistant-Zeitzone. Die API-Schicht behaelt Quellen-, Qualitaets-, Geraete- und Registerdaten bei, sofern OE sie liefert; auch intern konsistente Intervalle koennen geschaetzt sein.
 
-Fuer Parameter, Beispiele und Event-Outputs siehe:
+Parameter, Beispiele und Ergebnis-Events:
 
 - [docs/ACTIONS_AND_SERVICES.de.md](../../docs/ACTIONS_AND_SERVICES.de.md)
 
@@ -116,7 +111,7 @@ Empfohlene Rollenverteilung:
 - octopus_germany: Tarif, Konto, SmartFlex, Steuerung sowie Auslesen der bei Octopus gespeicherten historischen Verbrauchs-/Zaehlerdaten
 - ha-ppc-smgw-han: lokale HAN-Telemetrie
 
-## API Support
+## API-Unterstuetzung
 
 - REST: https://developer.oeg-kraken.energy/
 - Kraken GraphQL: https://developer.oeg-kraken.energy/graphql/

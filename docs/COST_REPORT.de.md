@@ -1,0 +1,88 @@
+# Stromkostenbericht
+
+`octopus_germany.export_cost_report` erstellt eine taegliche und monatliche Kostenschaetzung aus Octopus-Agreement-Preisen, Smart-Meter-Messwerten, Grundpreisen und den fuer den Zaehlerpunkt gelieferten Netzentgelten des zustaendigen Netzbetreibers.
+
+Der Bericht ist eine nachvollziehbare Berechnungshilfe, keine Lieferantenrechnung und keine rechtliche Entscheidung ueber Anspruch oder Teilnahme nach §14a EnWG. Fehlende Preise und Saetze werden nicht stillschweigend als null behandelt.
+
+## Berechnungsgrundlage
+
+### Vertrags-Arbeitspreis und Netzentgeltkorrektur
+
+Fuer jedes Messintervall waehlt der Bericht das zu diesem Zeitpunkt gueltige Agreement und daraus die Preisstufe, deren Gueltigkeit und Aktivierungszeitfenster passen. Die Preisbezeichnung des Agreements bleibt erhalten, auch bei Waermestromtarifen. Der ausgewaehlte Brutto-Vertrags-AP wird nur um die Differenz zwischen dem aktuellen Netto-Netzentgelt und dem Netto-Netzentgeltanteil angepasst, der bereits im urspruenglichen Vertrags-AP enthalten war:
+
+```text
+angepasster Brutto-AP [EUR/kWh]
+  = Brutto-Vertrags-AP [EUR/kWh]
+  + ((aktuelles VNB-Netzentgelt [ct/kWh] - Vertragsbaseline [ct/kWh]) / 100)
+    * (1 + MwSt.-Anteil)
+```
+
+Die angepassten Intervallkosten ergeben sich aus kWh mal angepasstem AP. Die Netzentgeltdifferenz wird vor dem Aufschlag von ct in EUR umgerechnet. Vorrang hat der MwSt.-Satz aus der passenden Agreement-Preisstufe; andernfalls gilt `vat_percent`.
+
+`contract_start_network_charge_ct_kwh` ist der **Netto-Netzentgeltanteil, der bereits im urspruenglichen Brutto-Vertrags-AP enthalten war**. Es ist weder das gesamte aktuelle Netzentgelt noch ein aus dem Tarifnamen abgeleiteter Wert. Die Vorgabe `7.65 ct/kWh` ist nur ein unbestaetigter Referenzwert aus dem Preisblatt eines VNB aus 2024. Vor Verwendung der Summen mit dem Vertrag/Preisblatt fuer den konkreten Zaehlerpunkt abgleichen.
+
+### Modul-3-Netzentgelte
+
+Netzentgeltzeitplaene werden fuer die relevanten Daten und den Netzbetreiber abgefragt. An API-Gueltigkeitsgrenzen fragt der Service erneut ab, damit auch kuerzere Gueltigkeitszeitraeume beruecksichtigt werden. Gemeldetes API-Modul, Rate-Typen, Zeitfenster und Gueltigkeitsdaten werden getrennt vom kundenseitig gewaehlten Wirksamkeitsdatum dokumentiert.
+
+`module3_start_date` ist das Datum, ab dem der Kunde Modul 3 fuer diesen Zaehlerpunkt erklaert/gewaehlt hat. Ab diesem Datum werden zeitvariable API-Saetze verwendet, auch wenn die API weiterhin `MODULE_1` meldet. Das API-Modul allein belegt nicht die Auswahl des Kunden.
+
+`module3_rates_json` ist ein optionales Array manuell eingetragener **Netto-Saetze** in ct/kWh fuer Intervalle, fuer die die API keine passenden Saetze liefert. Ein Eintrag verwendet:
+
+- `rate_type`: `OFFPEAK`, `STANDARD` oder `PEAK`
+- `start_time`, `end_time`: lokale Intervallgrenzen im Format `HH:MM:SS`
+- `rate_cents_per_kwh`: Netto-Satz in ct/kWh
+- `valid_from`, `valid_to`: optionale ISO-Zeitstempel; `valid_to` ist exklusiv
+
+Ein passender API-Satz hat Vorrang; manuelle Werte fuellen fehlende Intervalle. Wenn kein Modul-3-Satz verfuegbar ist, kann ein zeitlich passender API-`STANDARD`-Netzentgeltsatz als explizit markierter Fallback dienen (`module3_rate_basis`). Das ist ein STANDARD-Netzentgeltsatz, kein separater „Modul-1-ST“-Preis. Fehlt auch dieser Satz, werden betroffene Verbrauchswerte als fehlend markiert; bei einem unvollstaendigen Tag bleibt der Monatsgesamtpreis leer.
+
+Das Serviceformular enthaelt als Komfortfunktion den 2025-Zeitplan eines VNB als Vorbelegung. Er wird nur angewendet, wenn der erkannte Netzbetreiber-Code zu dieser Vorbelegung passt. Gueltig ist das Beispiel vom 1. April bis 31. Dezember 2025; fuer andere Netzbetreiber oder Zeitraeume die tatsaechlichen Saetze eintragen. Nicht fuer Februar 2026 wiederverwenden.
+
+### Grundpreis
+
+Der Bericht verwendet, wenn vorhanden, den gueltigkeitsdatierten Brutto-Monatsgrundpreis des Agreements. Ist nur der Nettobetrag vorhanden, wird der MwSt.-Ersatzwert angewendet. Der Monatsbetrag wird mit `Monatsbetrag * 12 / 365` in einen Tagessatz umgerechnet und fuer jeden tatsaechlichen Tag des Berichtszeitraums angesetzt. So entspricht die Berechnung einer tagweisen Abrechnung, statt jeden Kalendermonat mit demselben Grundpreis anzusetzen.
+
+### Modul-1-Gutschrift
+
+Ist `module1_start_date` gesetzt, wird `module1_annual_credit_net_eur` durch die Anzahl der Tage des jeweiligen Kalenderjahres geteilt und ab diesem Datum angesetzt. Der Bericht rechnet die taegliche Nettogutschrift mit dem MwSt.-Ersatzwert brutto und zieht sie von der Bruttosumme ab. Der Jahresbetrag muss zum ausgewaehlten Berichtsjahr passen. Wenn Modul 1 nicht gilt oder der Betrag unbekannt ist, Startdatum leer lassen und null verwenden.
+
+## Parameter
+
+| Parameter | Zweck |
+| --- | --- |
+| `account_number` | Erforderliches Konto, dessen Agreements und Messwerte exportiert werden. |
+| `property_id` | Optionale Strom-Property; ohne Angabe wird die erste verwendet. |
+| `period`, `year`, `month` | Monats- oder Kalenderjahresbericht; `month` ist fuer einen Monatsbericht erforderlich. Im laufenden Jahr endet der Abruf zwei Tage vor heute. |
+| `contract_start_network_charge_ct_kwh` | Erforderliche, dokumentierte Netto-Vertragsbaseline in ct/kWh; Vorgabe `7.65` ist nur ein unbestaetigter Referenzwert. |
+| `module3_start_date` | Optionales, vom Kunden angegebenes Wirksamkeitsdatum von Modul 3; bestimmt den Einsatz zeitvariabler Saetze. |
+| `module3_rates_json` | Optionale manuelle Netto-Zeitfenster fuer Zeitraeume, in denen passende API-Saetze fehlen. |
+| `module1_start_date` | Optionales Wirksamkeitsdatum fuer die zeitanteilige Modul-1-Gutschrift. |
+| `module1_annual_credit_net_eur` | Jaehrliche Nettogutschrift fuer das ausgewaehlte Abfragejahr; Vorgabe ist null. |
+| `vat_percent` | MwSt.-Ersatzwert, wenn eine Agreement-Preisstufe keinen Satz enthaelt; Vorgabe 19 %. |
+| `filename` | Optionaler Ausgabedateiname. |
+
+## CSV-Aufbau
+
+Die Zeilen sind ueber `record_type` gekennzeichnet:
+
+- `DAY`: Tagesverbrauch und Kosten je Agreement-Tarifbezeichnung und Netzentgeltzeitfenster; enthaelt API-Modul, Satzbasis, angewendete Netto-/Brutto-Netzentgeltsaetze, fehlende kWh und Status.
+- `MONTH_TOTAL`: Summen je Tarif-/Netzentgeltblock, Brutto-Grundpreis, Modul-1-Gutschrift und Brutto-Monatsgesamtpreis. Bei Satzwechseln sind die Saetze verbrauchsgewichtet.
+- `TOTAL`: Summen fuer den Berichtszeitraum.
+- `BASIS`: Pruefzeilen nach der Summe mit Eingaben, Agreement-Preisen/Grundpreisstufen und der API-Netzentgeltantwort pro Monat samt Gueltigkeiten.
+
+Die Monatsberechnung lautet:
+
+```text
+Brutto-Energiekosten nach Netzentgeltkorrektur
++ Brutto-Grundpreis
+- Modul-1-Gutschrift brutto
+= Brutto-Monatsgesamtpreis
+```
+
+Ist ein Tag unvollstaendig, bleibt der `MONTH_TOTAL`-Betrag leer. `status`, `unpriced_kwh` und `network_rate_missing_kwh` zeigen den Grund; ein fehlender Gesamtbetrag darf nicht als null interpretiert werden. Die CSV nutzt Semikolon als Spaltentrenner und das deutsche Dezimalkomma. Verbrauch wird mit drei Nachkommastellen, Eurobetraege auf Cent und Arbeitspreise mit sechs Nachkommastellen angezeigt. Intern bleibt die volle Genauigkeit bis zur Formatierung erhalten.
+
+Dateien werden unter `/config/octopus_germany/exports` gespeichert. Home Assistant erstellt eine persistente Benachrichtigung mit einem dateigebundenen Download-Link, der nach 30 Tagen ablaeuft.
+
+## Rechts- und Regelungskontext
+
+Der regulatorische Rahmen der Berechnung ist §14a EnWG, die Festlegung BK6-22-300 der Bundesnetzagentur zum Marktprozess und BK8-22/010-A zu Netzentgeltregeln und Kalkulation. Diese Grundlagen liefern weder die Vertragsbaseline eines Kunden noch den Nachweis, dass Modul 3 gewaehlt wurde. Die Integration stellt keine rechtliche Anspruchs- oder Wirksamkeitspruefung dar und ersetzt keine Lieferantenrechnung. Modul-3-Erklaerung/Wirksamkeitsdatum, Vertragsbaseline und manuelle historische Saetze muessen anhand der Kundenunterlagen und der Preisblaetter des zustaendigen Netzbetreibers geprueft werden.

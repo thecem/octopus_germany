@@ -1,5 +1,7 @@
 # Octopus Germany Integration - Technical Documentation
 
+Current user-facing references are [README.md](README.md), [Actions and Services](docs/ACTIONS_AND_SERVICES.md), and [Electricity Cost Report](docs/COST_REPORT.md). This file is maintainer-oriented; public service behavior belongs in those pages.
+
 ## Architecture Overview
 
 ### Core Components
@@ -23,7 +25,7 @@
 #### Token Management & Authentication
 - **Shared Token Strategy**: All platforms use `hass.data[DOMAIN][entry.entry_id]["coordinator"]`
 - **Auto-Refresh**: Background task refreshes tokens every 50 minutes
-- **Error Handling**: 5 retry attempts with exponential backoff on login failures
+- **Error Handling**: Authentication and scheduled refresh paths handle transient failures; do not assume a fixed retry count across endpoints.
 - **GraphQL Clients**: `_get_graphql_client()` for Kraken and `_get_oe_backend_graphql_client()` for OE backend operations, both using shared authentication
 
 #### Data Flow Architecture
@@ -92,6 +94,17 @@ Base Coordinator + optional Intelligent Coordinator
 
 #### Services
 
+The active service IDs are:
+
+- `refresh_intelligent_data`
+- `set_device_preferences`
+- `get_smart_meter_readings`
+- `export_smart_meter_csv`
+- `export_cost_report`
+- `submit_meter_readings`
+
+Schemas, inputs, response events, and user examples are maintained in [Actions and Services](docs/ACTIONS_AND_SERVICES.md).
+
 ##### set_device_preferences
 - **Current Service**: Uses new SmartFlexDeviceInterface API
 - **Parameters**: device_id, target_percentage (20-100%), target_time (04:00-17:00)
@@ -116,15 +129,15 @@ Base Coordinator + optional Intelligent Coordinator
    - Log technical details for debugging
 
 3. **API Rate Limiting**:
-   - Respect 90% of update interval before new API calls
-   - Throttling mechanism in coordinator
+   - Smart-meter range exports paginate monthly ranges and apply bounded delays/retries for API rate-limit responses.
+   - Coordinator polling intervals are configurable; avoid adding per-entity API requests.
 
 #### Testing & Validation
 
 ##### Critical Test Scenarios
 1. **Token Expiry Recovery**: Simulate expired tokens, verify auto-refresh
 2. **Boost Switch Availability**: Test with/without Smart Charge enabled
-3. **Service Calls**: Validate both services with various parameters
+3. **Service Calls**: Validate all active services, response modes, and parameter boundaries
 4. **Multi-Account Support**: Test with multiple Octopus accounts
 5. **Error Resilience**: Network issues, API errors, malformed responses
 
@@ -139,14 +152,16 @@ logger:
 
 #### Performance Considerations
 
-- **Update Interval**: 1 minute (configurable)
+- **Base polling**: 30 minutes by default; configurable from 1 to 60 minutes.
+- **Intelligent polling**: 3 minutes by default when the account supports it; configurable from 1 to 60 minutes.
 - **API Call Throttling**: Prevents excessive requests
 - **Cached Data Fallback**: Returns last known data on API failures
-- **Efficient GraphQL**: Single query fetches all account data
+- **GraphQL complexity**: The OEG account query is kept below the backend limit; agreement standing-charge fields are loaded through a separate lightweight query.
 
 #### Security Notes
 
-- **Token Storage**: Tokens stored in memory only, not persisted
+- **Authentication Tokens**: Shared Kraken/OE API tokens are held by the runtime token manager.
+- **Export Download Tokens**: File-scoped links are stored in Home Assistant private storage and expire after 30 days.
 - **Credential Handling**: Email/password from config entry, not logged
 - **GraphQL Endpoint**: Uses official Octopus Energy Kraken API
 - **HTTPS Only**: All API communication over TLS

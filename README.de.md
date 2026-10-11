@@ -20,8 +20,8 @@ Wenn du über [meinen Empfehlungslink](https://octopusenergy.de/empfehlungen?ref
 
 ## Funktionsumfang
 
-- Kontodaten (Strom/Gas)
-- Aktuelle Tarifpreise (inkl. Dynamic/TOU)
+- Konto- und Saldo-Daten fuer Strom, Gas und Waerme sowie Gaszaehler, Gasvertragslaufzeit und Multi-Account/Multi-Device-Unterstuetzung
+- Aktuelle Strom- und Gaspreise (Festpreis, TOU und dynamische Tarife) sowie historische Agreement-Preise
 - Paragraph-14a-Netzentgelte mit von OE gemeldetem Modul, standardisierten NT/ST/HT-Attributen und vollstaendigem Tagesplan
 - Kombinierter Bruttopreis aus Octopus-Tarif und zeitvariablem Netzentgelt mit Tagesplan der Tarif-/Modul-3-Preiskombinationen und Zeitintervalle; numerische Werte bleiben fuer Templates und Automationen verfuegbar
 - Alle von OE gelieferten vergangenen, aktiven und zukuenftigen Stromvertraege mit Brutto-/Netto-Arbeitspreisen, MwSt. sowie Netto-Monatsgrundpreis und brutto ausgewiesenen Grundpreisstufen mit Gueltigkeitsdaten in den Attributen des Strompreis-Sensors
@@ -29,8 +29,11 @@ Wenn du über [meinen Empfehlungslink](https://octopusenergy.de/empfehlungen?ref
 - Smart-Meter- und Kosten-CSV-Dateien liegen unter `/config/octopus_germany/exports`; HA zeigt pro Export eine persistente Benachrichtigung mit authentifiziertem Download-Link
 - SmartFlex-Geraetestatus, Dispatching, Session-Daten
 - Schalter fuer Smart Control und Boost Charge
+- Fahrzeug- und Ladepunktdaten wie SoC und Batteriegroesse, sofern vom Anbieter geliefert
 - **Smart-Meter-Readings**: Vortagsverbrauch akkumuliert mit stundenweiser Aufschluesselung (aus bei Octopus gespeicherten Zaehlerdaten)
+- Zaehlerregistersensoren fuer verwertbare OBIS-Register mit Messwerthistorie; Nullwerte bleiben gueltige Messwerte
 - **Historische Octopus-Daten auslesen**: Historische Verbrauchs- und Zaehlerdaten aus dem Octopus-System abrufen
+- Strom- und Gaszaehlerstaende an die OE-API uebermitteln; Einreichungen unterstuetzen Tageswerte, keine 15-Minuten-Intervalle
 - Multi-Account und Multi-Device Support
 
 ## Installation
@@ -64,10 +67,12 @@ Fuer eine kompakte Startseite sind die Details aufgeteilt:
 
 - Vollstaendige Entitaets- und Attributreferenz:
   - [custom_components/octopus_germany/README.de.md](custom_components/octopus_germany/README.de.md)
-- Actions/Services mit Beispielen:
+- Aktionen und Dienste mit Beispielen:
   - [docs/ACTIONS_AND_SERVICES.de.md](docs/ACTIONS_AND_SERVICES.de.md)
+- Kostenbericht mit Berechnungen, Eingaben, CSV-Aufbau und Rechtsrahmen:
+  - [docs/COST_REPORT.de.md](docs/COST_REPORT.de.md)
 
-## Actions auf einen Blick
+## Aktionen und Dienste auf einen Blick
 
 - switch.octopus_<account_number>_<device_id>_smart_control
   - on: Smart Control aktivieren
@@ -81,6 +86,12 @@ Fuer eine kompakte Startseite sind die Details aufgeteilt:
 - octopus_germany.export_smart_meter_csv
   - iMSys-Daten ueber paginierte Monatsabfragen als CSV exportieren
   - Verwendet die Home-Assistant-Zeitzone und behaelt OE-Messqualitaetsdaten beim Laden bei
+- octopus_germany.export_cost_report
+  - Kostenbericht als Monats- oder Jahres-CSV exportieren
+- octopus_germany.submit_meter_readings
+  - Strom- oder Gaszaehlerstand an die OE-API uebermitteln
+- octopus_germany.refresh_intelligent_data
+  - Intelligent-Geraete- und Dispatch-Daten sofort aktualisieren
 
 ## Hinweis zu iMSys / SMGW-HAN
 
@@ -109,7 +120,7 @@ logger:
     custom_components.octopus_germany.switch: debug
 ```
 
-## API Support
+## API-Unterstuetzung
 
 - REST: https://developer.oeg-kraken.energy/
 - GraphQL: https://developer.oeg-kraken.energy/graphql/

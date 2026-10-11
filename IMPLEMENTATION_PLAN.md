@@ -2,6 +2,8 @@
 
 Ziel ist eine ressourcenschonende, tarifabhaengige Home-Assistant-Integration fuer `octopus_germany`. Die bestehende Funktionalitaet und alte Entity-Namen sollen erhalten bleiben, sofern keine bewusste Migration vereinbart wird.
 
+> Historischer Entwicklungsplan: Zielarchitektur, offene Kaestchen und Issue-Status spiegeln einen frueheren Arbeitsstand wider und sind keine aktuelle Aufgabenliste. Fuer das heutige Verhalten siehe [README.de.md](README.de.md), [Aktionen und Dienste](docs/ACTIONS_AND_SERVICES.de.md) und [TECHNICAL_NOTES.md](TECHNICAL_NOTES.md); offene Arbeit bitte gegen den aktuellen GitHub-Issue-Stand pruefen.
+
 ## GitHub-Issue-Status
 
 - [x] #92: `accountNumber` beim Einreichen von Zaehlerstaenden an Mutation und Service durchreichen.

@@ -67,27 +67,14 @@ Example:
 ```yaml
 service: octopus_germany.refresh_intelligent_data
 ```
-  {"rate_type":"OFFPEAK","start_time":"23:00:00","end_time":"06:00:00","rate_cents_per_kwh":1.99,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
-  {"rate_type":"STANDARD","start_time":"06:00:00","end_time":"11:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
-  {"rate_type":"OFFPEAK","start_time":"11:00:00","end_time":"15:00:00","rate_cents_per_kwh":1.99,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
-  {"rate_type":"STANDARD","start_time":"15:00:00","end_time":"17:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
-  {"rate_type":"PEAK","start_time":"17:00:00","end_time":"22:00:00","rate_cents_per_kwh":12.75,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
-  {"rate_type":"STANDARD","start_time":"22:00:00","end_time":"23:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"}
-The account service device is excluded, and Home Assistant resolves the
-selection to its Octopus device ID. YAML calls may use either the Home Assistant
-device registry ID or the Octopus device UUID; entity IDs are not accepted.
-The example values are from one VNB's 2025 price sheet, effective 1 April 2025: OFFPEAK 1.99 ct/kWh, STANDARD 6.64 ct/kWh, and PEAK 12.75 ct/kWh. Set `module3_start_date` to the date you declared/selected Module 3 for your metering point. The prefilled preset is applied only to its matching network-operator code; replace it with your VNB's own values if different. API-returned OFFPEAK/STANDARD/PEAK schedules are usable from the selected effective date even when the API labels the selected module `MODULE_1`.
-Both settings apply to all seven days. Success confirms acceptance by the Octopus
-API, not propagation to the vehicle. API errors or missing update confirmations
-cause the service call to fail.
+### `octopus_germany.set_device_preferences`
+### `octopus_germany.set_device_preferences`
 
-Parameters:
+Sets a target for a vehicle or charge point. Both preferences apply to all seven days. A successful response confirms Octopus API acceptance, not propagation to the vehicle; the service then requests an Intelligent-data refresh.
 
-- `device_id` (required): The dropdown selects by name. YAML may use either the Home Assistant device registry ID or the Octopus device UUID.
-- `target_percentage` (required): 20-100 in 5% steps
-- `target_time` (required): `HH:MM` between 04:00 and 17:00
-
-Example:
+- `device_id` (required): Home Assistant device registry ID or Octopus device UUID; entity IDs are not accepted.
+- `target_percentage` (required): 20-100 in 5% steps.
+- `target_time` (required): `HH:MM` between 04:00 and 17:00.
 
 ```yaml
 service: octopus_germany.set_device_preferences
@@ -132,7 +119,7 @@ Parameters:
 - `property_id` (optional): uses the first electricity property when omitted
 - `period` (required): `month` or `year`
 - `year` (required)
-- `month` (optional for period `month`)
+- `month` (required for monthly exports)
 - `filename` (optional)
 - `layout` (optional): `wide` or `tall`
 - `resolution` (optional): `15min` or `hour`; defaults to `15min`
@@ -141,92 +128,46 @@ Parameters:
 
 ### `octopus_germany.export_cost_report`
 
-Create a daily cost calculation CSV under `/config/octopus_germany/exports` for one calendar month or year. A persistent Home Assistant notification includes a same-origin browser-download link that opens in a new tab, also returned by the service and result event. Using the current HA origin avoids exposing internal container addresses. Its file-specific token is stored in Home Assistant's private storage and expires after 30 days. Agreement price names and activation rules define the tariff blocks; the report does not assume GO/Standard labels and supports heat tariffs. The network operator is taken from the electricity metering-point data. Its API-reported module, rate types, time windows and `validFrom`/`validTo` periods drive the network-fee calculation; the service re-queries at reported validity boundaries, including shorter quarterly periods. A totals row is appended.
+Exports a daily/monthly electricity-cost estimate for a month or calendar year. It uses agreement-specific price tiers and API grid fees for the metering point's network operator. Detailed calculations, parameter rationale, CSV structure, incomplete-data behavior, and legal context are in [Electricity Cost Report](COST_REPORT.md).
 
-The CSV includes one `MONTH_TOTAL YYYY-MM` row per calendar month. It sums each tariff/network time block and makes the monthly equation explicit: adjusted energy cost + standing charge - gross Module 1 credit = monthly gross total. A monthly total remains blank if any day is incomplete; the status identifies how many days need review.
+- `account_number` (required); `property_id` (optional)
+- `period` and `year` (required); `month` required for monthly reports
+- `contract_start_network_charge_ct_kwh` (required; default `7.65` is an unverified reference)
+- `module3_start_date`, `module3_rates_json` (optional)
+- `module1_start_date` (optional); `module1_annual_credit_net_eur` (required, default zero)
+- `vat_percent` (fallback, default 19); `filename` (optional)
 
-For every tariff/network block, daily rows also show the applied grid-fee rate in net and gross ct/kWh columns (`*_grid_fee_net_ct_per_kwh` and `*_grid_fee_gross_ct_per_kwh`). Monthly rows show the consumption-weighted average if the rate changes during the month.
-
-After the `TOTAL` row, `BASIS` rows record the service inputs, agreement prices and standing-charge rates, plus each month's API grid-fee schedule as JSON. This makes the values and validity periods used for the calculation auditable.
-
-Monthly standing charges from the API are converted to their daily contractual rate using the annualized `12 / 365` basis, then charged for each actual calendar day in the selected period. This matches tariffs invoiced per day rather than forcing every month to the same total standing charge.
-
-Parameters:
-
-- `account_number` (required)
-- `property_id` (optional): defaults to the first electricity property
-- `period` (required): `month` or `year`
-- `year` (required); `month` is required for monthly reports
-- `contract_start_network_charge_ct_kwh` (required, default `7.65`): the **net** network-fee component in ct/kWh that the original contract price sheet says is already included in the gross contract AP. The report replaces this baseline with the valid VNB rate; it does not add the full grid fee again. `7.65` is a reference value from one VNB's 2024 price sheet, not a universal or legal default; use it only if your contract's price breakdown supports it.
-- `module3_start_date` (optional): date the customer declared/selected Module 3 for this metering point; when provided, time-variable API rates are used from this date even if the API's `module` field still says `MODULE_1`
-- `module3_rates_json` (optional): JSON array of manual rate entries for historical intervals missing from the API; the rate is net ct/kWh, and times are local
-- `module1_start_date` (optional): date from which to prorate the user-supplied Module 1 credit
-- `module1_annual_credit_net_eur` (required, default `0`): applicable network operator's net annual credit for the selected report year
-- `vat_percent` (required, default `19`): fallback if the agreement price has no VAT rate
-- `filename` (optional): CSV filename in `/config`
-
-Manual rate example for a historical period:
+Example `module3_rates_json` for a historical schedule:
 
 ```json
 [
-  {"rate_type":"OFFPEAK","start_time":"00:00:00","end_time":"06:00:00","rate_cents_per_kwh":1.99,"valid_from":"2025-04-01T00:00:00+02:00"},
-  {"rate_type":"STANDARD","start_time":"06:00:00","end_time":"11:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00"},
-  {"rate_type":"OFFPEAK","start_time":"11:00:00","end_time":"15:00:00","rate_cents_per_kwh":1.99,"valid_from":"2025-04-01T00:00:00+02:00"},
-  {"rate_type":"STANDARD","start_time":"15:00:00","end_time":"17:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00"},
-  {"rate_type":"PEAK","start_time":"17:00:00","end_time":"22:00:00","rate_cents_per_kwh":12.75,"valid_from":"2025-04-01T00:00:00+02:00"},
-  {"rate_type":"STANDARD","start_time":"22:00:00","end_time":"23:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00"}
+  {"rate_type":"OFFPEAK","start_time":"23:00:00","end_time":"06:00:00","rate_cents_per_kwh":1.99,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
+  {"rate_type":"STANDARD","start_time":"06:00:00","end_time":"11:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
+  {"rate_type":"OFFPEAK","start_time":"11:00:00","end_time":"15:00:00","rate_cents_per_kwh":1.99,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
+  {"rate_type":"STANDARD","start_time":"15:00:00","end_time":"17:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
+  {"rate_type":"PEAK","start_time":"17:00:00","end_time":"22:00:00","rate_cents_per_kwh":12.75,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
+  {"rate_type":"STANDARD","start_time":"22:00:00","end_time":"23:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"}
 ]
 ```
 
-The prefilled example uses one VNB's 2025 price sheet, effective 1 April 2025: OFFPEAK 1.99 ct/kWh, STANDARD 6.64 ct/kWh, and PEAK 12.75 ct/kWh. Set `module3_start_date` to the date you declared/selected Module 3 for your metering point. The preset is applied only to its matching network operator; replace it with your VNB's price sheet if different. API-returned OFFPEAK/STANDARD/PEAK schedules are usable from the selected effective date even when the API labels the selected module `MODULE_1`.
+This is one network operator's 2025 schedule, valid only from 1 April through 31 December 2025, and the prefilled values are accepted only for their matching operator. Replace the rates and validity dates with the schedule for your metering point. Set `module3_start_date` to the effective date you declared or selected. `valid_to` is exclusive.
 
-If Module 3 is selected but neither the API nor manual input provides a matching time-variable rate, the report uses the available API `STANDARD` grid-fee rate and marks `module3_rate_basis` as `API STANDARD grid fee fallback`. It also reports the fallback day count in the service response, event, and notification. This fallback is explicitly a grid-fee rate, not a separate “Module 1 ST” price.
-
-Calculation basis under §14a EnWG: the contractual gross AP is adjusted only by the difference between the current applicable net grid fee and this net contract-start baseline, with VAT applied to that difference:
-
-`adjusted gross AP [EUR/kWh] = contract gross AP [EUR/kWh] + ((current net grid fee - baseline net grid fee) [ct/kWh] / 100) × (1 + VAT)`
-
-Rates are converted consistently from ct/kWh to EUR/kWh by the integration. The regulatory context is BNetzA determination BK6-22-300 for the §14a market process and BK8-22/010-A for network-charge rules/calculation. These determinations do not provide the user's contract baseline or prove that Module 3 was selected; confirm the baseline against the original contract/price sheet and the effective date against the customer's declaration and VNB records.
-
-Example:
-
-```yaml
-action: octopus_germany.export_cost_report
-data:
-  account_number: "A-12345678"
-  period: month
-  year: 2026
-  month: 9
-  contract_start_network_charge_ct_kwh: 7.65
-  module3_start_date: "2025-07-01"
-  # Add module3_rates_json when the API has no rates for the selected period.
-  module1_start_date: "2025-03-19"
-  module1_annual_credit_net_eur: 108.33
-  vat_percent: 19
-```
-
-The implementation uses the market-process framework in BNetzA determination BK6-22-300 and the network-charge rules and calculation framework in BK8-22/010-A as regulatory context. It is a transparent calculation from returned API values and explicit user inputs, not a legal decision on eligibility, enrollment, or a supplier invoice. The network-charge baseline and Module 1 inputs must be checked against the applicable contract and network-operator documents. Missing tariff, network rate, or standing-charge data are reported as incomplete instead of being treated as zero. The current calendar year is limited to readings expected to be available (through two days ago).
-
-In the semicolon-delimited CSV, numeric values use the German decimal comma. Consumption is shown to three decimal places, Euro amounts to cents, and €/kWh rates to six decimal places. Calculations and totals retain full internal precision.
+The response and `octopus_germany_cost_report_result` event include the download URL, day counts, and warnings. A persistent download link expires after 30 days; an incomplete day leaves the monthly total blank.
 
 ### `octopus_germany.submit_meter_readings`
 
-Submit electricity or gas meter readings to the OE API.
+Submits electricity or gas register readings to the OE API. Results are returned by the service and fired as `octopus_germany_meter_readings_submission_result`.
 
-Parameters:
+- `account_number`, `meter_type`, `meter_id`, `reading_date` (required)
+- `meter_type`: `electricity` or `gas`; `reading_date`: `YYYY-MM-DD`
+- Supply either `readings_json` (array of `{ "value", "register_obis_code" }`) or the pair `reading_value` and `register_obis_code`.
 
-- `account_number` (required): Account that owns the meter
-- `meter_type` (required): `electricity` or `gas`
-- `meter_id` (required): OE meter ID from the meter entity attributes
-- `reading_date` (required): `YYYY-MM-DD`
-- `readings_json` (optional): JSON array of readings, each containing `value` and `register_obis_code`
-- `reading_value` and `register_obis_code` (optional): helper fields for a single register reading
-
-Example:
+Only daily readings are supported. The mutation accepts a date and register values, not per-reading timestamps; do not submit 15-minute intervals.
 
 ```yaml
 service: octopus_germany.submit_meter_readings
 data:
+  account_number: "A-12345678"
   meter_type: electricity
   meter_id: "1234567890"
   reading_date: "2026-06-01"
@@ -234,14 +175,7 @@ data:
     [{"value": 1234.56, "register_obis_code": "1-0:1.8.0"}]
 ```
 
-Important limitation:
-
-- The OE mutation accepts a date and register values, not per-entry timestamps.
-- Only **daily values** should be submitted here, not 15-minute intervals.
-
-Practical example:
-
-- [Daily meter reading upload automation](UPLOAD_DAILY_METER_READING_AUTOMATION.md)
+For an automation example, see [Daily Meter Reading Upload Example](UPLOAD_DAILY_METER_READING_AUTOMATION.md).
 
 ## iMSys / SMGW-HAN Recommendation
 

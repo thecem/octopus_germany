@@ -32,11 +32,8 @@ Sign up through my referral link and receive **150 €** as a bill credit. Eligi
 - Generated smart-meter and cost-report CSVs are stored under `/config/octopus_germany/exports`; Home Assistant provides a persistent notification with an authenticated download link
 - **Agreement History**: All agreements returned by OE, including past, active and scheduled entries, with gross/net unit prices, VAT, and net/gross monthly standing charges with validity dates in electricity price sensor attributes
 - **Multi-Ledger Support**: Electricity, Gas, Heat, and other ledger types
-- **Device Control**: Smart charging control for electric vehicles and charge points
-- **Boost Charging**: Instant charge boost functionality (requires smart charging enabled)
-- **Intelligent Dispatching**: Real-time status of Octopus Intelligent charge scheduling
-- **Smart Charging Sessions**: Track smart charges for Octopus rewards (30€/month with ≥5 charges)
-- **Smart Meter Readings**: Previous day accumulative consumption with hourly breakdown (from Octopus-stored meter data)
+- **Smart Charging Sessions**: Track sessions and reward-related data
+- **Smart Meter Readings**: Previous-day consumption with an hourly breakdown from Octopus-stored meter data
 - **Meter Register Sensors**: Per-meter entities are created only for OBIS registers with usable numeric readings; empty or invalid registers do not create sensors, while zero remains valid. Each sensor exposes the complete history for its register and raw meter classification fields. Devices use the reported type, or `Electricity Meter` when the API omits it.
 - **Octopus Historical Data Readout**: Read historical consumption and meter readings stored by Octopus
 - **Service Device Grouping**: All entities organized under single service device per account
@@ -99,6 +96,8 @@ To keep this start page compact, detailed documentation is split across focused 
   - [`custom_components/octopus_germany/README.md`](custom_components/octopus_germany/README.md)
 - Actions, switches and services with practical examples:
   - [`docs/ACTIONS_AND_SERVICES.md`](docs/ACTIONS_AND_SERVICES.md)
+- Cost-report formulas, parameters, CSV fields, and regulatory context:
+  - [`docs/COST_REPORT.md`](docs/COST_REPORT.md)
 
 ### Quick Action Overview
 
@@ -112,25 +111,29 @@ To keep this start page compact, detailed documentation is split across focused 
   - Applies to all seven days; success confirms Octopus API acceptance, not vehicle propagation
 - `octopus_germany.get_smart_meter_readings`
   - Fetch historical iMSys readings for one day
+- `octopus_germany.export_cost_report`
+  - Export a daily/monthly electricity cost estimate for a month or year; see the [cost-report guide](docs/COST_REPORT.md)
 - `octopus_germany.export_smart_meter_csv`
   - Export iMSys readings to CSV (month/year) using paginated monthly range queries
   - Uses the Home Assistant timezone and retains OE meter-quality metadata while loading
 - `octopus_germany.submit_meter_readings`
   - Submit electricity or gas meter readings to the OE API
   - [Daily upload automation example](docs/UPLOAD_DAILY_METER_READING_AUTOMATION.md)
+- `octopus_germany.refresh_intelligent_data`
+  - Refresh Intelligent device and dispatch data on demand
 
 Per-device entity IDs use the stable Octopus device UUID. Display names remain human-readable, so devices with identical names remain independently controllable.
 
-### iMSys / SMGW HAN Hinweis
+### iMSys / SMGW HAN
 
-Wenn du Zählerdaten direkt über die HAN-Schnittstelle deines iMSys (SMGW) einlesen willst,
-kannst du diese Integration parallel nutzen:
+For direct readings from an iMSys smart meter gateway (SMGW) over its HAN interface,
+you can use this integration alongside:
 
 - [`TRON4R/ha-ppc-smgw-han`](https://github.com/TRON4R/ha-ppc-smgw-han)
 
-Empfehlung:
-- `octopus_germany` für Vertrags-/Tarif-/Account- und SmartFlex-Daten sowie das Auslesen der bei Octopus gespeicherten historischen Verbrauchs-/Zählerdaten
-- `ha-ppc-smgw-han` für lokale, direkte HAN-Messwerte vom Gateway
+Recommended split:
+- `octopus_germany` for account, tariff, SmartFlex and Octopus-stored historical consumption/meter data
+- `ha-ppc-smgw-han` for direct local readings from the gateway
 
 ## Automation
 
@@ -196,12 +199,6 @@ LOG_API_RESPONSES = True
 ```
 After restarting HA the API-Responses and additional information will be in debug log.
 
-
-## API Support
-
-For API-related questions, consult the official documentation:
-- REST API: https://developer.oeg-kraken.energy/
-- GraphQL API: https://developer.oeg-kraken.energy/graphql/
 
 ## Support
 

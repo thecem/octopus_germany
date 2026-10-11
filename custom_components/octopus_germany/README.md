@@ -80,29 +80,18 @@ All-day grid-fee intervals supplied by the Octopus Energy (OE) API are logged at
 
 Smart-meter readings are requested only for accounts reporting smart-meter support, and Intelligent entities are created only when the corresponding capability or connected Intelligent devices are available.
 
-CSV exports load smart-meter readings through paginated monthly range queries in the configured Home Assistant timezone. The API layer retains source, quality, device and register metadata when OE provides it; internally consistent intervals can still represent estimated data.
+Smart-meter CSV exports use paginated monthly ranges in the configured Home Assistant timezone. Source and reading-quality metadata are returned with the service response; internally consistent intervals can still be estimates, so check that metadata before treating a value as an actual meter reading.
 
-The `octopus_germany.export_cost_report` action creates daily details plus a classic `MONTH_TOTAL YYYY-MM` line with tariff/network blocks, applied net/gross grid-fee rates, standing charge, Module 1 credit and the gross monthly total. The total is blank if any day is incomplete. It uses agreement labels and network fees returned for the metering point's actual operator, including API validity intervals and heat tariffs. BNetzA determinations BK6-22-300 and BK8-22/010-A provide regulatory context; the calculation does not decide legal eligibility or replace the supplier's bill.
+Cost reports use agreement prices and the network operator's time-valid API rates. The report is an estimate, not a supplier invoice or a legal decision. See [Electricity Cost Report](../../docs/COST_REPORT.md) for its formulas, inputs, CSV rows, and regulatory context.
 
-Each cost-report CSV ends with a `BASIS` section containing the entered assumptions, agreement pricing, standing-charge data, and monthly API grid-fee schedules used for the calculation.
-
-The contract-start network-fee baseline is the net amount already included in the original gross contract AP. The report adjusts only the difference to the currently applicable VNB rate. Its default `7.65 ct/kWh` is an unverified placeholder and must be checked against the contract price sheet.
-
-Generated smart-meter and cost-report CSVs are stored under `/config/octopus_germany/exports`. Each export creates a persistent Home Assistant notification with a browser-download link; its file-scoped token is kept in private HA storage and expires after 30 days.
-
-API monthly standing charges are converted to a per-day charge on a `12 / 365` annualized basis and applied to the actual number of days in each billing month.
-
-For historical Module 3 periods, the cost-report service accepts a customer-selected effective date and optional manual time-variable grid-fee rates. API rates are used from the selected date even if the API still reports `MODULE_1`; missing Module 3 intervals fall back to the API STANDARD grid-fee rate and are explicitly flagged.
-
-Yearly exports are split into one range per calendar month. The range API paginates at 100 readings per page, spaces requests by two seconds, retries `KT-CT-1199` rate limits with bounded delays, and applies a shorter cooldown if the API continues to limit requests. The startup statistics backfill requests its pending date window as one range rather than issuing one request per day.
-
-The OEG API enforces a GraphQL complexity limit of 200. Keep the comprehensive account query below that ceiling: agreement standing-charge fields are loaded with a separate lightweight query and merged onto agreements by agreement ID, with product and validity dates as fallback keys. If that optional query fails, core account refresh continues and standing-charge agreement attributes remain empty.
+Generated CSV files are stored under `/config/octopus_germany/exports`. Each export creates a persistent Home Assistant notification with a file-scoped browser-download link that expires after 30 days.
 
 ## Documentation Structure
 
 To keep the repository start page compact, action details are documented in:
 
 - [`docs/ACTIONS_AND_SERVICES.md`](../../docs/ACTIONS_AND_SERVICES.md)
+- [Electricity cost-report reference](../../docs/COST_REPORT.md)
 
 ## Community Dashboard Example
 
@@ -388,52 +377,14 @@ Per-device entity IDs use the stable Octopus device UUID. Display names remain h
 
 ## Services
 
-### set_device_preferences
-- **Service ID**: `octopus_germany.set_device_preferences`
-- **Description**: Configure charging preferences for an electric vehicle or charge point
-- **Parameters**:
-  - `device_id` (required): The UI dropdown selects by vehicle/charge-point name. YAML accepts either the Home Assistant device registry ID or the Octopus device UUID; HA registry IDs are resolved automatically.
-  - `target_percentage` (required): Target state of charge (20-100% in 5% steps)
-  - `target_time` (required): Target completion time (04:00-17:00)
+- `octopus_germany.refresh_intelligent_data`
+- `octopus_germany.set_device_preferences`
+- `octopus_germany.get_smart_meter_readings`
+- `octopus_germany.export_smart_meter_csv`
+- `octopus_germany.export_cost_report`
+- `octopus_germany.submit_meter_readings`
 
-The Home Assistant action form lists vehicles and charge points by their registered names, excluding the account service device. The dropdown supplies a Home Assistant device registry ID, which the service resolves to the Octopus ID. YAML calls may use either the Home Assistant registry ID or the Octopus device UUID; entity IDs are not accepted. The target percentage and completion time apply to all seven days of the week.
-Success confirms acceptance by the Octopus API, not propagation to the vehicle.
-API errors or missing update confirmations cause the service call to fail.
-
-**Example:**
-```yaml
-service: octopus_germany.set_device_preferences
-data:
-  device_id: "00000000-0002-4000-803c-0000000021c7"
-  target_percentage: 80
-  target_time: "07:00"
-```
-
-**Note**: The old `set_vehicle_charge_preferences` service has been removed. Use `set_device_preferences` instead with specific device IDs.
-
-### submit_meter_readings
-- **Service ID**: `octopus_germany.submit_meter_readings`
-- **Description**: Submit electricity or gas meter readings to the OE API
-- **Parameters**:
-  - `meter_type` (required): `electricity` or `gas`
-  - `meter_id` (required): The OE meter ID from the meter entity attributes
-  - `reading_date` (required): `YYYY-MM-DD`
-  - `readings_json` (optional): JSON array of reading objects with `value` and `register_obis_code`
-  - `reading_value` / `register_obis_code` (optional): Convenience fields for a single register reading
-
-**Example:**
-```yaml
-service: octopus_germany.submit_meter_readings
-data:
-  meter_type: electricity
-  meter_id: "1234567890"
-  reading_date: "2026-06-01"
-  readings_json: >-
-    [{"value": 1234.56, "register_obis_code": "1-0:1.8.0"}]
-```
-
-**Note**: The OE mutation accepts the day plus register values; it does not submit per-entry timestamps.
-For a full Home Assistant automation example, see [docs/UPLOAD_DAILY_METER_READING_AUTOMATION.md](../../docs/UPLOAD_DAILY_METER_READING_AUTOMATION.md).
+See [Actions and Services](../../docs/ACTIONS_AND_SERVICES.md) for fields, response events, examples, and limitations. See [Electricity Cost Report](../../docs/COST_REPORT.md) for the cost model.
 
 ## iMSys / SMGW-HAN
 
@@ -497,12 +448,6 @@ LOG_API_RESPONSES = True
 ```
 After restarting HA the API-Responses and additional information will be in debug log.
 
-
-## API Support
-
-For API-related questions, consult the official documentation:
-- REST API: https://developer.oeg-kraken.energy/
-- GraphQL API: https://developer.oeg-kraken.energy/graphql/
 
 ## Support
 
