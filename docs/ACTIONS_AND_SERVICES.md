@@ -145,6 +145,8 @@ Create a daily cost calculation CSV under `/config/octopus_germany/exports` for 
 
 The CSV includes one `MONTH_TOTAL YYYY-MM` row per calendar month. It sums each tariff/network time block and makes the monthly equation explicit: adjusted energy cost + standing charge - gross Module 1 credit = monthly gross total. A monthly total remains blank if any day is incomplete; the status identifies how many days need review.
 
+For every tariff/network block, daily rows also show the applied grid-fee rate in net and gross ct/kWh columns (`*_grid_fee_net_ct_per_kwh` and `*_grid_fee_gross_ct_per_kwh`). Monthly rows show the consumption-weighted average if the rate changes during the month.
+
 After the `TOTAL` row, `BASIS` rows record the service inputs, agreement prices and standing-charge rates, plus each month's API grid-fee schedule as JSON. This makes the values and validity periods used for the calculation auditable.
 
 Monthly standing charges from the API are converted to their daily contractual rate using the annualized `12 / 365` basis, then charged for each actual calendar day in the selected period. This matches tariffs invoiced per day rather than forcing every month to the same total standing charge.

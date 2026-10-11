@@ -1,5 +1,12 @@
 # Release Notes
 
+## Version 0.0.185 (2026-10-11)
+
+### Features
+
+- Include applied net and gross grid-fee rates per tariff/time block in daily
+  and monthly cost-report CSV rows.
+
 ## Version 0.0.184 (2026-10-11)
 
 ### Features

@@ -82,7 +82,7 @@ Smart-meter readings are requested only for accounts reporting smart-meter suppo
 
 CSV exports load smart-meter readings through paginated monthly range queries in the configured Home Assistant timezone. The API layer retains source, quality, device and register metadata when OE provides it; internally consistent intervals can still represent estimated data.
 
-The `octopus_germany.export_cost_report` action creates daily details plus a classic `MONTH_TOTAL YYYY-MM` line with tariff/network blocks, standing charge, Module 1 credit and the gross monthly total. The total is blank if any day is incomplete. It uses agreement labels and network fees returned for the metering point's actual operator, including API validity intervals and heat tariffs. BNetzA determinations BK6-22-300 and BK8-22/010-A provide regulatory context; the calculation does not decide legal eligibility or replace the supplier's bill.
+The `octopus_germany.export_cost_report` action creates daily details plus a classic `MONTH_TOTAL YYYY-MM` line with tariff/network blocks, applied net/gross grid-fee rates, standing charge, Module 1 credit and the gross monthly total. The total is blank if any day is incomplete. It uses agreement labels and network fees returned for the metering point's actual operator, including API validity intervals and heat tariffs. BNetzA determinations BK6-22-300 and BK8-22/010-A provide regulatory context; the calculation does not decide legal eligibility or replace the supplier's bill.
 
 Each cost-report CSV ends with a `BASIS` section containing the entered assumptions, agreement pricing, standing-charge data, and monthly API grid-fee schedules used for the calculation.
 

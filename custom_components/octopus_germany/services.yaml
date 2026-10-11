@@ -164,7 +164,7 @@ export_smart_meter_csv:
 
 export_cost_report:
   name: Export electricity cost report
-  description: Create a daily CSV cost breakdown from agreement prices, smart-meter readings, and variable grid fees. Files are saved under /config/octopus_germany/exports and a persistent Home Assistant notification provides a browser-download link valid for 30 days. Required contractual assumptions are explicit inputs; missing API rates remain marked incomplete.
+  description: Create a daily CSV cost breakdown from agreement prices, smart-meter readings, and variable grid fees. The CSV shows applied net and gross grid-fee rates in ct/kWh by tariff/time block and appends the calculation basis. Files are saved under /config/octopus_germany/exports and a persistent Home Assistant notification provides a browser-download link valid for 30 days. Required contractual assumptions are explicit inputs; missing API rates remain marked incomplete.
   fields:
     account_number:
       name: Account Number
