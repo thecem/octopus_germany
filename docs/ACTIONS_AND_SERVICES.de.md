@@ -142,6 +142,8 @@ Erstellt eine taegliche Kostenberechnung als CSV-Datei unter `/config/octopus_ge
 
 Die CSV enthaelt pro Kalendermonat eine Zeile `MONTH_TOTAL YYYY-MM`. Sie summiert die Tarif-/Netzzeitbloecke einzeln und zeigt die Monatsformel: Energie nach Netzentgeltkorrektur + Grundpreis - Modul-1-Gutschrift brutto = Monatsgesamtpreis brutto. Ist mindestens ein Tag unvollstaendig, bleibt der Monatsgesamtpreis leer; der Status nennt die Zahl der zu pruefenden Tage.
 
+Nach der Zeile `TOTAL` dokumentieren `BASIS`-Zeilen die Service-Eingaben, Agreement-Arbeitspreise und Grundpreisstufen sowie die API-Netzentgeltsaetze je Monat als JSON. Dadurch sind die fuer die Berechnung verwendeten Werte und Gueltigkeitszeitraeume nachvollziehbar.
+
 Monatliche API-Grundpreise werden mit dem Jahresfaktor `12 / 365` in den vertraglichen Tagessatz umgerechnet und anschliessend fuer jeden tatsaechlichen Kalendertag angesetzt. Damit bleibt der Grundpreis nicht kuenstlich in jedem Monat gleich, wenn der Tarif pro Tag abgerechnet wird.
 
 Parameter:

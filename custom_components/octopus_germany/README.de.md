@@ -35,6 +35,8 @@ Die OEG-API begrenzt die GraphQL-Komplexitaet auf 200. Die Comprehensive-Query m
 
 Der Service `octopus_germany.export_cost_report` erstellt Tagesdetails und pro Monat eine klassische `MONTH_TOTAL YYYY-MM`-Zeile mit Tarif-/Netzzeitbloecken, Grundpreis, Modul-1-Gutschrift und explizitem Brutto-Gesamtpreis. Bei unvollstaendigen Tagen bleibt der Monatsgesamtpreis leer. Der Service nutzt Agreement-Preisbezeichnungen und API-Netzentgelte des tatsaechlichen Netzbetreibers samt Gueltigkeitsintervallen; auch Waermestromtarife werden unter eigener Bezeichnung gefuehrt. BK6-22-300 (Marktprozesse) und BK8-22/010-A (Netzentgeltregeln und Kalkulationsrahmen) bilden den regulatorischen Kontext; der Service entscheidet nicht ueber Rechtsansprueche und ersetzt keine Lieferantenrechnung.
 
+Jede Kosten-CSV endet mit einem `BASIS`-Abschnitt, der die eingegebenen Annahmen, Agreement-Preise, Grundpreisdaten und die monatlichen API-Netzentgeltsaetze der Berechnung dokumentiert.
+
 Monatliche API-Grundpreise werden auf Basis von `12 / 365` in einen Tagessatz umgerechnet und mit der tatsaechlichen Tageszahl des Abrechnungsmonats angesetzt.
 
 Fuer historische Modul-3-Zeitraeume nimmt der Kostenbericht ein vom Kunden gesetztes Wirksamkeitsdatum und optional manuelle zeitvariable Netzentgeltsaetze an. API-Saetze werden ab diesem Datum auch dann verwendet, wenn die API noch `MODULE_1` meldet. Fehlen Modul-3-Intervalle, wird der API-`STANDARD`-Netzentgeltsatz verwendet und explizit gekennzeichnet.

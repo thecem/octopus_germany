@@ -1,6 +1,7 @@
 """Tests for tariff capability detection and conditional API fields."""
 
 import asyncio
+import json
 import unittest
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -29,6 +30,7 @@ from custom_components.octopus_germany.const import (
 )
 from custom_components.octopus_germany.coordinator import normalize_update_interval
 from custom_components.octopus_germany.cost_report import (
+    build_cost_report_basis_rows,
     build_daily_cost_report,
     build_monthly_cost_summaries,
     cost_report_headers,
@@ -2622,6 +2624,12 @@ class TariffCapabilitiesTest(unittest.TestCase):
         self.assertEqual(day["grid_operator"], "Example Netz GmbH")
         self.assertEqual(day["network_module"], "MODULE_1")
         self.assertEqual(day["module3_rate_basis"], "Module 3 API rates")
+        self.assertEqual(day["go_offpeak_grid_fee_net_ct_per_kwh"], Decimal("1.64"))
+        self.assertEqual(day["go_offpeak_grid_fee_gross_ct_per_kwh"], Decimal("1.9516"))
+        self.assertEqual(day["standard_peak_grid_fee_net_ct_per_kwh"], Decimal("10.52"))
+        self.assertEqual(
+            day["standard_peak_grid_fee_gross_ct_per_kwh"], Decimal("12.5188")
+        )
         self.assertEqual(day["module3_rate_basis"], "Module 3 API rates")
         self.assertEqual(
             day["standing_charge_gross_eur"],
@@ -2640,6 +2648,10 @@ class TariffCapabilitiesTest(unittest.TestCase):
         )
         self.assertEqual(monthly["go_offpeak_kwh"], Decimal(1))
         self.assertEqual(monthly["standard_peak_kwh"], Decimal(2))
+        self.assertEqual(monthly["go_offpeak_grid_fee_net_ct_per_kwh"], Decimal("1.64"))
+        self.assertEqual(
+            monthly["standard_peak_grid_fee_gross_ct_per_kwh"], Decimal("12.5188")
+        )
         headers = cost_report_headers(report)
         self.assertIn("go_offpeak_kwh", headers)
         self.assertIn("standard_peak_kwh", headers)
@@ -3019,6 +3031,60 @@ class TariffCapabilitiesTest(unittest.TestCase):
             "0,150654",
         )
         self.assertEqual(format_cost_report_value("unpriced_kwh", Decimal(0)), "0,000")
+
+    def test_cost_report_basis_rows_capture_user_and_api_inputs(self) -> None:
+        """Keep the exact calculation inputs and API schedule auditable in CSV."""
+        rows = build_cost_report_basis_rows(
+            products=[
+                {
+                    "code": "TOU-1",
+                    "name": "Sample tariff",
+                    "validFrom": "2025-01-01",
+                    "validTo": "2026-01-01",
+                    "prices": [{"name": "GO", "gross_eur_per_kwh": "0.15"}],
+                    "standing_charge_net_eur_per_month": "14.90",
+                    "standing_charge_gross_rates": [],
+                }
+            ],
+            grid_fees_by_month={
+                (2025, 7): {
+                    "module": "MODULE_1",
+                    "grid_operator_code": "sample-vnb",
+                    "rates": [
+                        {
+                            "rate_type": "OFFPEAK",
+                            "start_time": "23:00:00",
+                            "end_time": "06:00:00",
+                            "rate_cents_per_kwh": "1.99",
+                            "valid_from": "2025-04-01T00:00:00+02:00",
+                            "valid_to": "2026-01-01T00:00:00+01:00",
+                        }
+                    ],
+                }
+            },
+            contract_start_network_charge_ct_kwh=Decimal("7.65"),
+            module3_start_date=date(2025, 7, 1),
+            manual_module3_rates=[],
+            module1_start_date=date(2025, 3, 1),
+            module1_annual_net_eur=Decimal("108.33"),
+            vat_percent=Decimal(19),
+        )
+
+        self.assertEqual(
+            [row["record_type"] for row in rows], ["BASIS", "BASIS", "BASIS"]
+        )
+        parameters = json.loads(rows[0]["basis_value"])
+        self.assertEqual(
+            parameters["contract_start_network_charge_net_ct_per_kwh"], "7.65"
+        )
+        self.assertEqual(parameters["module3_effective_date"], "2025-07-01")
+        self.assertIn("agreement:TOU-1", {row["basis_key"] for row in rows})
+        api_fees = next(
+            row for row in rows if row["basis_key"] == "api_grid_fees:2025-07"
+        )
+        self.assertEqual(
+            json.loads(api_fees["basis_value"])["rates"][0]["rate_type"], "OFFPEAK"
+        )
 
     def test_export_files_are_sanitized_and_download_requires_auth(self) -> None:
         """Issue a file-scoped query token for direct authenticated downloads."""

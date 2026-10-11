@@ -1,5 +1,12 @@
 # Release Notes
 
+## Version 0.0.184 (2026-10-11)
+
+### Features
+
+- Append calculation inputs, agreement pricing, and monthly API grid-fee data
+  to cost-report CSVs for auditability.
+
 ## Version 0.0.183 (2026-10-11)
 
 ### Fixes

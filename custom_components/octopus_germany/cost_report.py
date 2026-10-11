@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
@@ -19,6 +20,7 @@ _MONTHS_PER_YEAR = Decimal(12)
 _DAYS_PER_STANDING_CHARGE_YEAR = Decimal(365)
 
 COST_REPORT_HEADERS = [
+    "record_type",
     "date",
     "tariff_agreement",
     "grid_operator",
@@ -37,6 +39,8 @@ COST_REPORT_HEADERS = [
     "unpriced_kwh",
     "network_rate_missing_kwh",
     "status",
+    "basis_key",
+    "basis_value",
 ]
 
 
@@ -48,11 +52,84 @@ def cost_report_headers(rows: list[dict[str, Any]]) -> list[str]:
     return [*COST_REPORT_HEADERS, *dynamic]
 
 
+def build_cost_report_basis_rows(
+    products: list[dict[str, Any]],
+    grid_fees_by_month: dict[tuple[int, int], dict[str, Any] | None],
+    contract_start_network_charge_ct_kwh: Decimal,
+    module3_start_date: date | None,
+    manual_module3_rates: list[dict[str, Any]],
+    module1_start_date: date | None,
+    module1_annual_net_eur: Decimal,
+    vat_percent: Decimal,
+) -> list[dict[str, Any]]:
+    """Create auditable CSV rows for user inputs, agreements, and API fees."""
+
+    def encode(value: Any) -> str:
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"), default=str)
+
+    rows = [
+        {
+            "record_type": "BASIS",
+            "date": "BASIS",
+            "basis_key": "calculation_parameters",
+            "basis_value": encode(
+                {
+                    "contract_start_network_charge_net_ct_per_kwh": contract_start_network_charge_ct_kwh,
+                    "module3_effective_date": module3_start_date,
+                    "manual_module3_rates_net": manual_module3_rates,
+                    "module1_effective_date": module1_start_date,
+                    "module1_annual_credit_net_eur": module1_annual_net_eur,
+                    "vat_percent_fallback": vat_percent,
+                    "grid_fee_adjustment_formula": (
+                        "gross contract AP + (current VNB net fee ct/kWh - "
+                        "contract-start net fee ct/kWh) * (1 + VAT) / 100"
+                    ),
+                }
+            ),
+        }
+    ]
+    for product in products:
+        rows.append(
+            {
+                "record_type": "BASIS",
+                "date": "BASIS",
+                "basis_key": f"agreement:{product.get('code') or product.get('name') or 'unknown'}",
+                "basis_value": encode(
+                    {
+                        "code": product.get("code"),
+                        "name": product.get("name"),
+                        "type": product.get("type"),
+                        "validFrom": product.get("validFrom"),
+                        "validTo": product.get("validTo"),
+                        "prices": product.get("prices") or [],
+                        "standing_charge_net_eur_per_month": product.get(
+                            "standing_charge_net_eur_per_month"
+                        ),
+                        "standing_charge_gross_rates": product.get(
+                            "standing_charge_gross_rates"
+                        )
+                        or [],
+                    }
+                ),
+            }
+        )
+    for (year, month), fee_data in sorted(grid_fees_by_month.items()):
+        rows.append(
+            {
+                "record_type": "BASIS",
+                "date": "BASIS",
+                "basis_key": f"api_grid_fees:{year:04d}-{month:02d}",
+                "basis_value": encode(fee_data or {"rates": []}),
+            }
+        )
+    return rows
+
+
 def format_cost_report_value(field: str, value: Any) -> Any:
     """Format Decimal values for CSV display without changing calculations."""
     if not isinstance(value, Decimal):
         return value
-    if field.endswith("_eur_per_kwh"):
+    if field.endswith(("_eur_per_kwh", "_ct_per_kwh")):
         quantum = Decimal("0.000001")
     elif field.endswith("_eur"):
         quantum = Decimal("0.01")
@@ -79,6 +156,7 @@ def build_monthly_cost_summaries(
     summaries = []
     for month, month_rows in sorted(rows_by_month.items()):
         summary: dict[str, Any] = {
+            "record_type": "MONTH_TOTAL",
             "date": f"MONTH_TOTAL {month}",
             "tariff_agreement": " | ".join(
                 sorted(
@@ -141,6 +219,26 @@ def build_monthly_cost_summaries(
             quantity = summary.get(f"{prefix}_kwh", Decimal(0))
             cost = summary.get(f"{prefix}_contract_cost_gross_eur", Decimal(0))
             summary[field] = cost / quantity if quantity else None
+        for rate_suffix in (
+            "_grid_fee_net_ct_per_kwh",
+            "_grid_fee_gross_ct_per_kwh",
+        ):
+            for field in fields:
+                if not field.endswith(rate_suffix):
+                    continue
+                prefix = field.removesuffix(rate_suffix)
+                quantity_field = f"{prefix}_kwh"
+                weighted_quantity = Decimal(0)
+                weighted_rate = Decimal(0)
+                for row in month_rows:
+                    rate = row.get(field)
+                    quantity = row.get(quantity_field)
+                    if isinstance(rate, Decimal) and isinstance(quantity, Decimal):
+                        weighted_rate += rate * quantity
+                        weighted_quantity += quantity
+                summary[field] = (
+                    weighted_rate / weighted_quantity if weighted_quantity else None
+                )
 
         incomplete_days = sum(row.get("status") != "complete" for row in month_rows)
         module1_fallback_days = sum(
@@ -387,6 +485,9 @@ def build_daily_cost_report(
         base_costs: dict[tuple[str, str], Decimal] = {}
         adjustments: dict[tuple[str, str], Decimal] = {}
         final_costs: dict[tuple[str, str], Decimal] = {}
+        grid_fee_net_weighted: dict[tuple[str, str], Decimal] = {}
+        grid_fee_gross_weighted: dict[tuple[str, str], Decimal] = {}
+        grid_fee_weighted_kwh: dict[tuple[str, str], Decimal] = {}
         tariff_labels: dict[str, str] = {}
         unpriced_kwh = Decimal(0)
         missing_network_kwh = Decimal(0)
@@ -492,6 +593,18 @@ def build_daily_cost_report(
             base_costs[block] = base_costs.get(block, Decimal(0)) + base_cost
             adjustments[block] = adjustments.get(block, Decimal(0)) + gross_adjustment
             final_costs[block] = final_costs.get(block, Decimal(0)) + final_cost
+            if network_rate is not None:
+                grid_fee_net_weighted[block] = (
+                    grid_fee_net_weighted.get(block, Decimal(0))
+                    + network_rate * Decimal(100) * quantity
+                )
+                grid_fee_gross_weighted[block] = (
+                    grid_fee_gross_weighted.get(block, Decimal(0))
+                    + network_rate * Decimal(100) * (Decimal(1) + vat) * quantity
+                )
+                grid_fee_weighted_kwh[block] = (
+                    grid_fee_weighted_kwh.get(block, Decimal(0)) + quantity
+                )
 
         noon = datetime.combine(current_date, time(12), tzinfo=local_timezone)
         current_product = _select_product(products, noon)
@@ -518,6 +631,7 @@ def build_daily_cost_report(
             status = "incomplete: standing charge missing"
 
         row: dict[str, Any] = {
+            "record_type": "DAY",
             "date": current_date.isoformat(),
             "tariff_agreement": " | ".join(sorted(agreement_names)),
             "grid_operator": network_operator or "Unknown",
@@ -547,6 +661,13 @@ def build_daily_cost_report(
             row[f"{prefix}_contract_cost_gross_eur"] = base_costs[block]
             row[f"{prefix}_network_adjustment_gross_eur"] = adjustments[block]
             row[f"{prefix}_final_cost_gross_eur"] = final_costs[block]
+            priced_kwh = grid_fee_weighted_kwh.get(block, Decimal(0))
+            row[f"{prefix}_grid_fee_net_ct_per_kwh"] = (
+                grid_fee_net_weighted[block] / priced_kwh if priced_kwh else None
+            )
+            row[f"{prefix}_grid_fee_gross_ct_per_kwh"] = (
+                grid_fee_gross_weighted[block] / priced_kwh if priced_kwh else None
+            )
         for tariff_slug, tariff_label in tariff_labels.items():
             tariff_blocks = [block for block in quantities if block[0] == tariff_slug]
             tariff_quantity = sum(

@@ -21,6 +21,7 @@ from .api.smart_meter import SmartMeterFetchError
 from .const import DOMAIN
 from .cost_report import (
     COST_REPORT_HEADERS,
+    build_cost_report_basis_rows,
     build_daily_cost_report,
     build_monthly_cost_summaries,
     cost_report_headers,
@@ -1078,6 +1079,16 @@ async def async_register_services(
         )
         monthly_summaries = build_monthly_cost_summaries(report_rows)
         csv_rows = [*report_rows, *monthly_summaries]
+        basis_rows = build_cost_report_basis_rows(
+            products=products,
+            grid_fees_by_month=grid_fees_by_month,
+            contract_start_network_charge_ct_kwh=baseline,
+            module3_start_date=module3_start,
+            manual_module3_rates=manual_module3_rates,
+            module1_start_date=module1_start,
+            module1_annual_net_eur=module1_annual,
+            vat_percent=vat_percent,
+        )
         module1_fallback_days = sum(
             "API STANDARD grid fee fallback" in str(row.get("module3_rate_basis") or "")
             for row in report_rows
@@ -1112,7 +1123,7 @@ async def async_register_services(
         safe_filename = output_path.name
 
         def write_cost_csv() -> None:
-            headers = cost_report_headers(csv_rows)
+            headers = cost_report_headers([*csv_rows, *basis_rows])
             output_path.parent.mkdir(parents=True, exist_ok=True)
             with output_path.open("w", newline="", encoding="utf-8-sig") as csvfile:
                 writer = csv.DictWriter(
@@ -1130,6 +1141,7 @@ async def async_register_services(
                         }
                     )
                 totals: dict[str, Any] = {
+                    "record_type": "TOTAL",
                     "date": "TOTAL",
                     "tariff_agreement": "Selected period",
                 }
@@ -1168,6 +1180,8 @@ async def async_register_services(
                         for key, value in totals.items()
                     }
                 )
+                for row in basis_rows:
+                    writer.writerow(row)
 
         await hass.async_add_executor_job(write_cost_csv)
         download_url = await async_notify_export_ready(
