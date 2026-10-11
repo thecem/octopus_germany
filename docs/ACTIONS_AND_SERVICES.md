@@ -67,16 +67,16 @@ Example:
 ```yaml
 service: octopus_germany.refresh_intelligent_data
 ```
-
-### `octopus_germany.set_device_preferences`
-
-Set target SoC and target time for a specific EV/charge point.
-
-Choose a vehicle or charge point by its name from the Home Assistant dropdown.
+  {"rate_type":"OFFPEAK","start_time":"23:00:00","end_time":"06:00:00","rate_cents_per_kwh":1.99,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
+  {"rate_type":"STANDARD","start_time":"06:00:00","end_time":"11:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
+  {"rate_type":"OFFPEAK","start_time":"11:00:00","end_time":"15:00:00","rate_cents_per_kwh":1.99,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
+  {"rate_type":"STANDARD","start_time":"15:00:00","end_time":"17:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
+  {"rate_type":"PEAK","start_time":"17:00:00","end_time":"22:00:00","rate_cents_per_kwh":12.75,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
+  {"rate_type":"STANDARD","start_time":"22:00:00","end_time":"23:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"}
 The account service device is excluded, and Home Assistant resolves the
 selection to its Octopus device ID. YAML calls may use either the Home Assistant
 device registry ID or the Octopus device UUID; entity IDs are not accepted.
-
+The example values are from one VNB's 2025 price sheet, effective 1 April 2025: OFFPEAK 1.99 ct/kWh, STANDARD 6.64 ct/kWh, and PEAK 12.75 ct/kWh. Set `module3_start_date` to the date you declared/selected Module 3 for your metering point. The prefilled preset is applied only to its matching network-operator code; replace it with your VNB's own values if different. API-returned OFFPEAK/STANDARD/PEAK schedules are usable from the selected effective date even when the API labels the selected module `MODULE_1`.
 Both settings apply to all seven days. Success confirms acceptance by the Octopus
 API, not propagation to the vehicle. API errors or missing update confirmations
 cause the service call to fail.
@@ -153,12 +153,36 @@ Parameters:
 - `property_id` (optional): defaults to the first electricity property
 - `period` (required): `month` or `year`
 - `year` (required); `month` is required for monthly reports
-- `contract_start_network_charge_ct_kwh` (required, default `7.65`): net ct/kWh assumed included in the original contract AP for this metering point
-- Module 3 activation, rate types, time windows, and validity are read from the API for the network operator assigned to the metering point; they are not user-entered
+- `contract_start_network_charge_ct_kwh` (required, default `7.65`): the **net** network-fee component in ct/kWh that the original contract price sheet says is already included in the gross contract AP. The report replaces this baseline with the valid VNB rate; it does not add the full grid fee again. `7.65` is a reference value from one VNB's 2024 price sheet, not a universal or legal default; use it only if your contract's price breakdown supports it.
+- `module3_start_date` (optional): date the customer declared/selected Module 3 for this metering point; when provided, time-variable API rates are used from this date even if the API's `module` field still says `MODULE_1`
+- `module3_rates_json` (optional): JSON array of manual rate entries for historical intervals missing from the API; the rate is net ct/kWh, and times are local
 - `module1_start_date` (optional): date from which to prorate the user-supplied Module 1 credit
 - `module1_annual_credit_net_eur` (required, default `0`): applicable network operator's net annual credit for the selected report year
 - `vat_percent` (required, default `19`): fallback if the agreement price has no VAT rate
 - `filename` (optional): CSV filename in `/config`
+
+Manual rate example for a historical period:
+
+```json
+[
+  {"rate_type":"OFFPEAK","start_time":"00:00:00","end_time":"06:00:00","rate_cents_per_kwh":1.99,"valid_from":"2025-04-01T00:00:00+02:00"},
+  {"rate_type":"STANDARD","start_time":"06:00:00","end_time":"11:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00"},
+  {"rate_type":"OFFPEAK","start_time":"11:00:00","end_time":"15:00:00","rate_cents_per_kwh":1.99,"valid_from":"2025-04-01T00:00:00+02:00"},
+  {"rate_type":"STANDARD","start_time":"15:00:00","end_time":"17:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00"},
+  {"rate_type":"PEAK","start_time":"17:00:00","end_time":"22:00:00","rate_cents_per_kwh":12.75,"valid_from":"2025-04-01T00:00:00+02:00"},
+  {"rate_type":"STANDARD","start_time":"22:00:00","end_time":"23:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00"}
+]
+```
+
+The prefilled example uses one VNB's 2025 price sheet, effective 1 April 2025: OFFPEAK 1.99 ct/kWh, STANDARD 6.64 ct/kWh, and PEAK 12.75 ct/kWh. Set `module3_start_date` to the date you declared/selected Module 3 for your metering point. The preset is applied only to its matching network operator; replace it with your VNB's price sheet if different. API-returned OFFPEAK/STANDARD/PEAK schedules are usable from the selected effective date even when the API labels the selected module `MODULE_1`.
+
+If Module 3 is selected but neither the API nor manual input provides a matching time-variable rate, the report uses the available API `STANDARD` grid-fee rate and marks `module3_rate_basis` as `API STANDARD grid fee fallback`. It also reports the fallback day count in the service response, event, and notification. This fallback is explicitly a grid-fee rate, not a separate “Module 1 ST” price.
+
+Calculation basis under §14a EnWG: the contractual gross AP is adjusted only by the difference between the current applicable net grid fee and this net contract-start baseline, with VAT applied to that difference:
+
+`adjusted gross AP [EUR/kWh] = contract gross AP [EUR/kWh] + ((current net grid fee - baseline net grid fee) [ct/kWh] / 100) × (1 + VAT)`
+
+Rates are converted consistently from ct/kWh to EUR/kWh by the integration. The regulatory context is BNetzA determination BK6-22-300 for the §14a market process and BK8-22/010-A for network-charge rules/calculation. These determinations do not provide the user's contract baseline or prove that Module 3 was selected; confirm the baseline against the original contract/price sheet and the effective date against the customer's declaration and VNB records.
 
 Example:
 
@@ -170,6 +194,8 @@ data:
   year: 2026
   month: 9
   contract_start_network_charge_ct_kwh: 7.65
+  module3_start_date: "2025-07-01"
+  # Add module3_rates_json when the API has no rates for the selected period.
   module1_start_date: "2025-03-19"
   module1_annual_credit_net_eur: 108.33
   vat_percent: 19

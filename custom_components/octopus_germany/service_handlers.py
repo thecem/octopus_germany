@@ -32,7 +32,11 @@ from .file_exports import (
     export_file_path,
 )
 from .services import async_request_intelligent_refresh
-from .tariff import normalize_variable_grid_fees, parse_product_datetime
+from .tariff import (
+    normalize_variable_grid_fees,
+    parse_product_datetime,
+    parse_tariff_time,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -57,6 +61,19 @@ _TIME_PARTS_MIN = 2
 _MAX_HOUR = 23
 _MAX_MINUTE = 59
 _SAMPLE_READINGS_COUNT = 3
+_EAM_GRID_OPERATOR_CODE = "9900330000004"
+_EAM_2025_MODULE3_VALID_FROM = "2025-04-01T00:00:00+02:00"
+_EAM_2025_MODULE3_VALID_TO = "2026-01-01T00:00:00+01:00"
+_EAM_2025_MODULE3_RATE_SIGNATURE = frozenset(
+    {
+        ("OFFPEAK", "23:00:00", "06:00:00", "1.99"),
+        ("STANDARD", "06:00:00", "11:00:00", "6.64"),
+        ("OFFPEAK", "11:00:00", "15:00:00", "1.99"),
+        ("STANDARD", "15:00:00", "17:00:00", "6.64"),
+        ("PEAK", "17:00:00", "22:00:00", "12.75"),
+        ("STANDARD", "22:00:00", "23:00:00", "6.64"),
+    }
+)
 
 
 def _decimal_service_value(value: Any, field_name: str) -> Decimal:
@@ -84,6 +101,88 @@ def _optional_service_date(value: Any, field_name: str) -> date | None:
     except ValueError as err:
         _raise_validation_error(f"{field_name} must use YYYY-MM-DD format")
         raise ValueError(f"Invalid {field_name}") from err
+
+
+def _parse_manual_module3_rates(value: Any) -> list[dict[str, Any]]:
+    """Parse user-provided Module 3 grid-fee windows from service JSON."""
+    if value in (None, ""):
+        return []
+    try:
+        entries = json.loads(value) if isinstance(value, str) else value
+    except json.JSONDecodeError as err:
+        _raise_validation_error(f"module3_rates_json is invalid JSON: {err}")
+        raise ValueError("Invalid module3_rates_json") from err
+    if not isinstance(entries, list):
+        _raise_validation_error("module3_rates_json must be a JSON array")
+
+    rates = []
+    for index, entry in enumerate(entries):
+        field_prefix = f"module3_rates_json[{index}]"
+        if not isinstance(entry, dict):
+            _raise_validation_error(f"{field_prefix} must be an object")
+        rate_type = str(entry.get("rate_type") or "").upper()
+        if rate_type not in {"OFFPEAK", "STANDARD", "PEAK"}:
+            _raise_validation_error(
+                f"{field_prefix}.rate_type must be OFFPEAK, STANDARD, or PEAK"
+            )
+        start_time = entry.get("start_time")
+        end_time = entry.get("end_time")
+        if not start_time or not end_time:
+            _raise_validation_error(f"{field_prefix} requires start_time and end_time")
+        if (
+            parse_tariff_time(str(start_time)) is None
+            or parse_tariff_time(str(end_time)) is None
+        ):
+            _raise_validation_error(
+                f"{field_prefix} start_time/end_time must use HH:MM:SS"
+            )
+        cents = _decimal_service_value(
+            entry.get("rate_cents_per_kwh"),
+            f"{field_prefix}.rate_cents_per_kwh",
+        )
+        if cents < 0:
+            _raise_validation_error(
+                f"{field_prefix}.rate_cents_per_kwh cannot be negative"
+            )
+        valid_from = entry.get("valid_from")
+        valid_to = entry.get("valid_to")
+        parsed_from = parse_product_datetime(valid_from) if valid_from else None
+        parsed_to = parse_product_datetime(valid_to) if valid_to else None
+        if valid_from and parsed_from is None:
+            _raise_validation_error(f"{field_prefix}.valid_from must be ISO date/time")
+        if valid_to and parsed_to is None:
+            _raise_validation_error(f"{field_prefix}.valid_to must be ISO date/time")
+        if parsed_from and parsed_to and parsed_to <= parsed_from:
+            _raise_validation_error(f"{field_prefix}.valid_to must follow valid_from")
+        rates.append(
+            {
+                "rate_type": rate_type,
+                "start_time": str(start_time),
+                "end_time": str(end_time),
+                "valid_from": valid_from,
+                "valid_to": valid_to,
+                "rate_cents_per_kwh": str(cents),
+                "rate_eur_per_kwh": cents / Decimal(100),
+                "module": "MODULE_3",
+            }
+        )
+    return rates
+
+
+def _is_eam_2025_module3_prefill(rates: list[dict[str, Any]]) -> bool:
+    """Recognize the service form's prefilled EAM sample, not arbitrary rates."""
+    if len(rates) != len(_EAM_2025_MODULE3_RATE_SIGNATURE):
+        return False
+    signature = {
+        (
+            rate["rate_type"],
+            rate["start_time"],
+            rate["end_time"],
+            format(Decimal(rate["rate_cents_per_kwh"]), "f"),
+        )
+        for rate in rates
+    }
+    return signature == _EAM_2025_MODULE3_RATE_SIGNATURE
 
 
 def _raise_validation_error(msg: str) -> None:
@@ -308,6 +407,7 @@ ATTR_GO_WINDOW_START = "go_window_start"
 ATTR_GO_WINDOW_END = "go_window_end"
 ATTR_CONTRACT_START_NETWORK_CHARGE = "contract_start_network_charge_ct_kwh"
 ATTR_MODULE3_START_DATE = "module3_start_date"
+ATTR_MODULE3_RATES_JSON = "module3_rates_json"
 ATTR_MODULE1_START_DATE = "module1_start_date"
 ATTR_MODULE1_ANNUAL_CREDIT = "module1_annual_credit_net_eur"
 ATTR_VAT_PERCENT = "vat_percent"
@@ -842,6 +942,17 @@ async def async_register_services(
             call.data.get(ATTR_CONTRACT_START_NETWORK_CHARGE, 7.65),
             ATTR_CONTRACT_START_NETWORK_CHARGE,
         )
+        module3_start = _optional_service_date(
+            call.data.get(ATTR_MODULE3_START_DATE), ATTR_MODULE3_START_DATE
+        )
+        manual_module3_rates = _parse_manual_module3_rates(
+            call.data.get(ATTR_MODULE3_RATES_JSON)
+        )
+        eam_2025_prefill = _is_eam_2025_module3_prefill(manual_module3_rates)
+        if manual_module3_rates and module3_start is None and not eam_2025_prefill:
+            _raise_validation_error(
+                "module3_start_date is required when manual Module 3 rates are entered"
+            )
         module1_start = _optional_service_date(
             call.data.get(ATTR_MODULE1_START_DATE), ATTR_MODULE1_START_DATE
         )
@@ -894,6 +1005,16 @@ async def async_register_services(
         products = account_data.get("products") or []
         grid_operator_code = account_data.get("grid_operator_code")
         grid_operator_name = account_data.get("grid_operator_name")
+        preset_warnings = []
+        if eam_2025_prefill and grid_operator_code != _EAM_GRID_OPERATOR_CODE:
+            manual_module3_rates = []
+            if module3_start is not None:
+                preset_warnings.append(
+                    "The prefilled 2025 sample Module 3 rates were not applied because "
+                    f"the detected network operator is {grid_operator_name or grid_operator_code or 'unknown'}, "
+                    "not the operator for those example rates. Enter this operator's rates in "
+                    "module3_rates_json."
+                )
         readings_by_date: dict[str, list[dict[str, Any]]] = {}
         grid_fees_by_month: dict[tuple[int, int], dict[str, Any] | None] = {}
         range_start = start_date
@@ -952,9 +1073,31 @@ async def async_register_services(
             module1_start_date=module1_start,
             module1_annual_net_eur=module1_annual,
             fallback_vat_fraction=vat_fraction,
+            module3_start_date=module3_start,
+            manual_module3_rates=manual_module3_rates,
         )
         monthly_summaries = build_monthly_cost_summaries(report_rows)
         csv_rows = [*report_rows, *monthly_summaries]
+        module1_fallback_days = sum(
+            "API STANDARD grid fee fallback" in str(row.get("module3_rate_basis") or "")
+            for row in report_rows
+        )
+        unavailable_module3_days = sum(
+            "Module 3 rate unavailable" in str(row.get("module3_rate_basis") or "")
+            for row in report_rows
+        )
+        warnings = list(preset_warnings)
+        if module1_fallback_days:
+            warnings.append(
+                f"Module 3 rates were unavailable for {module1_fallback_days} day(s); "
+                "the API STANDARD grid fee was used. Supply module3_rates_json "
+                "to calculate those periods from manually entered rates."
+            )
+        if unavailable_module3_days:
+            warnings.append(
+                f"No API, manual, or STANDARD grid-fee rate was available for "
+                f"{unavailable_module3_days} day(s); those costs are incomplete."
+            )
         safe_filename = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(filename or "")).strip(
             "._"
         )
@@ -1028,7 +1171,10 @@ async def async_register_services(
 
         await hass.async_add_executor_job(write_cost_csv)
         download_url = await async_notify_export_ready(
-            hass, output_path.name, "Electricity cost report"
+            hass,
+            output_path.name,
+            "Electricity cost report"
+            + (f". Warning: {' '.join(warnings)}" if warnings else ""),
         )
         result = {
             "success": True,
@@ -1041,6 +1187,7 @@ async def async_register_services(
             "incomplete_days": sum(row["status"] != "complete" for row in report_rows),
             "output_file": str(output_path),
             "download_url": download_url,
+            "warnings": warnings,
         }
         hass.bus.async_fire(f"{DOMAIN}_cost_report_result", result)
         return result

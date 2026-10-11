@@ -97,7 +97,9 @@ from custom_components.octopus_germany.sensor import (
 from custom_components.octopus_germany.service_handlers import (
     _fetch_grid_fee_schedules,
     _group_readings_by_local_date,
+    _is_eam_2025_module3_prefill,
     _measurement_range_bounds,
+    _parse_manual_module3_rates,
     _summarize_measurement_metadata,
 )
 from custom_components.octopus_germany.services import (
@@ -2572,7 +2574,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
             ],
             grid_fees_by_month={
                 (2026, 10): {
-                    "module": "MODULE_3",
+                    "module": "MODULE_1",
                     "grid_operator_name": "Example Netz GmbH",
                     "grid_operator_code": "example-vnb",
                     "rates": [
@@ -2610,6 +2612,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
             module1_start_date=date(2026, 10, 1),
             module1_annual_net_eur=108.33,
             fallback_vat_fraction=0.19,
+            module3_start_date=date(2026, 10, 1),
         )
 
         day = report[0]
@@ -2617,7 +2620,9 @@ class TariffCapabilitiesTest(unittest.TestCase):
         self.assertEqual(day["standard_peak_kwh"], Decimal(2))
         self.assertEqual(day["total_kwh"], Decimal(3))
         self.assertEqual(day["grid_operator"], "Example Netz GmbH")
-        self.assertEqual(day["network_module"], "MODULE_3")
+        self.assertEqual(day["network_module"], "MODULE_1")
+        self.assertEqual(day["module3_rate_basis"], "Module 3 API rates")
+        self.assertEqual(day["module3_rate_basis"], "Module 3 API rates")
         self.assertEqual(
             day["standing_charge_gross_eur"],
             Decimal("31.00") * Decimal(12) / Decimal(365),
@@ -2638,6 +2643,151 @@ class TariffCapabilitiesTest(unittest.TestCase):
         headers = cost_report_headers(report)
         self.assertIn("go_offpeak_kwh", headers)
         self.assertIn("standard_peak_kwh", headers)
+
+    def test_cost_report_uses_manual_module3_rates_when_api_schedule_is_missing(
+        self,
+    ) -> None:
+        """Apply user-entered rates from the declared Module 3 effective date."""
+        report = build_daily_cost_report(
+            readings_by_date={
+                "2025-07-01": [
+                    {"start_time": "2025-07-01T02:00:00+02:00", "value": "1"}
+                ]
+            },
+            products=[
+                {
+                    "code": "HEAT_SIMPLE",
+                    "name": "Heat tariff",
+                    "type": "Simple",
+                    "validFrom": "2025-01-01T00:00:00+01:00",
+                    "validTo": "2026-01-01T00:00:00+01:00",
+                    "grossRate": "30",
+                    "prices": [{"name": "Heat", "gross_eur_per_kwh": "0.30"}],
+                    "standing_charge_gross_rates": [
+                        {"gross_eur_per_month": "30", "valid_from": "2025-01-01"}
+                    ],
+                }
+            ],
+            grid_fees_by_month={
+                (2025, 7): {
+                    "module": "MODULE_1",
+                    "grid_operator_name": "Example Netz GmbH",
+                    "grid_operator_code": "example-vnb",
+                    "rates": [],
+                }
+            },
+            start_date=date(2025, 7, 1),
+            end_date=date(2025, 7, 1),
+            timezone="Europe/Berlin",
+            contract_start_network_charge_ct_kwh=5,
+            module1_start_date=None,
+            module1_annual_net_eur=0,
+            fallback_vat_fraction=Decimal("0.19"),
+            module3_start_date=date(2025, 6, 1),
+            manual_module3_rates=[
+                {
+                    "rate_type": "OFFPEAK",
+                    "start_time": "00:00:00",
+                    "end_time": "06:00:00",
+                    "rate_eur_per_kwh": Decimal("0.02"),
+                }
+            ],
+        )
+
+        day = report[0]
+        self.assertEqual(day["heat_offpeak_kwh"], Decimal(1))
+        self.assertEqual(day["module3_rate_basis"], "Module 3 manual rates")
+        self.assertEqual(day["network_rate_missing_kwh"], Decimal(0))
+
+    def test_cost_report_marks_standard_grid_fee_fallback_for_missing_module3_data(
+        self,
+    ) -> None:
+        """Report Module 1 STANDARD grid-fee use when selected Module 3 rates lack data."""
+        report = build_daily_cost_report(
+            readings_by_date={
+                "2025-07-01": [
+                    {"start_time": "2025-07-01T02:00:00+02:00", "value": "1"}
+                ]
+            },
+            products=[
+                {
+                    "code": "HEAT_SIMPLE",
+                    "name": "Heat tariff",
+                    "type": "Simple",
+                    "validFrom": "2025-01-01T00:00:00+01:00",
+                    "validTo": "2026-01-01T00:00:00+01:00",
+                    "grossRate": "30",
+                    "prices": [{"name": "Heat", "gross_eur_per_kwh": "0.30"}],
+                    "standing_charge_gross_rates": [
+                        {"gross_eur_per_month": "30", "valid_from": "2025-01-01"}
+                    ],
+                }
+            ],
+            grid_fees_by_month={
+                (2025, 7): {
+                    "module": "MODULE_1",
+                    "grid_operator_name": "Example Netz GmbH",
+                    "grid_operator_code": "example-vnb",
+                    "rates": [
+                        {
+                            "rate_type": "STANDARD",
+                            "start_time": "00:00:00",
+                            "end_time": "00:00:00",
+                            "valid_from": "2025-01-01T00:00:00+01:00",
+                            "rate_eur_per_kwh": Decimal("0.05"),
+                        }
+                    ],
+                }
+            },
+            start_date=date(2025, 7, 1),
+            end_date=date(2025, 7, 1),
+            timezone="Europe/Berlin",
+            contract_start_network_charge_ct_kwh=5,
+            module1_start_date=None,
+            module1_annual_net_eur=0,
+            fallback_vat_fraction=Decimal("0.19"),
+            module3_start_date=date(2025, 6, 1),
+        )
+
+        day = report[0]
+        self.assertEqual(day["heat_standard_kwh"], Decimal(1))
+        self.assertEqual(
+            day["module3_rate_basis"],
+            "API STANDARD grid fee fallback: Module 3 rates unavailable",
+        )
+        monthly = build_monthly_cost_summaries(report)[0]
+        self.assertIn("fallback", monthly["status"])
+
+    def test_manual_module3_grid_fees_convert_net_cents_to_eur(self) -> None:
+        """Parse and recognize the prefilled 2025 Module 3 sample schedule."""
+        rates = _parse_manual_module3_rates(
+            '[{"rate_type":"OFFPEAK","start_time":"23:00:00","end_time":"06:00:00","rate_cents_per_kwh":1.99,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},'
+            '{"rate_type":"STANDARD","start_time":"06:00:00","end_time":"11:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},'
+            '{"rate_type":"OFFPEAK","start_time":"11:00:00","end_time":"15:00:00","rate_cents_per_kwh":1.99,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},'
+            '{"rate_type":"STANDARD","start_time":"15:00:00","end_time":"17:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},'
+            '{"rate_type":"PEAK","start_time":"17:00:00","end_time":"22:00:00","rate_cents_per_kwh":12.75,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},'
+            '{"rate_type":"STANDARD","start_time":"22:00:00","end_time":"23:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"}]'
+        )
+
+        self.assertEqual(len(rates), 6)
+        self.assertTrue(_is_eam_2025_module3_prefill(rates))
+        self.assertEqual(
+            [rate["rate_type"] for rate in rates],
+            ["OFFPEAK", "STANDARD", "OFFPEAK", "STANDARD", "PEAK", "STANDARD"],
+        )
+        self.assertEqual(
+            [rate["rate_eur_per_kwh"] for rate in rates],
+            [
+                Decimal("0.0199"),
+                Decimal("0.0664"),
+                Decimal("0.0199"),
+                Decimal("0.0664"),
+                Decimal("0.1275"),
+                Decimal("0.0664"),
+            ],
+        )
+        self.assertEqual(rates[0]["start_time"], "23:00:00")
+        self.assertEqual(rates[0]["end_time"], "06:00:00")
 
     def test_standing_charge_monthly_api_rate_matches_daily_invoice_rate(self) -> None:
         """Convert a monthly API amount into the contract's per-day price."""

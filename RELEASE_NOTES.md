@@ -1,5 +1,56 @@
 # Release Notes
 
+## Version 0.0.182 (2026-10-11)
+
+### Documentation
+
+- Describe the prefilled Module 3 rates and contract baseline as reference
+  values from unnamed VNB price sheets rather than naming a specific operator.
+
+## Version 0.0.181 (2026-10-11)
+
+### Documentation
+
+- Explain the contract-start net grid-fee baseline, adjustment formula, and
+  regulatory context; clarify that 7.65 ct/kWh is only one VNB's reference.
+
+## Version 0.0.180 (2026-10-11)
+
+### Fixes
+
+- Clarify the 2025 rate preset validity and remove a duplicate selector entry
+  in the cost-report service schema.
+
+## Version 0.0.179 (2026-10-11)
+
+### Documentation
+
+- Show a 2025 Module 3 rate array directly in the service-field description so
+  it is visible in the Home Assistant action form.
+
+## Version 0.0.178 (2026-10-11)
+
+### Documentation
+
+- Use one VNB's 2025 Module 3 price-sheet values and six daily intervals in the
+  manual-rate service example.
+
+## Version 0.0.177 (2026-10-11)
+
+### Features
+
+- Let users declare a Module 3 effective date and enter manual historical
+  time-variable grid fees; use API time-variable rates even while the API module
+  label remains MODULE_1, with explicit STANDARD grid-fee fallback reporting.
+
+## Version 0.0.176 (2026-10-11)
+
+### Features
+
+- Apply API time-variable grid-fee rates from a customer-selected Module 3 date
+  even if the API module label remains MODULE_1; accept manual historical rates
+  and report explicit STANDARD grid-fee fallbacks.
+
 ## Version 0.0.175 (2026-10-11)
 
 ### Fixes

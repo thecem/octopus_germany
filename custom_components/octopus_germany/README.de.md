@@ -37,6 +37,10 @@ Der Service `octopus_germany.export_cost_report` erstellt Tagesdetails und pro M
 
 Monatliche API-Grundpreise werden auf Basis von `12 / 365` in einen Tagessatz umgerechnet und mit der tatsaechlichen Tageszahl des Abrechnungsmonats angesetzt.
 
+Fuer historische Modul-3-Zeitraeume nimmt der Kostenbericht ein vom Kunden gesetztes Wirksamkeitsdatum und optional manuelle zeitvariable Netzentgeltsaetze an. API-Saetze werden ab diesem Datum auch dann verwendet, wenn die API noch `MODULE_1` meldet. Fehlen Modul-3-Intervalle, wird der API-`STANDARD`-Netzentgeltsatz verwendet und explizit gekennzeichnet.
+
+Die Vertragsbaseline ist der Netto-Netzentgeltanteil, der bereits im urspruenglichen Brutto-AP enthalten war. Der Bericht passt nur die Differenz zum aktuell gueltigen VNB-Satz an. Die Vorgabe `7.65 ct/kWh` ist ein unbestaetigter Platzhalter und muss am urspruenglichen Vertrag/Preisblatt geprueft werden.
+
 Smart-Meter- und Kosten-CSV-Dateien werden unter `/config/octopus_germany/exports` gespeichert. Zu jedem Export erscheint eine persistente Home-Assistant-Benachrichtigung mit direkt im Browser nutzbarem Download-Link. Das dateigebundene Token wird in HAs privatem Speicher aufbewahrt und laeuft nach 30 Tagen ab.
 
 ## Entitaeten (Ueberblick)

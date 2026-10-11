@@ -24,6 +24,7 @@ COST_REPORT_HEADERS = [
     "grid_operator",
     "grid_operator_code",
     "network_module",
+    "module3_rate_basis",
     "total_kwh",
     "network_adjustment_gross_eur",
     "energy_cost_after_adjustment_gross_eur",
@@ -116,6 +117,15 @@ def build_monthly_cost_summaries(
                     }
                 )
             ),
+            "module3_rate_basis": " | ".join(
+                sorted(
+                    {
+                        str(row["module3_rate_basis"])
+                        for row in month_rows
+                        if row.get("module3_rate_basis")
+                    }
+                )
+            ),
         }
         fields = {field for row in month_rows for field in row}
         for field in fields:
@@ -133,10 +143,19 @@ def build_monthly_cost_summaries(
             summary[field] = cost / quantity if quantity else None
 
         incomplete_days = sum(row.get("status") != "complete" for row in month_rows)
+        module1_fallback_days = sum(
+            "API STANDARD grid fee fallback" in str(row.get("module3_rate_basis") or "")
+            for row in month_rows
+        )
         summary["status"] = (
-            "complete"
-            if not incomplete_days
-            else f"incomplete: {incomplete_days} of {len(month_rows)} day(s)"
+            f"incomplete: {incomplete_days} of {len(month_rows)} day(s)"
+            if incomplete_days
+            else (
+                f"complete; API STANDARD grid fee fallback on "
+                f"{module1_fallback_days} day(s)"
+                if module1_fallback_days
+                else "complete"
+            )
         )
         month_is_complete = incomplete_days == 0
         monthly_total = (
@@ -289,6 +308,22 @@ def _standard_grid_fee(
     return matches[0][0] if len(unique) == 1 else None
 
 
+def _has_variable_grid_fee_schedule(grid_fee_data: dict[str, Any]) -> bool:
+    """Detect time-variable rates even if the API's selected module says Module 1."""
+    rates = grid_fee_data.get("rates") or []
+    if str(grid_fee_data.get("module") or "").upper() == "MODULE_3":
+        return bool(rates)
+    rate_types = {str(rate.get("rate_type") or "").upper() for rate in rates}
+    if rate_types.intersection({"OFFPEAK", "PEAK"}):
+        return True
+    specific_intervals = {
+        (rate.get("start_time"), rate.get("end_time"))
+        for rate in rates
+        if (rate.get("start_time"), rate.get("end_time")) != ("00:00:00", "00:00:00")
+    }
+    return len(specific_intervals) > 1
+
+
 def _column_slug(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
     return slug or "unlabelled"
@@ -333,6 +368,8 @@ def build_daily_cost_report(
     module1_start_date: date | None,
     module1_annual_net_eur: Decimal,
     fallback_vat_fraction: Decimal,
+    module3_start_date: date | None = None,
+    manual_module3_rates: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Build one detailed billing CSV row per local day."""
     contract_start_network_charge_ct_kwh = _decimal(
@@ -340,6 +377,7 @@ def build_daily_cost_report(
     ) or Decimal(0)
     module1_annual_net_eur = _decimal(module1_annual_net_eur) or Decimal(0)
     fallback_vat_fraction = _decimal(fallback_vat_fraction) or Decimal("0.19")
+    manual_module3_rates = manual_module3_rates or []
     local_timezone = ZoneInfo(timezone)
     rows = []
     current_date = start_date
@@ -354,6 +392,7 @@ def build_daily_cost_report(
         missing_network_kwh = Decimal(0)
         agreement_names: set[str] = set()
         modules_seen: set[str] = set()
+        module3_rate_bases: set[str] = set()
         grid_fee_data = (
             grid_fees_by_month.get((current_date.year, current_date.month)) or {}
         )
@@ -383,23 +422,50 @@ def build_daily_cost_report(
                 unpriced_kwh += quantity
                 continue
 
-            active = get_active_grid_fee(grid_fee_data, local_at)
-            module_name = str(
-                (active or {}).get("module") or grid_fee_data.get("module") or "UNKNOWN"
-            ).upper()
-            modules_seen.add(module_name)
-            module3_active = module_name == "MODULE_3"
+            api_module = str(grid_fee_data.get("module") or "UNKNOWN").upper()
+            module3_selected = (
+                current_date >= module3_start_date
+                if module3_start_date is not None
+                else api_module == "MODULE_3"
+            )
+            api_has_module3_rates = _has_variable_grid_fee_schedule(grid_fee_data)
+            manual_fee_data = {
+                "module": "MODULE_3",
+                "rates": manual_module3_rates,
+            }
             network_rate = None
             band = "BASE"
-            if module3_active:
+            if module3_selected:
+                active = (
+                    get_active_grid_fee(grid_fee_data, local_at)
+                    if api_has_module3_rates
+                    else None
+                )
+                source = "Module 3 API rates"
+                if active is None:
+                    active = get_active_grid_fee(manual_fee_data, local_at)
+                    source = "Module 3 manual rates"
                 if active is not None:
                     network_rate = _decimal(active.get("rate_eur_per_kwh"))
                     band = str(active.get("rate_type") or "BASE").upper()
+                    module3_rate_bases.add(source)
+                else:
+                    standard = _standard_grid_fee(grid_fee_data, local_at)
+                    if standard is not None:
+                        network_rate = _decimal(standard.get("rate_eur_per_kwh"))
+                        band = str(standard.get("rate_type") or "STANDARD").upper()
+                        module3_rate_bases.add(
+                            "API STANDARD grid fee fallback: Module 3 rates unavailable"
+                        )
+                    else:
+                        module3_rate_bases.add("Module 3 rate unavailable")
             else:
                 standard = _standard_grid_fee(grid_fee_data, local_at)
                 if standard is not None:
                     network_rate = _decimal(standard.get("rate_eur_per_kwh"))
                     band = str(standard.get("rate_type") or "BASE").upper()
+                module3_rate_bases.add("API STANDARD grid fee")
+            modules_seen.add(api_module)
             tariff_slug = _column_slug(tariff)
             tariff_labels[tariff_slug] = tariff
             block = (tariff_slug, _column_slug(band))
@@ -459,6 +525,7 @@ def build_daily_cost_report(
             "network_module": " | ".join(sorted(modules_seen))
             or grid_fee_data.get("module")
             or "Unknown",
+            "module3_rate_basis": " | ".join(sorted(module3_rate_bases)) or "Unknown",
             "total_kwh": sum(quantities.values(), Decimal(0)) + unpriced_kwh,
             "network_adjustment_gross_eur": network_adjustment,
             "energy_cost_after_adjustment_gross_eur": total_energy,

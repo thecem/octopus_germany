@@ -150,12 +150,36 @@ Parameter:
 - `property_id` (optional): ohne Angabe wird die erste Strom-Property verwendet
 - `period` (erforderlich): `month` oder `year`
 - `year` (erforderlich); `month` ist fuer Monatsberichte erforderlich
-- `contract_start_network_charge_ct_kwh` (erforderlich, Standard `7.65`): angenommener Netto-Netzentgeltanteil dieses Zaehlerpunkts in ct/kWh, der im urspruenglichen Vertrags-AP enthalten ist
-- Modul-3-Aktivierung, Rate-Typen, Zeitfenster und Gueltigkeit werden fuer den am Zaehlerpunkt ermittelten Netzbetreiber aus der API bezogen und nicht manuell eingegeben
+- `contract_start_network_charge_ct_kwh` (erforderlich, Vorgabe `7.65`): der **Netto-Netzentgeltanteil** in ct/kWh, der laut urspruenglichem Vertrag/Preisblatt bereits im Brutto-Arbeitspreis enthalten ist. Der Bericht ersetzt diese Baseline durch den zeitlich gueltigen Satz des zustaendigen VNB; er schlaegt nicht das gesamte Netzentgelt nochmals auf. `7.65` ist ein Referenzwert aus dem Preisblatt eines VNB von 2024, kein allgemeiner oder gesetzlicher Standard. Nur verwenden, wenn der urspruengliche Vertrag diese Baseline bestaetigt.
+- `module3_start_date` (optional): Datum, ab dem du Modul 3 fuer diesen Zaehlerpunkt erklaert/gewaehlt hast; ab diesem Datum werden zeitvariable API-Saetze auch dann genutzt, wenn das API-Feld `module` noch `MODULE_1` meldet
+- `module3_rates_json` (optional): JSON-Array manueller Saetze fuer historische Zeitraeume ohne API-Zeitfenster; Rate netto in ct/kWh, Zeiten lokal
 - `module1_start_date` (optional): Startdatum fuer die zeitanteilige, manuell angegebene Modul-1-Gutschrift
 - `module1_annual_credit_net_eur` (erforderlich, Standard `0`): jaehrliche Netto-Gutschrift des zustaendigen Netzbetreibers; der Betrag muss dem ausgewaehlten Abfragejahr entsprechen
 - `vat_percent` (erforderlich, Standard `19`): Ersatzwert, wenn das Agreement keinen MwSt.-Satz liefert
 - `filename` (optional): CSV-Dateiname unter `/config`
+
+Beispiel fuer manuelle historische Saetze:
+
+```json
+[
+  {"rate_type":"OFFPEAK","start_time":"23:00:00","end_time":"06:00:00","rate_cents_per_kwh":1.99,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
+  {"rate_type":"STANDARD","start_time":"06:00:00","end_time":"11:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
+  {"rate_type":"OFFPEAK","start_time":"11:00:00","end_time":"15:00:00","rate_cents_per_kwh":1.99,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
+  {"rate_type":"STANDARD","start_time":"15:00:00","end_time":"17:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
+  {"rate_type":"PEAK","start_time":"17:00:00","end_time":"22:00:00","rate_cents_per_kwh":12.75,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},
+  {"rate_type":"STANDARD","start_time":"22:00:00","end_time":"23:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"}
+]
+```
+
+Die Beispielwerte stammen aus dem Preisblatt eines VNB fuer 2025, gueltig fuer Modul 3 ab 1. April 2025: OFFPEAK 1,99 ct/kWh, STANDARD 6,64 ct/kWh und PEAK 12,75 ct/kWh. Setze `module3_start_date` auf das fuer deinen Zaehlerpunkt erklaerte/gewaehlte Wirksamkeitsdatum. Die Vorbelegung wird nur beim passenden Netzbetreiber-Code angewendet; bei einem anderen VNB dessen eigene Werte eintragen. API-Zeitplaene werden ab diesem Datum auch verwendet, wenn die API als Modul `MODULE_1` meldet.
+
+Ist Modul 3 gewaehlt, aber fuer ein Zeitfenster weder ein passender API-Satz noch ein manueller Satz vorhanden, verwendet der Bericht den verfuegbaren API-`STANDARD`-Netzentgeltsatz und kennzeichnet `module3_rate_basis` mit `API STANDARD grid fee fallback`. Die Zahl der Fallback-Tage steht in Service-Antwort, Event und Benachrichtigung. Das ist ausdruecklich ein Netzentgeltsatz, kein separater „Modul-1-ST“-Preis.
+
+Berechnungsbasis nach §14a EnWG: Der Brutto-Vertrags-AP wird nur um die Differenz zwischen dem aktuell gueltigen Netto-Netzentgelt und dieser Netto-Baseline angepasst; auf die Differenz wird die MwSt. angewendet:
+
+`angepasster Brutto-AP [EUR/kWh] = Brutto-Vertrags-AP [EUR/kWh] + ((aktuelles Netto-Netzentgelt - Netto-Baseline) [ct/kWh] / 100) × (1 + MwSt.)`
+
+Die Umrechnung von ct/kWh in EUR/kWh erfolgt dabei einheitlich in der Integration. Regulatorischer Kontext sind die BNetzA-Festlegung BK6-22-300 zum Marktprozess fuer §14a sowie BK8-22/010-A zu Netzentgeltregeln und Kalkulation. Diese Festlegungen liefern weder deine Vertragsbaseline noch den Nachweis deiner Modul-3-Wahl. Baseline mit dem urspruenglichen Vertrag/Preisblatt und Wirksamkeitsdatum mit Kundenerklaerung und VNB-Unterlagen abgleichen.
 
 Beispiel:
 
@@ -167,6 +191,8 @@ data:
   year: 2026
   month: 9
   contract_start_network_charge_ct_kwh: 7.65
+  module3_start_date: "2025-07-01"
+  # module3_rates_json bei fehlenden API-Saetzen ergaenzen.
   module1_start_date: "2025-03-19"
   module1_annual_credit_net_eur: 108.33
   vat_percent: 19

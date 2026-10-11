@@ -210,7 +210,17 @@ export_cost_report:
           mode: box
     contract_start_network_charge_ct_kwh:
       name: Contract-start network charge
-      description: Net network charge in ct/kWh assumed included in the original gross contract AP
+      description: >-
+        Net grid-fee component in ct/kWh that the original contract price sheet
+        says is already included in the gross energy price. The report replaces
+        this baseline with the applicable VNB grid fee; it does not add the full
+        grid fee again. Enter the documented contract value. The default 7.65
+        is a reference value from one VNB's 2024 price sheet, not a universal
+        or legal default; use it only if your original contract supports it. For
+        §14a EnWG calculations, the effective grid-fee schedule is selected
+        using the declared Module 3 date and the VNB data/manual rates below.
+        Regulatory context: BNetzA BK6-22-300 and BK8-22/010-A; this input alone
+        does not establish eligibility or enrollment.
       required: true
       default: 7.65
       selector:
@@ -219,6 +229,20 @@ export_cost_report:
           max: 100
           step: 0.01
           mode: box
+    module3_start_date:
+      name: Module 3 effective date
+      description: Date from which you declared or selected Module 3 for this metering point; the API module label alone does not determine applicability
+      required: false
+      selector:
+        date:
+    module3_rates_json:
+      name: Manual Module 3 grid-fee rates
+      description: A sample variable-grid-fee schedule from one VNB's 2025 price sheet is prefilled, valid 2025-04-01 through 2025-12-31. It is applied only to its matching operator; replace it for another VNB. Set module3_start_date to activate Module 3. Optional valid_from/valid_to are ISO timestamps, with valid_to exclusive. Time-variable API rates are used from the selected Module 3 effective date even if the API module label is MODULE_1. When no Module 3 rate is available, the API STANDARD grid-fee fallback is identified in the report and warning.
+      required: false
+      default: >-
+        [{"rate_type":"OFFPEAK","start_time":"23:00:00","end_time":"06:00:00","rate_cents_per_kwh":1.99,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},{"rate_type":"STANDARD","start_time":"06:00:00","end_time":"11:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},{"rate_type":"OFFPEAK","start_time":"11:00:00","end_time":"15:00:00","rate_cents_per_kwh":1.99,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},{"rate_type":"STANDARD","start_time":"15:00:00","end_time":"17:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},{"rate_type":"PEAK","start_time":"17:00:00","end_time":"22:00:00","rate_cents_per_kwh":12.75,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"},{"rate_type":"STANDARD","start_time":"22:00:00","end_time":"23:00:00","rate_cents_per_kwh":6.64,"valid_from":"2025-04-01T00:00:00+02:00","valid_to":"2026-01-01T00:00:00+01:00"}]
+      selector:
+        text:
     module1_start_date:
       name: Module 1 eligibility date
       description: Optional date from which to prorate the annual Module 1 credit

@@ -84,9 +84,13 @@ CSV exports load smart-meter readings through paginated monthly range queries in
 
 The `octopus_germany.export_cost_report` action creates daily details plus a classic `MONTH_TOTAL YYYY-MM` line with tariff/network blocks, standing charge, Module 1 credit and the gross monthly total. The total is blank if any day is incomplete. It uses agreement labels and network fees returned for the metering point's actual operator, including API validity intervals and heat tariffs. BNetzA determinations BK6-22-300 and BK8-22/010-A provide regulatory context; the calculation does not decide legal eligibility or replace the supplier's bill.
 
+The contract-start network-fee baseline is the net amount already included in the original gross contract AP. The report adjusts only the difference to the currently applicable VNB rate. Its default `7.65 ct/kWh` is an unverified placeholder and must be checked against the contract price sheet.
+
 Generated smart-meter and cost-report CSVs are stored under `/config/octopus_germany/exports`. Each export creates a persistent Home Assistant notification with a browser-download link; its file-scoped token is kept in private HA storage and expires after 30 days.
 
 API monthly standing charges are converted to a per-day charge on a `12 / 365` annualized basis and applied to the actual number of days in each billing month.
+
+For historical Module 3 periods, the cost-report service accepts a customer-selected effective date and optional manual time-variable grid-fee rates. API rates are used from the selected date even if the API still reports `MODULE_1`; missing Module 3 intervals fall back to the API STANDARD grid-fee rate and are explicitly flagged.
 
 Yearly exports are split into one range per calendar month. The range API paginates at 100 readings per page, spaces requests by two seconds, retries `KT-CT-1199` rate limits with bounded delays, and applies a shorter cooldown if the API continues to limit requests. The startup statistics backfill requests its pending date window as one range rather than issuing one request per day.
 
