@@ -159,6 +159,7 @@ def normalize_variable_grid_fees(
                 "rate_type": rate.get("gridFeeKwhRateType"),
                 "start_time": start_time,
                 "end_time": end_time,
+                "module": value.get("module"),
                 "valid_from": rate.get("validFrom"),
                 "valid_to": rate.get("validTo"),
                 "grid_operator_code": rate.get("gridOperatorCode"),

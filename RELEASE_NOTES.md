@@ -1,5 +1,84 @@
 # Release Notes
 
+## Version 0.0.175 (2026-10-11)
+
+### Fixes
+
+- Keep export download links on the current Home Assistant origin instead of
+  embedding an internal container address.
+
+## Version 0.0.174 (2026-10-11)
+
+### Fixes
+
+- Open export notification downloads in a new browser tab to prevent Home
+  Assistant's frontend router from intercepting same-origin API links.
+
+## Version 0.0.173 (2026-10-11)
+
+### Fixes
+
+- Make export links usable by direct browser navigation with file-scoped,
+  expiring query tokens persisted in private Home Assistant storage.
+
+## Version 0.0.172 (2026-10-11)
+
+### Features
+
+- Store generated CSV exports in a shared integration directory and create a
+  persistent notification with an authenticated download link.
+
+## Version 0.0.171 (2026-10-11)
+
+### Fixes
+
+- Convert API monthly standing charges to a daily rate on a `12 / 365` basis,
+  then apply the actual number of billing-period days.
+
+## Version 0.0.170 (2026-10-11)
+
+### Fixes
+
+- Write cost-report CSV numeric values with German decimal commas for reliable
+  spreadsheet import alongside the semicolon delimiter.
+
+## Version 0.0.169 (2026-10-11)
+
+### Fixes
+
+- Display cost-report Euro amounts to cents while preserving full internal
+  precision and six decimal places for unit prices.
+
+## Version 0.0.168 (2026-10-11)
+
+### Features
+
+- Add monthly cost summary rows with tariff/network breakdown, standing charge,
+  Module 1 credit, and an explicit gross monthly total.
+
+## Version 0.0.167 (2026-10-11)
+
+### Fixes
+
+- Format cost-report CSV consumption to three decimal places and prices/costs to
+  six for readability while retaining full calculation precision.
+
+## Version 0.0.166 (2026-10-11)
+
+### Fixes
+
+- Use the account's network operator and API-reported module, rate types, and
+  validity periods for cost reports; support generic tariff labels and heat
+  tariffs instead of assuming GO/Standard or manually entered Module 3 dates.
+
+## Version 0.0.165 (2026-10-11)
+
+### Features
+
+- Add `octopus_germany.export_cost_report` to calculate monthly or yearly daily
+  electricity costs by tariff block and export a detailed CSV with completeness
+  flags.
+
 ## Version 0.0.164 (2026-10-11)
 
 ### Fixes

@@ -28,6 +28,8 @@ Sign up through my referral link and receive **150 €** as a bill credit. Eligi
   - Dynamic tariffs (with real-time pricing using unit rate forecasts)
   - Heat tariffs (for heat pumps)
 - **Section 14a Grid Fees**: OE-reported module and current variable grid fee with standardized NT/ST/HT attributes and full rate schedule, plus a combined gross price sensor with today's tariff/Module 3 price combinations and intervals
+- **Cost Report Service**: Export a monthly or yearly daily tariff-block cost breakdown using agreement labels and the selected network operator's API-reported module and time-valid fees; heat tariffs are supported
+- Generated smart-meter and cost-report CSVs are stored under `/config/octopus_germany/exports`; Home Assistant provides a persistent notification with an authenticated download link
 - **Agreement History**: All agreements returned by OE, including past, active and scheduled entries, with gross/net unit prices, VAT, and net/gross monthly standing charges with validity dates in electricity price sensor attributes
 - **Multi-Ledger Support**: Electricity, Gas, Heat, and other ledger types
 - **Device Control**: Smart charging control for electric vehicles and charge points

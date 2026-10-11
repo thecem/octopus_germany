@@ -117,6 +117,8 @@ data:
 
 Exportiert Zaehlerdaten als CSV.
 
+Die Datei wird unter `/config/octopus_germany/exports` gespeichert. Eine persistente Home-Assistant-Benachrichtigung enthaelt einen gleich-originigen Download-Link, der in einem neuen Tab oeffnet; Service-Antwort und Ergebnis-Event enthalten die URL ebenfalls. Der aktuelle HA-Host wird verwendet, sodass keine internen Container-Adressen im Link landen. Das dateigebundene Token liegt in HAs privatem Speicher und ist 30 Tage gueltig.
+
 Der Export verwendet paginierte Monatsabfragen und lokale Kalendergrenzen aus der konfigurierten Home-Assistant-Zeitzone. Ein Jahresexport wird in Monatsabfragen aufgeteilt. Quellen- und Qualitaetsmetadaten bleiben beim Laden erhalten, die CSV enthaelt jedoch nur Verbrauchswerte; vor einer Bewertung als echte Zaehlerwerte muessen die Metadaten separat geprueft werden.
 
 Die Service-Antwort enthaelt `measurement_metadata` mit `sources`, `reading_qualities`, `reading_frequencies`, `device_ids`, `register_ids`, `missing_device_id_count` und `missing_register_id_count`. Fehlende IDs sind bei manchen aggregierten Property-Messungen normal und kennzeichnen allein keine Schaetzung; fuer die Einordnung sind `sources` und `reading_qualities` massgeblich.
@@ -133,6 +135,46 @@ Parameter:
 - `resolution` (optional): `15min` oder `hour`; Standard ist `15min`
 - `summary` (optional): `true/false`
 - `go_window_start` und `go_window_end` (optional): lokale `HH:MM`-Grenzen fuer die Aufteilung in der Zusammenfassung
+
+### `octopus_germany.export_cost_report`
+
+Erstellt eine taegliche Kostenberechnung als CSV-Datei unter `/config/octopus_germany/exports` fuer einen Kalendermonat oder ein Jahr. Eine persistente Home-Assistant-Benachrichtigung enthaelt einen gleich-originigen Download-Link, der in einem neuen Tab oeffnet; Service-Antwort und Ergebnis-Event enthalten die URL ebenfalls. Der aktuelle HA-Host wird verwendet, sodass keine internen Container-Adressen im Link landen. Das dateigebundene Token liegt in HAs privatem Speicher und ist 30 Tage gueltig. Tarifbloecke und Bezeichnungen kommen aus den Agreement-Preisnamen und Aktivierungsregeln; GO/Standard werden nicht vorausgesetzt, Waermestromtarife werden ebenfalls unter ihrer API-Preisbezeichnung ausgewiesen. Der Netzbetreiber kommt aus den Daten des Stromzaehlpunkts. Modul, Rate-Typen, Zeitfenster und `validFrom`/`validTo` werden fuer diesen Netzbetreiber aus der API gelesen; an API-Gueltigkeitsgrenzen fragt der Service erneut ab, auch bei kuerzeren, z. B. quartalsweisen Zeitraeumen. Am Ende steht eine Summenzeile.
+
+Die CSV enthaelt pro Kalendermonat eine Zeile `MONTH_TOTAL YYYY-MM`. Sie summiert die Tarif-/Netzzeitbloecke einzeln und zeigt die Monatsformel: Energie nach Netzentgeltkorrektur + Grundpreis - Modul-1-Gutschrift brutto = Monatsgesamtpreis brutto. Ist mindestens ein Tag unvollstaendig, bleibt der Monatsgesamtpreis leer; der Status nennt die Zahl der zu pruefenden Tage.
+
+Monatliche API-Grundpreise werden mit dem Jahresfaktor `12 / 365` in den vertraglichen Tagessatz umgerechnet und anschliessend fuer jeden tatsaechlichen Kalendertag angesetzt. Damit bleibt der Grundpreis nicht kuenstlich in jedem Monat gleich, wenn der Tarif pro Tag abgerechnet wird.
+
+Parameter:
+
+- `account_number` (erforderlich)
+- `property_id` (optional): ohne Angabe wird die erste Strom-Property verwendet
+- `period` (erforderlich): `month` oder `year`
+- `year` (erforderlich); `month` ist fuer Monatsberichte erforderlich
+- `contract_start_network_charge_ct_kwh` (erforderlich, Standard `7.65`): angenommener Netto-Netzentgeltanteil dieses Zaehlerpunkts in ct/kWh, der im urspruenglichen Vertrags-AP enthalten ist
+- Modul-3-Aktivierung, Rate-Typen, Zeitfenster und Gueltigkeit werden fuer den am Zaehlerpunkt ermittelten Netzbetreiber aus der API bezogen und nicht manuell eingegeben
+- `module1_start_date` (optional): Startdatum fuer die zeitanteilige, manuell angegebene Modul-1-Gutschrift
+- `module1_annual_credit_net_eur` (erforderlich, Standard `0`): jaehrliche Netto-Gutschrift des zustaendigen Netzbetreibers; der Betrag muss dem ausgewaehlten Abfragejahr entsprechen
+- `vat_percent` (erforderlich, Standard `19`): Ersatzwert, wenn das Agreement keinen MwSt.-Satz liefert
+- `filename` (optional): CSV-Dateiname unter `/config`
+
+Beispiel:
+
+```yaml
+action: octopus_germany.export_cost_report
+data:
+  account_number: "A-12345678"
+  period: month
+  year: 2026
+  month: 9
+  contract_start_network_charge_ct_kwh: 7.65
+  module1_start_date: "2025-03-19"
+  module1_annual_credit_net_eur: 108.33
+  vat_percent: 19
+```
+
+Als regulatorischer Rahmen werden BK6-22-300 der BNetzA fuer Marktprozesse und BK8-22/010-A fuer Netzentgeltregeln und deren Kalkulationsrahmen beruecksichtigt. Der Service berechnet transparent aus API-Werten und expliziten Nutzereingaben; er trifft keine rechtliche Feststellung zu Anspruch, Teilnahme oder Rechnungsrichtigkeit. Netzbaseline und Modul-1-Eingaben muessen anhand des geltenden Vertrags und der Unterlagen des zustaendigen Netzbetreibers geprueft werden. Fehlende Tarif-, Netzentgelt- oder Grundpreisdaten werden als unvollstaendig ausgewiesen, nicht als 0 eingesetzt. Im laufenden Kalenderjahr endet der Abruf zwei Tage vor heute, damit noch nicht erwartbare Messwerte nicht als fehlend gelten.
+
+Die CSV verwendet Semikolon als Spaltentrenner und das deutsche Dezimalkomma. Verbrauch wird mit drei Nachkommastellen, Eurobetraege werden auf Cent und Arbeitspreise in €/kWh mit sechs Nachkommastellen angezeigt. Die Berechnung und Summen behalten intern ihre volle Genauigkeit.
 
 ### `octopus_germany.submit_meter_readings`
 

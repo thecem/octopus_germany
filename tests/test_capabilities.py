@@ -3,7 +3,10 @@
 import asyncio
 import unittest
 from datetime import UTC, date, datetime
+from decimal import Decimal
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
+from urllib.parse import parse_qs, urlsplit
 
 import voluptuous as vol
 
@@ -25,6 +28,12 @@ from custom_components.octopus_germany.const import (
     UPDATE_INTERVAL,
 )
 from custom_components.octopus_germany.coordinator import normalize_update_interval
+from custom_components.octopus_germany.cost_report import (
+    build_daily_cost_report,
+    build_monthly_cost_summaries,
+    cost_report_headers,
+    format_cost_report_value,
+)
 from custom_components.octopus_germany.data_processing import (
     calculate_dispatch_state,
     create_empty_account_data,
@@ -48,6 +57,12 @@ from custom_components.octopus_germany.entities.electricity import (
     OctopusElectricityPriceSensor,
     OctopusSection14aModuleSensor,
     OctopusVariableGridFeeSensor,
+)
+from custom_components.octopus_germany.file_exports import (
+    OctopusExportDownloadView,
+    async_notify_export_ready,
+    async_register_export_download_view,
+    export_file_path,
 )
 from custom_components.octopus_germany.lifecycle import (
     _migrate_legacy_device_entity_ids,
@@ -80,6 +95,7 @@ from custom_components.octopus_germany.sensor import (
     async_setup_entry as async_setup_sensor_entry,
 )
 from custom_components.octopus_germany.service_handlers import (
+    _fetch_grid_fee_schedules,
     _group_readings_by_local_date,
     _measurement_range_bounds,
     _summarize_measurement_metadata,
@@ -125,7 +141,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
         ]
         for meter, expected in cases:
             with self.subTest(meter=meter):
-                assert get_electricity_meter_type(meter) == expected
+                self.assertEqual(get_electricity_meter_type(meter), expected)
 
     def test_meter_devices_distinguish_historical_meter_from_imsys(self) -> None:
         old_meter = {
@@ -1235,8 +1251,8 @@ class TariffCapabilitiesTest(unittest.TestCase):
         )
 
         grid_fees = result["account-1"]["variable_grid_fees"]
-        assert grid_fees["module"] == "MODULE_1"
-        assert grid_fees["rates"][0]["rate_eur_per_kwh"] == 0.0548
+        self.assertEqual(grid_fees["module"], "MODULE_1")
+        self.assertEqual(grid_fees["rates"][0]["rate_eur_per_kwh"], 0.0548)
         api.fetch_variable_grid_fees.assert_awaited_once()
 
     def test_intelligent_product_enables_dispatches(self) -> None:
@@ -2502,6 +2518,403 @@ class TariffCapabilitiesTest(unittest.TestCase):
         assert agreements[1]["standing_charge_net_eur_per_month"] is None
         assert agreements[1]["standing_charge_gross_rates"] == []
         assert agreements[1]["prices"][0]["gross_eur_per_kwh"] == 0.336651
+
+    def test_cost_report_splits_tariff_module3_standing_charge_and_module1(
+        self,
+    ) -> None:
+        """Aggregate agreement, network, standing-charge, and Module 1 amounts."""
+        report = build_daily_cost_report(
+            readings_by_date={
+                "2026-10-01": [
+                    {
+                        "start_time": "2026-10-01T00:00:00+02:00",
+                        "value": "1.0",
+                    },
+                    {
+                        "start_time": "2026-10-01T17:00:00+02:00",
+                        "value": "2.0",
+                    },
+                ]
+            },
+            products=[
+                {
+                    "code": "OCTOPUS_GO",
+                    "name": "Octopus Go Secure 24",
+                    "type": "TimeOfUse",
+                    "validFrom": "2026-09-01T00:00:00+02:00",
+                    "validTo": "2028-09-01T00:00:00+02:00",
+                    "prices": [
+                        {
+                            "name": "GO",
+                            "gross_eur_per_kwh": 0.194327,
+                            "vat_percent": "19",
+                            "activation_rules": [
+                                {"from_time": "00:00:00", "to_time": "05:00:00"}
+                            ],
+                        },
+                        {
+                            "name": "STANDARD",
+                            "gross_eur_per_kwh": 0.294406,
+                            "vat_percent": "19",
+                            "activation_rules": [
+                                {"from_time": "05:00:00", "to_time": "00:00:00"}
+                            ],
+                        },
+                    ],
+                    "standing_charge_gross_rates": [
+                        {
+                            "gross_eur_per_month": "31.00",
+                            "valid_from": "2026-09-01",
+                            "valid_to": "2028-09-01",
+                        }
+                    ],
+                }
+            ],
+            grid_fees_by_month={
+                (2026, 10): {
+                    "module": "MODULE_3",
+                    "grid_operator_name": "Example Netz GmbH",
+                    "grid_operator_code": "example-vnb",
+                    "rates": [
+                        {
+                            "rate_type": "OFFPEAK",
+                            "start_time": "00:00:00",
+                            "end_time": "06:00:00",
+                            "valid_from": "2026-01-01T00:00:00+01:00",
+                            "valid_to": "2027-01-01T00:00:00+01:00",
+                            "rate_eur_per_kwh": 0.0164,
+                        },
+                        {
+                            "rate_type": "STANDARD",
+                            "start_time": "06:00:00",
+                            "end_time": "11:00:00",
+                            "valid_from": "2026-01-01T00:00:00+01:00",
+                            "valid_to": "2027-01-01T00:00:00+01:00",
+                            "rate_eur_per_kwh": 0.0548,
+                        },
+                        {
+                            "rate_type": "PEAK",
+                            "start_time": "17:00:00",
+                            "end_time": "22:00:00",
+                            "valid_from": "2026-01-01T00:00:00+01:00",
+                            "valid_to": "2027-01-01T00:00:00+01:00",
+                            "rate_eur_per_kwh": 0.1052,
+                        },
+                    ],
+                }
+            },
+            start_date=date(2026, 10, 1),
+            end_date=date(2026, 10, 1),
+            timezone="Europe/Berlin",
+            contract_start_network_charge_ct_kwh=7.65,
+            module1_start_date=date(2026, 10, 1),
+            module1_annual_net_eur=108.33,
+            fallback_vat_fraction=0.19,
+        )
+
+        day = report[0]
+        self.assertEqual(day["go_offpeak_kwh"], Decimal(1))
+        self.assertEqual(day["standard_peak_kwh"], Decimal(2))
+        self.assertEqual(day["total_kwh"], Decimal(3))
+        self.assertEqual(day["grid_operator"], "Example Netz GmbH")
+        self.assertEqual(day["network_module"], "MODULE_3")
+        self.assertEqual(
+            day["standing_charge_gross_eur"],
+            Decimal("31.00") * Decimal(12) / Decimal(365),
+        )
+        self.assertGreater(day["module1_credit_net_eur"], Decimal(0))
+        self.assertLess(day["network_adjustment_gross_eur"], Decimal(0))
+        self.assertEqual(day["status"], "complete")
+        monthly = build_monthly_cost_summaries(report)[0]
+        self.assertEqual(monthly["date"], "MONTH_TOTAL 2026-10")
+        self.assertEqual(
+            monthly["monthly_total_gross_eur"],
+            monthly["energy_cost_after_adjustment_gross_eur"]
+            + monthly["standing_charge_gross_eur"]
+            - monthly["module1_credit_gross_eur"],
+        )
+        self.assertEqual(monthly["go_offpeak_kwh"], Decimal(1))
+        self.assertEqual(monthly["standard_peak_kwh"], Decimal(2))
+        headers = cost_report_headers(report)
+        self.assertIn("go_offpeak_kwh", headers)
+        self.assertIn("standard_peak_kwh", headers)
+
+    def test_standing_charge_monthly_api_rate_matches_daily_invoice_rate(self) -> None:
+        """Convert a monthly API amount into the contract's per-day price."""
+        gross_monthly = Decimal("17.74885")
+        report = build_daily_cost_report(
+            readings_by_date={
+                "2025-12-01": [
+                    {"start_time": "2025-12-01T00:00:00+01:00", "value": "1"}
+                ]
+            },
+            products=[
+                {
+                    "code": "SECURE",
+                    "name": "Intelligent Octopus Go",
+                    "type": "Simple",
+                    "validFrom": "2025-06-01T00:00:00+02:00",
+                    "validTo": "2027-06-01T00:00:00+02:00",
+                    "grossRate": "15.0654",
+                    "prices": [{"name": "GO", "gross_eur_per_kwh": "0.150654"}],
+                    "standing_charge_gross_rates": [
+                        {
+                            "gross_eur_per_month": str(gross_monthly),
+                            "valid_from": "2025-06-01",
+                            "valid_to": "2027-06-01",
+                        }
+                    ],
+                }
+            ],
+            grid_fees_by_month={},
+            start_date=date(2025, 12, 1),
+            end_date=date(2025, 12, 31),
+            timezone="Europe/Berlin",
+            contract_start_network_charge_ct_kwh=0,
+            module1_start_date=None,
+            module1_annual_net_eur=0,
+            fallback_vat_fraction=Decimal("0.19"),
+        )
+
+        monthly_gross_standing_charge = sum(
+            (row["standing_charge_gross_eur"] for row in report), Decimal(0)
+        )
+        expected_invoice_amount = (
+            gross_monthly * Decimal(12) * Decimal(31) / Decimal(365)
+        )
+        self.assertAlmostEqual(
+            monthly_gross_standing_charge,
+            expected_invoice_amount,
+            delta=Decimal("0.00000000000000000001"),
+        )
+        self.assertAlmostEqual(
+            float(report[0]["standing_charge_gross_eur"]), 0.583524, places=6
+        )
+
+    def test_cost_report_uses_heat_tariff_label_without_go_window(self) -> None:
+        """Preserve API tariff labels rather than imposing GO/Standard buckets."""
+        report = build_daily_cost_report(
+            readings_by_date={
+                "2026-10-01": [
+                    {"start_time": "2026-10-01T02:00:00+02:00", "value": "2.5"}
+                ]
+            },
+            products=[
+                {
+                    "code": "HEAT_SIMPLE",
+                    "name": "Heat tariff",
+                    "type": "Simple",
+                    "validFrom": "2026-01-01T00:00:00+01:00",
+                    "validTo": "2027-01-01T00:00:00+01:00",
+                    "grossRate": "30.0",
+                    "prices": [
+                        {
+                            "name": "Heat",
+                            "gross_eur_per_kwh": "0.30",
+                            "activation_rules": [],
+                        }
+                    ],
+                    "standing_charge_gross_rates": [
+                        {
+                            "gross_eur_per_month": "30",
+                            "valid_from": "2026-01-01",
+                            "valid_to": "2027-01-01",
+                        }
+                    ],
+                }
+            ],
+            grid_fees_by_month={
+                (2026, 10): {
+                    "module": "MODULE_1",
+                    "grid_operator_name": "Quarterly Grid GmbH",
+                    "grid_operator_code": "quarterly-vnb",
+                    "rates": [
+                        {
+                            "rate_type": "STANDARD",
+                            "valid_from": "2026-10-01T00:00:00+02:00",
+                            "valid_to": "2027-01-01T00:00:00+01:00",
+                            "rate_eur_per_kwh": "0.05",
+                        }
+                    ],
+                }
+            },
+            start_date=date(2026, 10, 1),
+            end_date=date(2026, 10, 1),
+            timezone="Europe/Berlin",
+            contract_start_network_charge_ct_kwh=5,
+            module1_start_date=None,
+            module1_annual_net_eur=0,
+            fallback_vat_fraction=0.19,
+        )
+
+        day = report[0]
+        self.assertEqual(day["heat_standard_kwh"], Decimal("2.5"))
+        self.assertEqual(day["tariff_heat_label"], "Heat")
+        self.assertEqual(day["network_module"], "MODULE_1")
+        self.assertEqual(day["grid_operator_code"], "quarterly-vnb")
+
+    def test_cost_report_keeps_kwh_when_network_rate_is_missing(self) -> None:
+        """Keep meter quantities visible when the API has no network rate."""
+        report = build_daily_cost_report(
+            readings_by_date={
+                "2026-10-01": [
+                    {"start_time": "2026-10-01T02:00:00+02:00", "value": "1.25"}
+                ]
+            },
+            products=[
+                {
+                    "code": "HEAT_SIMPLE",
+                    "name": "Heat tariff",
+                    "type": "Simple",
+                    "validFrom": "2026-01-01T00:00:00+01:00",
+                    "validTo": "2027-01-01T00:00:00+01:00",
+                    "grossRate": "30.0",
+                    "prices": [{"name": "Heat", "gross_eur_per_kwh": "0.30"}],
+                }
+            ],
+            grid_fees_by_month={},
+            start_date=date(2026, 10, 1),
+            end_date=date(2026, 10, 1),
+            timezone="Europe/Berlin",
+            contract_start_network_charge_ct_kwh=5,
+            module1_start_date=None,
+            module1_annual_net_eur=0,
+            fallback_vat_fraction=0.19,
+        )
+
+        day = report[0]
+        self.assertEqual(day["total_kwh"], Decimal("1.25"))
+        self.assertEqual(day["heat_base_kwh"], Decimal("1.25"))
+        self.assertEqual(day["network_rate_missing_kwh"], Decimal("1.25"))
+        self.assertEqual(day["status"], "incomplete: network rate missing")
+        monthly = build_monthly_cost_summaries(report)[0]
+        self.assertIsNone(monthly["monthly_total_gross_eur"])
+        self.assertIn("incomplete", monthly["status"])
+
+    def test_grid_fee_fetch_follows_short_validity_intervals(self) -> None:
+        """Re-query the network operator when its API validity period ends."""
+        client = Mock()
+        client.fetch_variable_grid_fees = AsyncMock(
+            side_effect=[
+                {
+                    "module": "MODULE_3",
+                    "gridFees": [
+                        {
+                            "gridFeeKwhRateType": "STANDARD",
+                            "rateTypeIntervalStart": "00:00:00",
+                            "rateTypeIntervalEnd": "00:00:00",
+                            "gridOperatorCode": "quarterly-vnb",
+                            "gridFeeInCentsPerKwh": "5.0",
+                            "validFrom": "2026-10-01T00:00:00+02:00",
+                            "validTo": "2026-10-15T00:00:00+02:00",
+                        }
+                    ],
+                },
+                {
+                    "module": "MODULE_3",
+                    "gridFees": [
+                        {
+                            "gridFeeKwhRateType": "STANDARD",
+                            "rateTypeIntervalStart": "00:00:00",
+                            "rateTypeIntervalEnd": "00:00:00",
+                            "gridOperatorCode": "quarterly-vnb",
+                            "gridFeeInCentsPerKwh": "6.0",
+                            "validFrom": "2026-10-15T00:00:00+02:00",
+                            "validTo": "2026-11-01T00:00:00+01:00",
+                        }
+                    ],
+                },
+            ]
+        )
+
+        fee_data = asyncio.run(
+            _fetch_grid_fee_schedules(
+                client,
+                "A-12345678",
+                "quarterly-vnb",
+                "Quarterly Grid GmbH",
+                date(2026, 10, 1),
+                date(2026, 10, 31),
+                "Europe/Berlin",
+            )
+        )
+
+        self.assertEqual(
+            [call.args[2] for call in client.fetch_variable_grid_fees.await_args_list],
+            [date(2026, 10, 1), date(2026, 10, 15)],
+        )
+        self.assertEqual(len(fee_data["rates"]), 2)
+        self.assertEqual({rate["module"] for rate in fee_data["rates"]}, {"MODULE_3"})
+
+    def test_cost_report_csv_formats_decimals_by_unit(self) -> None:
+        """Keep useful precision without exposing Decimal's long scale."""
+        self.assertEqual(
+            format_cost_report_value("total_kwh", Decimal("1.975000000000000000")),
+            "1,975",
+        )
+        self.assertEqual(
+            format_cost_report_value(
+                "network_adjustment_gross_eur", Decimal("-0.023737525")
+            ),
+            "-0,02",
+        )
+        self.assertEqual(
+            format_cost_report_value("monthly_total_gross_eur", Decimal("31.858271")),
+            "31,86",
+        )
+        self.assertEqual(
+            format_cost_report_value(
+                "tariff_go_contract_ap_gross_eur_per_kwh", Decimal("0.150654")
+            ),
+            "0,150654",
+        )
+        self.assertEqual(format_cost_report_value("unpriced_kwh", Decimal(0)), "0,000")
+
+    def test_export_files_are_sanitized_and_download_requires_auth(self) -> None:
+        """Issue a file-scoped query token for direct authenticated downloads."""
+        hass = Mock()
+        hass.data = {}
+        hass.config.config_dir = "/config"
+        hass.config.path.side_effect = lambda *parts: str(
+            Path("/config").joinpath(*parts)
+        )
+        hass.http.register_view = Mock()
+        with (
+            patch(
+                "custom_components.octopus_germany.file_exports.Store.async_load",
+                new=AsyncMock(return_value={}),
+            ),
+            patch(
+                "custom_components.octopus_germany.file_exports.Store.async_save",
+                new=AsyncMock(),
+            ),
+            patch(
+                "custom_components.octopus_germany.file_exports.persistent_notification.async_create"
+            ) as notify,
+        ):
+            view = asyncio.run(async_register_export_download_view(hass))
+            path = export_file_path(hass, "../../customer report.csv")
+            url = asyncio.run(async_notify_export_ready(hass, path.name, "Cost report"))
+
+        self.assertEqual(path.name, "customer_report.csv")
+        self.assertTrue(OctopusExportDownloadView.requires_auth)
+        self.assertTrue(OctopusExportDownloadView.use_query_token_for_auth)
+        parsed_url = urlsplit(url)
+        query_token = parse_qs(parsed_url.query)["token"][0]
+        self.assertEqual(parsed_url.scheme, "")
+        self.assertEqual(parsed_url.netloc, "")
+        self.assertEqual(
+            parsed_url.path, "/api/octopus_germany/exports/customer_report.csv"
+        )
+        self.assertIn(query_token, view.get_valid_auth_tokens({"filename": path.name}))
+        self.assertNotIn(
+            query_token, view.get_valid_auth_tokens({"filename": "other.csv"})
+        )
+        self.assertEqual(notify.call_args.args[0], hass)
+        self.assertIn(
+            f'<a href="{url}" target="_blank">Download {path.name}</a>',
+            notify.call_args.args[1],
+        )
 
     def test_price_sensor_keeps_agreements_without_current_product(self) -> None:
         products = [

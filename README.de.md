@@ -25,6 +25,8 @@ Wenn du über [meinen Empfehlungslink](https://octopusenergy.de/empfehlungen?ref
 - Paragraph-14a-Netzentgelte mit von OE gemeldetem Modul, standardisierten NT/ST/HT-Attributen und vollstaendigem Tagesplan
 - Kombinierter Bruttopreis aus Octopus-Tarif und zeitvariablem Netzentgelt mit Tagesplan der Tarif-/Modul-3-Preiskombinationen und Zeitintervalle; numerische Werte bleiben fuer Templates und Automationen verfuegbar
 - Alle von OE gelieferten vergangenen, aktiven und zukuenftigen Stromvertraege mit Brutto-/Netto-Arbeitspreisen, MwSt. sowie Netto-Monatsgrundpreis und brutto ausgewiesenen Grundpreisstufen mit Gueltigkeitsdaten in den Attributen des Strompreis-Sensors
+- Neuer Service `octopus_germany.export_cost_report`: taegliche Kostenaufteilung nach Agreement-Preisbezeichnung als Monats-/Jahres-CSV aus Messwerten und API-Netzentgelten des tatsaechlichen Netzbetreibers, einschliesslich Waermestromtarifen
+- Smart-Meter- und Kosten-CSV-Dateien liegen unter `/config/octopus_germany/exports`; HA zeigt pro Export eine persistente Benachrichtigung mit authentifiziertem Download-Link
 - SmartFlex-Geraetestatus, Dispatching, Session-Daten
 - Schalter fuer Smart Control und Boost Charge
 - **Smart-Meter-Readings**: Vortagsverbrauch akkumuliert mit stundenweiser Aufschluesselung (aus bei Octopus gespeicherten Zaehlerdaten)

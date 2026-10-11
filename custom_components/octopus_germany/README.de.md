@@ -33,6 +33,12 @@ Jahres-CSV-Exporte werden in Monatsbereiche geteilt. Die Range-API paginiert mit
 
 Die OEG-API begrenzt die GraphQL-Komplexitaet auf 200. Die Comprehensive-Query muss darunter bleiben. Agreement-Grundpreise werden deshalb ueber eine separate, schlanke Query geladen und per Agreement-ID, ersatzweise Produktcode und Gueltigkeit, zugeordnet. Schlaegt diese optionale Query fehl, bleibt der Kernabruf verfuegbar; Agreement-Grundpreisattribute bleiben dann leer.
 
+Der Service `octopus_germany.export_cost_report` erstellt Tagesdetails und pro Monat eine klassische `MONTH_TOTAL YYYY-MM`-Zeile mit Tarif-/Netzzeitbloecken, Grundpreis, Modul-1-Gutschrift und explizitem Brutto-Gesamtpreis. Bei unvollstaendigen Tagen bleibt der Monatsgesamtpreis leer. Der Service nutzt Agreement-Preisbezeichnungen und API-Netzentgelte des tatsaechlichen Netzbetreibers samt Gueltigkeitsintervallen; auch Waermestromtarife werden unter eigener Bezeichnung gefuehrt. BK6-22-300 (Marktprozesse) und BK8-22/010-A (Netzentgeltregeln und Kalkulationsrahmen) bilden den regulatorischen Kontext; der Service entscheidet nicht ueber Rechtsansprueche und ersetzt keine Lieferantenrechnung.
+
+Monatliche API-Grundpreise werden auf Basis von `12 / 365` in einen Tagessatz umgerechnet und mit der tatsaechlichen Tageszahl des Abrechnungsmonats angesetzt.
+
+Smart-Meter- und Kosten-CSV-Dateien werden unter `/config/octopus_germany/exports` gespeichert. Zu jedem Export erscheint eine persistente Home-Assistant-Benachrichtigung mit direkt im Browser nutzbarem Download-Link. Das dateigebundene Token wird in HAs privatem Speicher aufbewahrt und laeuft nach 30 Tagen ab.
+
 ## Entitaeten (Ueberblick)
 
 ### Binary Sensors

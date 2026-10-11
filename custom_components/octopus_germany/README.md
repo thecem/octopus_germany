@@ -82,6 +82,12 @@ Smart-meter readings are requested only for accounts reporting smart-meter suppo
 
 CSV exports load smart-meter readings through paginated monthly range queries in the configured Home Assistant timezone. The API layer retains source, quality, device and register metadata when OE provides it; internally consistent intervals can still represent estimated data.
 
+The `octopus_germany.export_cost_report` action creates daily details plus a classic `MONTH_TOTAL YYYY-MM` line with tariff/network blocks, standing charge, Module 1 credit and the gross monthly total. The total is blank if any day is incomplete. It uses agreement labels and network fees returned for the metering point's actual operator, including API validity intervals and heat tariffs. BNetzA determinations BK6-22-300 and BK8-22/010-A provide regulatory context; the calculation does not decide legal eligibility or replace the supplier's bill.
+
+Generated smart-meter and cost-report CSVs are stored under `/config/octopus_germany/exports`. Each export creates a persistent Home Assistant notification with a browser-download link; its file-scoped token is kept in private HA storage and expires after 30 days.
+
+API monthly standing charges are converted to a per-day charge on a `12 / 365` annualized basis and applied to the actual number of days in each billing month.
+
 Yearly exports are split into one range per calendar month. The range API paginates at 100 readings per page, spaces requests by two seconds, retries `KT-CT-1199` rate limits with bounded delays, and applies a shorter cooldown if the API continues to limit requests. The startup statistics backfill requests its pending date window as one range rather than issuing one request per day.
 
 The OEG API enforces a GraphQL complexity limit of 200. Keep the comprehensive account query below that ceiling: agreement standing-charge fields are loaded with a separate lightweight query and merged onto agreements by agreement ID, with product and validity dates as fallback keys. If that optional query fails, core account refresh continues and standing-charge agreement attributes remain empty.

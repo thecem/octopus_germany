@@ -5,8 +5,10 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import re
 from calendar import monthrange
 from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
@@ -17,7 +19,20 @@ from homeassistant.helpers import device_registry as dr
 
 from .api.smart_meter import SmartMeterFetchError
 from .const import DOMAIN
+from .cost_report import (
+    COST_REPORT_HEADERS,
+    build_daily_cost_report,
+    build_monthly_cost_summaries,
+    cost_report_headers,
+    format_cost_report_value,
+)
+from .file_exports import (
+    async_notify_export_ready,
+    async_register_export_download_view,
+    export_file_path,
+)
 from .services import async_request_intelligent_refresh
+from .tariff import normalize_variable_grid_fees, parse_product_datetime
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -42,6 +57,33 @@ _TIME_PARTS_MIN = 2
 _MAX_HOUR = 23
 _MAX_MINUTE = 59
 _SAMPLE_READINGS_COUNT = 3
+
+
+def _decimal_service_value(value: Any, field_name: str) -> Decimal:
+    """Parse a numeric service field as Decimal for billing calculations."""
+    try:
+        result = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as err:
+        _raise_validation_error(f"{field_name} must be a number")
+        raise ValueError(f"{field_name} must be a number") from err
+    if not result.is_finite():
+        _raise_validation_error(f"{field_name} must be finite")
+    return result
+
+
+def _optional_service_date(value: Any, field_name: str) -> date | None:
+    """Parse an optional date service field."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError as err:
+        _raise_validation_error(f"{field_name} must use YYYY-MM-DD format")
+        raise ValueError(f"Invalid {field_name}") from err
 
 
 def _raise_validation_error(msg: str) -> None:
@@ -188,10 +230,60 @@ def _summarize_measurement_metadata(
     }
 
 
+async def _fetch_grid_fee_schedules(
+    client: Any,
+    account_number: str,
+    grid_operator_code: str | None,
+    grid_operator_name: str | None,
+    start_date: date,
+    end_date: date,
+    timezone: str,
+) -> dict[str, Any]:
+    """Fetch fee schedules for a date range, following API validity changes."""
+    fee_data: dict[str, Any] = {
+        "module": None,
+        "grid_operator_code": grid_operator_code,
+        "grid_operator_name": grid_operator_name,
+        "rates": [],
+    }
+    if not grid_operator_code:
+        return fee_data
+
+    fee_query_date = start_date
+    while fee_query_date <= end_date:
+        raw_fees = await client.fetch_variable_grid_fees(
+            account_number, grid_operator_code, fee_query_date
+        )
+        segment = normalize_variable_grid_fees(raw_fees, grid_operator_name)
+        if segment is None:
+            break
+        if not fee_data["rates"]:
+            fee_data["module"] = segment.get("module")
+        fee_data["rates"].extend(segment.get("rates") or [])
+        valid_ends = [
+            parse_product_datetime(rate.get("valid_to"))
+            for rate in segment.get("rates") or []
+        ]
+        valid_ends = [
+            valid_end
+            for valid_end in valid_ends
+            if valid_end is not None
+            and valid_end.astimezone(ZoneInfo(timezone)).date() > fee_query_date
+        ]
+        if not valid_ends:
+            break
+        next_date = min(valid_ends).astimezone(ZoneInfo(timezone)).date()
+        if next_date <= fee_query_date or next_date > end_date:
+            break
+        fee_query_date = next_date
+    return fee_data
+
+
 # Service schemas
 SERVICE_SET_DEVICE_PREFERENCES = "set_device_preferences"
 SERVICE_GET_SMART_METER_READINGS = "get_smart_meter_readings"
 SERVICE_EXPORT_SMART_METER_CSV = "export_smart_meter_csv"
+SERVICE_EXPORT_COST_REPORT = "export_cost_report"
 SERVICE_SUBMIT_METER_READINGS = "submit_meter_readings"
 ATTR_ACCOUNT_NUMBER = "account_number"
 ATTR_DEVICE_ID = "device_id"
@@ -214,6 +306,12 @@ ATTR_RESOLUTION = "resolution"
 ATTR_SUMMARY = "summary"
 ATTR_GO_WINDOW_START = "go_window_start"
 ATTR_GO_WINDOW_END = "go_window_end"
+ATTR_CONTRACT_START_NETWORK_CHARGE = "contract_start_network_charge_ct_kwh"
+ATTR_MODULE3_START_DATE = "module3_start_date"
+ATTR_MODULE1_START_DATE = "module1_start_date"
+ATTR_MODULE1_ANNUAL_CREDIT = "module1_annual_credit_net_eur"
+ATTR_VAT_PERCENT = "vat_percent"
+ATTR_MODULE3_ENABLED = "module3_enabled"
 
 
 async def async_register_services(
@@ -224,45 +322,28 @@ async def async_register_services(
     intelligent_coordinator_getter: Callable[[], OctopusDataCoordinator] | None,
 ) -> None:
     """Register integration services with unchanged behavior."""
+    await async_register_export_download_view(hass)
 
     async def handle_set_device_preferences(call: ServiceCall) -> dict[str, bool]:
         """Handle the set_device_preferences service call."""
         device_id = _resolve_octopus_device_id(
             hass,
-            _require_field(
-                call.data.get(ATTR_DEVICE_ID),
-                "Device ID is required",
-            ),
+            _require_field(call.data.get(ATTR_DEVICE_ID), "Device ID is required"),
         )
-        target_percentage = call.data.get(ATTR_TARGET_PERCENTAGE)
-        target_time = call.data.get(ATTR_TARGET_TIME)
-
-        # Validate percentage (20-100% in 5% steps)
-        if not _TARGET_PERCENT_MIN <= target_percentage <= _TARGET_PERCENT_MAX:
-            _LOGGER.error(
-                "Invalid target percentage: %s. Must be between %s and %s",
-                target_percentage,
-                _TARGET_PERCENT_MIN,
-                _TARGET_PERCENT_MAX,
-            )
-            _raise_validation_error(
-                "Invalid target percentage: "
-                f"{target_percentage}. Must be between "
-                f"{_TARGET_PERCENT_MIN} and {_TARGET_PERCENT_MAX}"
-            )
-
-        if target_percentage % _TARGET_PERCENT_STEP != 0:
-            _LOGGER.error(
-                "Invalid target percentage: %s. Must be in %s%% steps",
-                target_percentage,
-                _TARGET_PERCENT_STEP,
-            )
-            _raise_validation_error(
-                f"Invalid target percentage: {target_percentage}. Must be in 5% steps"
-            )
-
-        # Validate time format
+        target_percentage = _require_field(
+            call.data.get(ATTR_TARGET_PERCENTAGE), "Target percentage is required"
+        )
+        target_time = _require_field(
+            call.data.get(ATTR_TARGET_TIME), "Target time is required"
+        )
         try:
+            target_percentage = int(target_percentage)
+            if (
+                target_percentage < _TARGET_PERCENT_MIN
+                or target_percentage > _TARGET_PERCENT_MAX
+                or target_percentage % _TARGET_PERCENT_STEP
+            ):
+                _raise_validation_error("Target percentage must be 20-100 in 5% steps")
             normalized_target_time = _normalize_target_time(str(target_time))
         except ValueError as time_error:
             _LOGGER.exception("Time validation error")
@@ -531,12 +612,13 @@ async def async_register_services(
             if not filename.endswith(".csv"):
                 filename = f"{filename}.csv"
 
-            # Save to /config directory
-            output_path = Path(hass.config.path()) / filename
+            output_path = export_file_path(hass, filename)
+            filename = output_path.name
 
             # Create CSV writing function to run in executor
             def write_csv() -> None:
                 """Write CSV file (to be run in executor to avoid blocking)."""
+                output_path.parent.mkdir(parents=True, exist_ok=True)
                 with output_path.open("w", newline="", encoding="utf-8-sig") as csvfile:
                     writer = csv.writer(csvfile, delimiter=";")
 
@@ -696,6 +778,9 @@ async def async_register_services(
             # Run file writing in executor to avoid blocking the event loop
             await hass.async_add_executor_job(write_csv)
 
+            download_url = await async_notify_export_ready(
+                hass, output_path.name, "Smart meter CSV export"
+            )
             result = {
                 "success": True,
                 "account_number": account_number,
@@ -706,6 +791,7 @@ async def async_register_services(
                 "total_days": total_days,
                 "days_with_data": len(all_readings),
                 "output_file": str(output_path),
+                "download_url": download_url,
                 "measurement_metadata": _summarize_measurement_metadata(
                     [
                         reading
@@ -734,6 +820,451 @@ async def async_register_services(
             _LOGGER.exception("Error exporting smart meter data to CSV")
             msg = f"Error exporting smart meter data: {e}"
             raise HomeAssistantError(msg) from e
+
+    async def handle_export_cost_report(call: ServiceCall) -> dict[str, Any]:
+        """Create a daily tariff and network-cost breakdown CSV report."""
+        account_number = _require_field(
+            call.data.get(ATTR_ACCOUNT_NUMBER), "Account number is required"
+        )
+        period = call.data.get(ATTR_PERIOD, _DEFAULT_PERIOD)
+        year = int(_require_field(call.data.get(ATTR_YEAR), "Year is required"))
+        month_value = call.data.get(ATTR_MONTH)
+        property_id = call.data.get(ATTR_PROPERTY_ID)
+        filename = call.data.get(ATTR_FILENAME)
+        if period not in {"month", "year"}:
+            _raise_validation_error("Period must be month or year")
+        if period == "month" and month_value is None:
+            _raise_validation_error("Month is required for a monthly cost report")
+        if month_value is not None and not _MIN_MONTH <= int(month_value) <= _MAX_MONTH:
+            _raise_validation_error("Month must be between 1 and 12")
+
+        baseline = _decimal_service_value(
+            call.data.get(ATTR_CONTRACT_START_NETWORK_CHARGE, 7.65),
+            ATTR_CONTRACT_START_NETWORK_CHARGE,
+        )
+        module1_start = _optional_service_date(
+            call.data.get(ATTR_MODULE1_START_DATE), ATTR_MODULE1_START_DATE
+        )
+        module1_annual = _decimal_service_value(
+            call.data.get(ATTR_MODULE1_ANNUAL_CREDIT, 0), ATTR_MODULE1_ANNUAL_CREDIT
+        )
+        vat_percent = _decimal_service_value(
+            call.data.get(ATTR_VAT_PERCENT, 19), ATTR_VAT_PERCENT
+        )
+        if baseline < 0 or module1_annual < 0 or not 0 <= vat_percent <= 100:
+            _raise_validation_error(
+                "Network baseline and Module 1 must be non-negative; VAT must be 0-100"
+            )
+        vat_fraction = vat_percent / 100
+        account_coordinator, client = _resolve_account_context(hass, account_number)
+        account_data = account_coordinator.data[account_number]
+        if not property_id:
+            property_ids = account_data.get("property_ids", [])
+            if not property_ids:
+                _raise_validation_error(
+                    f"No properties found for account {account_number}"
+                )
+            property_id = property_ids[0]
+        market_supply_point_id = account_data.get("malo_number")
+        if not market_supply_point_id:
+            _raise_validation_error(
+                f"No electricity market supply point found for account {account_number}"
+            )
+
+        timezone = hass.config.time_zone
+        local_today = datetime.now(ZoneInfo(timezone)).date()
+        latest_available_day = local_today - timedelta(days=2)
+        if period == "month":
+            start_date = date(year, int(month_value), 1)
+            end_date = date(
+                year, int(month_value), monthrange(year, int(month_value))[1]
+            )
+        else:
+            start_date = date(year, 1, 1)
+            end_date = date(year, 12, 31)
+        if end_date < start_date:
+            _raise_validation_error(
+                "No readings should be available for the selected period yet"
+            )
+        if year == local_today.year:
+            end_date = min(end_date, latest_available_day)
+        if end_date < start_date:
+            _raise_validation_error("The selected period has no available dates yet")
+
+        products = account_data.get("products") or []
+        grid_operator_code = account_data.get("grid_operator_code")
+        grid_operator_name = account_data.get("grid_operator_name")
+        readings_by_date: dict[str, list[dict[str, Any]]] = {}
+        grid_fees_by_month: dict[tuple[int, int], dict[str, Any] | None] = {}
+        range_start = start_date
+        while range_start <= end_date:
+            range_end = min(
+                date(
+                    range_start.year,
+                    range_start.month,
+                    monthrange(range_start.year, range_start.month)[1],
+                ),
+                end_date,
+            )
+            fee_data = await _fetch_grid_fee_schedules(
+                client,
+                account_number,
+                grid_operator_code,
+                grid_operator_name,
+                range_start,
+                range_end,
+                timezone,
+            )
+            grid_fees_by_month[(range_start.year, range_start.month)] = fee_data
+
+            start_at, end_at = _measurement_range_bounds(
+                range_start, range_end, timezone
+            )
+            try:
+                readings = await client.fetch_electricity_measurements_range(
+                    property_id,
+                    market_supply_point_id,
+                    start_at,
+                    end_at,
+                    timezone,
+                    "15min",
+                )
+            except SmartMeterFetchError as err:
+                msg = f"Unable to fetch cost-report readings {range_start} to {range_end}: {err}"
+                _LOGGER.exception("%s", msg)
+                raise HomeAssistantError(msg) from err
+            readings_by_date.update(_group_readings_by_local_date(readings, timezone))
+            range_start = range_end + timedelta(days=1)
+
+        if not readings_by_date:
+            _raise_validation_error(
+                "No smart meter readings found for the selected period"
+            )
+
+        report_rows = build_daily_cost_report(
+            readings_by_date=readings_by_date,
+            products=products,
+            grid_fees_by_month=grid_fees_by_month,
+            start_date=start_date,
+            end_date=end_date,
+            timezone=timezone,
+            contract_start_network_charge_ct_kwh=baseline,
+            module1_start_date=module1_start,
+            module1_annual_net_eur=module1_annual,
+            fallback_vat_fraction=vat_fraction,
+        )
+        monthly_summaries = build_monthly_cost_summaries(report_rows)
+        csv_rows = [*report_rows, *monthly_summaries]
+        safe_filename = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(filename or "")).strip(
+            "._"
+        )
+        if not safe_filename:
+            period_label = (
+                f"{year}_{int(month_value):02d}" if period == "month" else f"{year}"
+            )
+            safe_filename = f"octopus_cost_report_{account_number}_{period_label}"
+        if not safe_filename.lower().endswith(".csv"):
+            safe_filename += ".csv"
+        output_path = export_file_path(hass, safe_filename)
+        safe_filename = output_path.name
+
+        def write_cost_csv() -> None:
+            headers = cost_report_headers(csv_rows)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with output_path.open("w", newline="", encoding="utf-8-sig") as csvfile:
+                writer = csv.DictWriter(
+                    csvfile,
+                    fieldnames=headers,
+                    delimiter=";",
+                    extrasaction="ignore",
+                )
+                writer.writeheader()
+                for row in csv_rows:
+                    writer.writerow(
+                        {
+                            key: format_cost_report_value(key, value)
+                            for key, value in row.items()
+                        }
+                    )
+                totals: dict[str, Any] = {
+                    "date": "TOTAL",
+                    "tariff_agreement": "Selected period",
+                }
+                incomplete_days = sum(
+                    row["status"] != "complete" for row in report_rows
+                )
+                period_is_complete = incomplete_days == 0
+                for key in headers:
+                    if (
+                        key.endswith("_kwh") or key.endswith("_eur")
+                    ) and not key.endswith("_per_kwh"):
+                        totals[key] = sum(
+                            (
+                                row.get(key, Decimal(0)) or Decimal(0)
+                                for row in report_rows
+                            ),
+                            Decimal(0),
+                        )
+                totals["monthly_total_gross_eur"] = (
+                    sum(
+                        (row["total_after_module1_gross_eur"] for row in report_rows),
+                        Decimal(0),
+                    )
+                    if period_is_complete
+                    else None
+                )
+                if not period_is_complete:
+                    totals["total_before_module1_gross_eur"] = None
+                    totals["total_after_module1_gross_eur"] = None
+                totals["status"] = (
+                    f"{incomplete_days} incomplete day(s); inspect daily rows"
+                )
+                writer.writerow(
+                    {
+                        key: format_cost_report_value(key, value)
+                        for key, value in totals.items()
+                    }
+                )
+
+        await hass.async_add_executor_job(write_cost_csv)
+        download_url = await async_notify_export_ready(
+            hass, output_path.name, "Electricity cost report"
+        )
+        result = {
+            "success": True,
+            "account_number": account_number,
+            "property_id": property_id,
+            "period": period,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "days": len(report_rows),
+            "incomplete_days": sum(row["status"] != "complete" for row in report_rows),
+            "output_file": str(output_path),
+            "download_url": download_url,
+        }
+        hass.bus.async_fire(f"{DOMAIN}_cost_report_result", result)
+        return result
+
+    async def _handle_export_cost_report_legacy(call: ServiceCall) -> dict[str, Any]:
+        """Legacy cost-report implementation retained temporarily for compatibility."""
+        account_number = _require_field(
+            call.data.get(ATTR_ACCOUNT_NUMBER), "Account number is required"
+        )
+        period = call.data.get(ATTR_PERIOD, _DEFAULT_PERIOD)
+        year = int(_require_field(call.data.get(ATTR_YEAR), "Year is required"))
+        month = call.data.get(ATTR_MONTH)
+        property_id = call.data.get(ATTR_PROPERTY_ID)
+        filename = call.data.get(ATTR_FILENAME)
+
+        if period not in {"month", "year"}:
+            _raise_validation_error("Period must be month or year")
+        if period == "month" and month is None:
+            _raise_validation_error("Month is required for monthly cost report")
+        if month is not None and not _MIN_MONTH <= int(month) <= _MAX_MONTH:
+            _raise_validation_error("Month must be between 1 and 12")
+
+        baseline = _decimal_service_value(
+            call.data.get(ATTR_CONTRACT_START_NETWORK_CHARGE, 7.65),
+            ATTR_CONTRACT_START_NETWORK_CHARGE,
+        )
+        module3_start = _optional_service_date(
+            call.data.get(ATTR_MODULE3_START_DATE), ATTR_MODULE3_START_DATE
+        )
+        module1_start = _optional_service_date(
+            call.data.get(ATTR_MODULE1_START_DATE), ATTR_MODULE1_START_DATE
+        )
+        module1_annual = _decimal_service_value(
+            call.data.get(ATTR_MODULE1_ANNUAL_CREDIT, 0),
+            ATTR_MODULE1_ANNUAL_CREDIT,
+        )
+        vat_percent = _decimal_service_value(
+            call.data.get(ATTR_VAT_PERCENT, 19), ATTR_VAT_PERCENT
+        )
+        if baseline < 0 or module1_annual < 0 or not 0 <= vat_percent <= 100:
+            _raise_validation_error(
+                "Baseline/Module 1 must be non-negative; VAT must be 0-100"
+            )
+        vat_fraction = vat_percent / 100
+
+        go_start = time.fromisoformat(
+            _normalize_target_time(call.data.get(ATTR_GO_WINDOW_START, "00:00"))
+        )
+        go_end = time.fromisoformat(
+            _normalize_target_time(call.data.get(ATTR_GO_WINDOW_END, "05:00"))
+        )
+        if go_start == go_end:
+            _raise_validation_error("GO window start and end must differ")
+
+        account_coordinator, client = _resolve_account_context(hass, account_number)
+        account_data = account_coordinator.data[account_number]
+        if not property_id:
+            property_ids = account_data.get("property_ids", [])
+            if not property_ids:
+                _raise_validation_error(
+                    f"No properties found for account {account_number}"
+                )
+            property_id = property_ids[0]
+        market_supply_point_id = account_data.get("malo_number")
+        if not market_supply_point_id:
+            _raise_validation_error(
+                f"No electricity market supply point found for account {account_number}"
+            )
+
+        timezone = hass.config.time_zone
+        if period == "month":
+            start_date = date(year, int(month), 1)
+            end_date = date(year, int(month), monthrange(year, int(month))[1])
+            month_starts = [start_date]
+        else:
+            start_date = date(year, 1, 1)
+            end_date = date(year, 12, 31)
+            month_starts = [date(year, m, 1) for m in range(1, 13)]
+
+        readings_by_date: dict[str, list[dict[str, Any]]] = {}
+        grid_fees_by_month = {}
+        grid_operator_code = account_data.get("grid_operator_code")
+        grid_operator_name = account_data.get("grid_operator_name")
+        for range_start in month_starts:
+            if range_start > end_date:
+                continue
+            range_end = min(
+                date(
+                    range_start.year,
+                    range_start.month,
+                    monthrange(range_start.year, range_start.month)[1],
+                ),
+                end_date,
+            )
+            fee_data = None
+            if grid_operator_code:
+                raw_fees = await client.fetch_variable_grid_fees(
+                    account_number, grid_operator_code, range_start
+                )
+                fee_data = normalize_variable_grid_fees(raw_fees, grid_operator_name)
+            grid_fees_by_month[(range_start.year, range_start.month)] = fee_data
+
+            start_at, end_at = _measurement_range_bounds(
+                range_start, range_end, timezone
+            )
+            try:
+                readings = await client.fetch_electricity_measurements_range(
+                    property_id,
+                    market_supply_point_id,
+                    start_at,
+                    end_at,
+                    timezone,
+                    "15min",
+                )
+            except SmartMeterFetchError as err:
+                msg = (
+                    f"Unable to fetch readings for cost report {range_start} to "
+                    f"{range_end}: {err}"
+                )
+                _LOGGER.exception("%s", msg)
+                raise HomeAssistantError(msg) from err
+            for local_date, day_readings in _group_readings_by_local_date(
+                readings, timezone
+            ).items():
+                readings_by_date[local_date] = day_readings
+
+        if not readings_by_date:
+            _raise_validation_error(
+                "No smart meter readings found for the selected period"
+            )
+
+        report_rows = build_daily_cost_report(
+            readings_by_date=readings_by_date,
+            products=account_data.get("products") or [],
+            grid_fees_by_month=grid_fees_by_month,
+            start_date=start_date,
+            end_date=end_date,
+            timezone=timezone,
+            contract_start_network_charge_ct_kwh=baseline,
+            module3_start_date=module3_start,
+            module1_start_date=module1_start,
+            module1_annual_net_eur=module1_annual,
+            fallback_vat_fraction=vat_fraction,
+            go_start=go_start,
+            go_end=go_end,
+        )
+        safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(filename or "")).strip("._")
+        if not safe_name:
+            suffix = f"{year}_{int(month):02d}" if period == "month" else str(year)
+            safe_name = f"octopus_cost_{account_number}_{suffix}"
+        if not safe_name.lower().endswith(".csv"):
+            safe_name += ".csv"
+        output_path = Path(hass.config.path()) / safe_name
+
+        def write_cost_report() -> None:
+            with output_path.open("w", newline="", encoding="utf-8-sig") as csvfile:
+                writer = csv.DictWriter(
+                    csvfile,
+                    fieldnames=COST_REPORT_HEADERS,
+                    delimiter=";",
+                    extrasaction="ignore",
+                )
+                writer.writeheader()
+                for row in report_rows:
+                    writer.writerow(
+                        {
+                            key: format(value, "f")
+                            if isinstance(value, Decimal)
+                            else value
+                            for key, value in row.items()
+                        }
+                    )
+                writer.writerow({})
+                writer.writerow(
+                    {
+                        "date": "TOTAL",
+                        "total_kwh": format(
+                            sum((row["total_kwh"] for row in report_rows), Decimal(0)),
+                            "f",
+                        ),
+                        "total_before_module1_gross_eur": format(
+                            sum(
+                                (
+                                    row["total_before_module1_gross_eur"]
+                                    for row in report_rows
+                                ),
+                                Decimal(0),
+                            ),
+                            "f",
+                        ),
+                        "total_after_module1_gross_eur": format(
+                            sum(
+                                (
+                                    row["total_after_module1_gross_eur"]
+                                    for row in report_rows
+                                ),
+                                Decimal(0),
+                            ),
+                            "f",
+                        ),
+                        "unpriced_kwh": format(
+                            sum(
+                                (row["unpriced_kwh"] for row in report_rows), Decimal(0)
+                            ),
+                            "f",
+                        ),
+                        "status": "summary; review daily status for completeness",
+                    }
+                )
+
+        await hass.async_add_executor_job(write_cost_report)
+        result = {
+            "success": True,
+            "account_number": account_number,
+            "property_id": property_id,
+            "period": period,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "days": len(report_rows),
+            "incomplete_days": sum(row["status"] != "complete" for row in report_rows),
+            "output_file": str(output_path),
+        }
+        hass.bus.async_fire(f"{DOMAIN}_cost_report_result", result)
+        return result
 
     async def handle_submit_meter_readings(call: ServiceCall) -> dict[str, Any]:
         """Handle the submit_meter_readings service call."""
@@ -839,6 +1370,13 @@ async def async_register_services(
         DOMAIN,
         SERVICE_EXPORT_SMART_METER_CSV,
         handle_export_smart_meter_csv,
+        supports_response=SupportsResponse.ONLY,
+    )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_EXPORT_COST_REPORT,
+        handle_export_cost_report,
         supports_response=SupportsResponse.ONLY,
     )
 

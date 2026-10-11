@@ -66,7 +66,7 @@ get_smart_meter_readings:
 
 export_smart_meter_csv:
   name: Export Smart Meter Data to CSV
-  description: Export smart meter data for a month or year to CSV using paginated monthly range requests in the Home Assistant timezone. Choose 15-minute or hourly readings and wide or tall layout. The response includes meter-assignment and quality metadata and is also fired as event `octopus_germany_csv_export_result`.
+  description: Export smart meter data for a month or year to CSV using paginated monthly range requests in the Home Assistant timezone. Choose 15-minute or hourly readings and wide or tall layout. Files are saved under /config/octopus_germany/exports and a persistent Home Assistant notification provides a browser-download link valid for 30 days. The response includes meter-assignment and quality metadata and is also fired as event `octopus_germany_csv_export_result`.
   fields:
     account_number:
       name: Account Number
@@ -115,7 +115,7 @@ export_smart_meter_csv:
           mode: box
     filename:
       name: Filename
-      description: Output filename (without extension, saved in /config; leave empty to auto-generate octopus_<account>_<year>[_<month>].csv)
+      description: Output filename (without extension, saved under /config/octopus_germany/exports; leave empty to auto-generate octopus_<account>_<year>[_<month>].csv)
       required: false
       example: "octopus_export"
       selector:
@@ -161,6 +161,98 @@ export_smart_meter_csv:
       example: "04:30"
       selector:
         time:
+
+export_cost_report:
+  name: Export electricity cost report
+  description: Create a daily CSV cost breakdown from agreement prices, smart-meter readings, and variable grid fees. Files are saved under /config/octopus_germany/exports and a persistent Home Assistant notification provides a browser-download link valid for 30 days. Required contractual assumptions are explicit inputs; missing API rates remain marked incomplete.
+  fields:
+    account_number:
+      name: Account Number
+      description: The account number (usually starts with A-)
+      required: true
+      example: "A-12345678"
+      selector:
+        text:
+    property_id:
+      name: Property ID
+      description: Property ID (optional, uses the first account property otherwise)
+      required: false
+      selector:
+        text:
+    period:
+      name: Period
+      description: Export a month or a calendar year (current year ends two days ago)
+      required: true
+      default: "month"
+      selector:
+        select:
+          options:
+            - "month"
+            - "year"
+    year:
+      name: Year
+      description: Calendar year to report
+      required: true
+      example: 2026
+      selector:
+        number:
+          min: 2020
+          max: 2035
+          mode: box
+    month:
+      name: Month
+      description: Required for monthly reports (1-12)
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 12
+          mode: box
+    contract_start_network_charge_ct_kwh:
+      name: Contract-start network charge
+      description: Net network charge in ct/kWh assumed included in the original gross contract AP
+      required: true
+      default: 7.65
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.01
+          mode: box
+    module1_start_date:
+      name: Module 1 eligibility date
+      description: Optional date from which to prorate the annual Module 1 credit
+      required: false
+      selector:
+        date:
+    module1_annual_credit_net_eur:
+      name: Module 1 annual credit (net)
+      description: Net annual Module 1 credit reported for the applicable network operator and selected report year; use 0 when not applicable
+      required: true
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 500
+          step: 0.01
+          mode: box
+    vat_percent:
+      name: VAT percentage
+      description: Fallback VAT when a tariff price tier provides no VAT rate
+      required: true
+      default: 19
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.1
+          mode: box
+    filename:
+      name: Filename
+      description: Optional CSV filename saved under /config/octopus_germany/exports
+      required: false
+      selector:
+        text:
 
 submit_meter_readings:
   name: Submit Meter Readings
