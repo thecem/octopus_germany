@@ -15,6 +15,9 @@ export_monthly_cost_reports_dec_2024_to_aug_2026:
           - action: octopus_germany.export_cost_report
             data:
               account_number: "{{ octopus_account_number }}"
+              # One fetch generates offline XLSX and measurement CSV.
+              # Omit this field to retain the existing cost-CSV-only behavior.
+              format: package
               period: month
               year: "{{ 2024 + ((10 + repeat.index) // 12) }}"
               month: "{{ ((10 + repeat.index) % 12) + 1 }}"

@@ -115,6 +115,9 @@ To keep this start page compact, detailed documentation is split across focused 
   - Fetch historical iMSys readings for one day
 - `octopus_germany.export_cost_report`
   - Export a daily/monthly electricity cost estimate for a month or year; see the [cost-report guide](docs/COST_REPORT.md)
+  - Select `format: package` to create an offline formula XLSX and quarter-hour measurement CSV from one shared fetch, with two download links; no additional cost CSV is generated
+  - Fields are available in Developer Tools > Actions; after updating, restart Home Assistant and reload the browser to refresh action descriptions
+  - Contract zones are selected from the valid agreement (GO/STANDARD or Heat zones); network NT/ST/HT remains independent
 - `octopus_germany.export_smart_meter_csv`
   - Export iMSys readings to CSV (month/year) using paginated monthly range queries
   - Uses the Home Assistant timezone and retains OE meter-quality metadata while loading

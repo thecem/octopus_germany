@@ -388,6 +388,17 @@ Per-device entity IDs use the stable Octopus device UUID. Display names remain h
 
 See [Actions and Services](../../docs/ACTIONS_AND_SERVICES.md) for fields, response events, examples, and limitations. See [Electricity Cost Report](../../docs/COST_REPORT.md) for the cost model.
 
+`octopus_germany.export_cost_report` retains its default cost CSV. With
+`format: package`, one shared measurement fetch also produces an offline
+formula XLSX and a quarter-hour measurement CSV, with two download links
+and no additional cost CSV. Package `output_file` and `download_url` point
+to the XLSX. The separate measurement-CSV service remains available.
+Fields are available in Developer Tools > Actions. After updating, restart
+Home Assistant and reload the browser to refresh action descriptions.
+The valid agreement supplies the price zones (GO/STANDARD or Heat zones);
+network NT/ST/HT is independent. Heat metering charges already included in
+the contract standing charge are not added again.
+
 ## iMSys / SMGW-HAN
 
 For direct HAN interface readings from an iMSys/SMGW meter, use this integration in parallel:

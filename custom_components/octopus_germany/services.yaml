@@ -164,8 +164,38 @@ export_smart_meter_csv:
 
 export_cost_report:
   name: Export electricity cost report
-  description: Create a daily CSV cost breakdown from agreement prices, smart-meter readings, and variable grid fees. The service checks /config/octopus_germany/grid_fee_schedules.json for the detected network-operator code and report year; if missing or unmatched, the service response warns that it can be created from docs/examples/grid_fee_schedules.example.json. API rates take precedence, followed by explicit service rates and matching file rates. Files are saved under /config/octopus_germany/exports with a browser-download notification.
+  description: Create a cost CSV or an offline XLSX and quarter-hour measurement CSV package from agreement prices, smart-meter readings, and variable grid fees. The service checks /config/octopus_germany/grid_fee_schedules.json for the detected network-operator code and report year; if missing or unmatched, the service response warns that it can be created from docs/examples/grid_fee_schedules.example.json. API rates take precedence, followed by explicit service rates and matching file rates. Files are saved under /config/octopus_germany/exports with a browser-download notification.
   fields:
+    format:
+      name: Export format
+      description: "csv keeps the existing cost CSV. package creates an editable offline XLSX and an exact quarter-hour measurement CSV from one measurement fetch, with two download links and no additional cost CSV."
+      required: false
+      default: csv
+      selector:
+        select:
+          options:
+            - csv
+            - package
+    network_comparison:
+      name: Module 3 comparison basis
+      description: "XLSX only: compare with the contract-start grid fee or the documented normal fee for the report year. Does not change effective costs."
+      required: false
+      default: contract_start
+      selector:
+        select:
+          options:
+            - contract_start
+            - current_year
+    standard_network_charge_ct_kwh:
+      name: Normal annual grid fee (net ct/kWh)
+      description: "Required for package comparison current_year. Enter the documented normal annual fee, not the ST band of Module 3. Also used for package intervals before Module 3 applies; without it, a variable ST band cannot substitute for the normal fee."
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: any
+          mode: box
     account_number:
       name: Account Number
       description: The account number (usually starts with A-)
@@ -272,7 +302,7 @@ export_cost_report:
           mode: box
     filename:
       name: Filename
-      description: Optional CSV filename saved under /config/octopus_germany/exports
+      description: Optional cost CSV filename or package base name saved under /config/octopus_germany/exports
       required: false
       selector:
         text:

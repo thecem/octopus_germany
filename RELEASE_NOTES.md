@@ -1,5 +1,52 @@
 # Release Notes
 
+## Version 0.0.190 (2026-10-13)
+
+### Changes
+
+- Remove the redundant cost CSV from `format: package`: exports now contain
+  only the offline XLSX and quarter-hour measurement CSV, with two download
+  links. Package `output_file` and `download_url` point to the XLSX.
+- Preserve the default cost-CSV mode and separate measurement-CSV service
+  for existing automations. Previously exported files are not deleted.
+
+## Version 0.0.189 (2026-10-13)
+
+### Fixes
+
+- Load and parse the optional grid-fee schedule in Home Assistant's executor,
+  including the file-existence check, instead of blocking the event loop
+  during cost exports. Existing schedule selection and warnings are preserved.
+
+## Version 0.0.188 (2026-10-13)
+
+### Fixes
+
+- Fix an unsupported numeric selector step that caused Home Assistant to
+  reject the action descriptions and hide all input fields. The normal
+  annual grid-fee field accepts arbitrary decimal precision.
+
+## Version 0.0.187 (2026-10-13)
+
+### Features
+
+- Add `format: package` to the cost-report service: one measurement fetch
+  generates the existing cost CSV, an exact quarter-hour measurement CSV
+  and an editable offline formula XLSX, with one notification containing
+  three independently scoped download links.
+- Use the valid contract price zones for GO/STANDARD or Heat, keep network
+  NT/ST/HT independent, show monthly invoice lines and Module 1/3 effects,
+  and support a documented current-year grid-fee comparison without
+  double-counting the grid fee or Heat metering charges.
+- Validate package interval coverage, invalid and duplicate measurements,
+  including 92/100-slot daylight-saving days. Missing values stay blank and
+  incomplete invoices are blocked; the default CSV service remains unchanged.
+
+### Fixes
+
+- Honor an explicitly entered zero VAT fallback instead of replacing it with
+  19%, keeping Module 1 credits consistent with offline workbook formulas.
+
 ## Version 0.0.186 (2026-10-11)
 
 ### Features

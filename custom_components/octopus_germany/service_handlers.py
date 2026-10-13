@@ -10,12 +10,14 @@ from calendar import monthrange
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import device_registry as dr
+from xlsxwriter.exceptions import XlsxWriterException
 
 from .api.smart_meter import SmartMeterFetchError
 from .const import DOMAIN
@@ -27,7 +29,13 @@ from .cost_report import (
     cost_report_headers,
     format_cost_report_value,
 )
+from .cost_report_export import (
+    prepare_package_readings,
+    write_cost_workbook,
+    write_measurements_csv,
+)
 from .file_exports import (
+    async_notify_export_package_ready,
     async_notify_export_ready,
     async_register_export_download_view,
     export_file_path,
@@ -924,7 +932,7 @@ async def async_register_services(
             raise HomeAssistantError(msg) from e
 
     async def handle_export_cost_report(call: ServiceCall) -> dict[str, Any]:
-        """Create a daily tariff and network-cost breakdown CSV report."""
+        """Create a cost CSV or a measurement CSV and offline XLSX package."""
         account_number = _require_field(
             call.data.get(ATTR_ACCOUNT_NUMBER), "Account number is required"
         )
@@ -933,6 +941,35 @@ async def async_register_services(
         month_value = call.data.get(ATTR_MONTH)
         property_id = call.data.get(ATTR_PROPERTY_ID)
         filename = call.data.get(ATTR_FILENAME)
+        export_format = call.data.get("format", "csv")
+        comparison = call.data.get("network_comparison", "contract_start")
+        if export_format not in {"csv", "package"}:
+            _raise_validation_error("format must be csv or package")
+        if comparison not in {"contract_start", "current_year"}:
+            _raise_validation_error(
+                "network_comparison must be contract_start or current_year"
+            )
+        current_network_input = call.data.get("standard_network_charge_ct_kwh")
+        current_network = (
+            _decimal_service_value(
+                current_network_input, "standard_network_charge_ct_kwh"
+            )
+            if current_network_input not in (None, "")
+            else None
+        )
+        if current_network is not None and current_network < 0:
+            _raise_validation_error(
+                "standard_network_charge_ct_kwh must be non-negative"
+            )
+        if (
+            export_format == "package"
+            and comparison == "current_year"
+            and current_network is None
+        ):
+            _raise_validation_error(
+                "standard_network_charge_ct_kwh is required for current_year; "
+                "the Module 3 ST rate is not the normal annual grid fee"
+            )
         if period not in {"month", "year"}:
             _raise_validation_error("Period must be month or year")
         if period == "month" and month_value is None:
@@ -1021,9 +1058,10 @@ async def async_register_services(
         user_schedule = None
         schedule_error = False
         schedule_file_status = "missing"
-        if schedule_path.is_file():
+        if await hass.async_add_executor_job(schedule_path.is_file):
             try:
-                user_schedule = load_grid_fee_schedule(
+                user_schedule = await hass.async_add_executor_job(
+                    load_grid_fee_schedule,
                     schedule_path,
                     grid_operator_code,
                     year,
@@ -1149,6 +1187,12 @@ async def async_register_services(
                 "No smart meter readings found for the selected period"
             )
 
+        interval_details: list[dict[str, Any]] = []
+        reading_issues: dict[str, str] = {}
+        if export_format == "package":
+            readings_by_date, reading_issues = prepare_package_readings(
+                readings_by_date, start_date, end_date, timezone
+            )
         report_rows = build_daily_cost_report(
             readings_by_date=readings_by_date,
             products=products,
@@ -1162,7 +1206,30 @@ async def async_register_services(
             fallback_vat_fraction=vat_fraction,
             module3_start_date=module3_start,
             manual_module3_rates=manual_module3_rates,
+            interval_details=interval_details if export_format == "package" else None,
+            normal_network_charge_ct_kwh=(
+                current_network if export_format == "package" else None
+            ),
+            strict_standard_grid_fee=export_format == "package",
         )
+        if export_format == "package":
+            priced_instants = {
+                item["start"]
+                for item in interval_details
+                if item["network_rate"] is not None
+            }
+            for row in report_rows:
+                day = row["date"]
+                if day in reading_issues:
+                    row["status"] = f"incomplete: {reading_issues[day]}"
+                elif any(
+                    datetime.fromisoformat(reading["start_time"]) not in priced_instants
+                    for reading in readings_by_date[day]
+                ):
+                    row["status"] = "incomplete: interval price missing"
+                if row["status"] != "complete":
+                    row["total_before_module1_gross_eur"] = None
+                    row["total_after_module1_gross_eur"] = None
         monthly_summaries = build_monthly_cost_summaries(report_rows)
         csv_rows = [*report_rows, *monthly_summaries]
         basis_rows = build_cost_report_basis_rows(
@@ -1175,6 +1242,26 @@ async def async_register_services(
             module1_annual_net_eur=module1_annual,
             vat_percent=vat_percent,
         )
+        if export_format == "package":
+            basis_rows.append(
+                {
+                    "record_type": "BASIS",
+                    "date": "BASIS",
+                    "basis_key": "export_package",
+                    "basis_value": json.dumps(
+                        {
+                            "network_comparison": comparison,
+                            "standard_network_charge_net_ct_per_kwh": (
+                                str(current_network)
+                                if current_network is not None
+                                else None
+                            ),
+                            "measurement_timezone": timezone,
+                            "intervals": "15min; local days may contain 92, 96 or 100 slots",
+                        },
+                    ),
+                }
+            )
         if user_schedule is not None:
             basis_rows.append(
                 {
@@ -1208,6 +1295,20 @@ async def async_register_services(
             for row in report_rows
         )
         warnings = list(preset_warnings)
+        if reading_issues:
+            warnings.append(
+                f"{len(reading_issues)} day(s) have missing, duplicate or invalid "
+                "quarter-hour readings; inspect the exported statuses."
+            )
+        if export_format == "package" and any(
+            "Normal grid fee unavailable" in str(row.get("module3_rate_basis"))
+            for row in report_rows
+        ):
+            warnings.append(
+                "The variable Module 3 ST band is not a normal annual grid fee. "
+                "Supply standard_network_charge_ct_kwh for periods before Module 3; "
+                "those interval costs remain incomplete."
+            )
         if module1_fallback_days:
             warnings.append(
                 f"Module 3 rates were unavailable for {module1_fallback_days} day(s); "
@@ -1227,15 +1328,17 @@ async def async_register_services(
                 f"{year}_{int(month_value):02d}" if period == "month" else f"{year}"
             )
             safe_filename = f"octopus_cost_report_{account_number}_{period_label}"
+        if export_format == "package" and safe_filename.lower().endswith(".xlsx"):
+            safe_filename = safe_filename[:-5]
         if not safe_filename.lower().endswith(".csv"):
             safe_filename += ".csv"
         output_path = export_file_path(hass, safe_filename)
         safe_filename = output_path.name
 
-        def write_cost_csv() -> None:
+        def write_cost_csv(target: Path = output_path) -> None:
             headers = cost_report_headers([*csv_rows, *basis_rows])
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            with output_path.open("w", newline="", encoding="utf-8-sig") as csvfile:
+            with target.open("w", newline="", encoding="utf-8-sig") as csvfile:
                 writer = csv.DictWriter(
                     csvfile,
                     fieldnames=headers,
@@ -1293,13 +1396,73 @@ async def async_register_services(
                 for row in basis_rows:
                     writer.writerow(row)
 
-        await hass.async_add_executor_job(write_cost_csv)
-        download_url = await async_notify_export_ready(
-            hass,
-            output_path.name,
-            "Electricity cost report"
-            + (f". Warning: {' '.join(warnings)}" if warnings else ""),
+        description = "Electricity cost report" + (
+            f". Warning: {' '.join(warnings)}" if warnings else ""
         )
+        package_files: list[dict[str, str]] = []
+        if export_format == "package":
+            measurement_path = export_file_path(
+                hass, f"{output_path.stem}_measurements_15min.csv"
+            )
+            workbook_path = export_file_path(hass, f"{output_path.stem}.xlsx")
+
+            def write_package() -> None:
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                with TemporaryDirectory(dir=output_path.parent) as directory:
+                    staging = Path(directory)
+                    write_measurements_csv(
+                        staging / measurement_path.name,
+                        readings_by_date,
+                        timezone,
+                        reading_issues,
+                    )
+                    write_cost_workbook(
+                        staging / workbook_path.name,
+                        readings_by_date,
+                        interval_details,
+                        report_rows,
+                        basis_rows,
+                        timezone,
+                        baseline,
+                        module1_annual,
+                        module1_start,
+                        vat_fraction,
+                        comparison,
+                        current_network,
+                        warnings,
+                    )
+                    for target in (measurement_path, workbook_path):
+                        (staging / target.name).replace(target)
+
+            try:
+                await hass.async_add_executor_job(write_package)
+            except (OSError, ValueError, XlsxWriterException) as err:
+                _LOGGER.exception("Unable to create electricity export package")
+                msg = "Unable to create electricity export package; check the log"
+                raise HomeAssistantError(msg) from err
+            urls = await async_notify_export_package_ready(
+                hass,
+                [workbook_path.name, measurement_path.name],
+                description,
+            )
+            download_url = urls[workbook_path.name]
+            package_files = [
+                {
+                    "type": kind,
+                    "output_file": str(path),
+                    "download_url": urls[path.name],
+                }
+                for kind, path in (
+                    ("xlsx", workbook_path),
+                    ("measurements_csv", measurement_path),
+                )
+            ]
+            output_path = workbook_path
+        else:
+            await hass.async_add_executor_job(write_cost_csv)
+            download_url = await async_notify_export_ready(
+                hass, output_path.name, description
+            )
         result = {
             "success": True,
             "account_number": account_number,
@@ -1315,6 +1478,9 @@ async def async_register_services(
             "grid_fee_schedule_file": str(schedule_path),
             "grid_fee_schedule_file_status": schedule_file_status,
         }
+        if export_format == "package":
+            result["files"] = package_files
+            result["format"] = export_format
         hass.bus.async_fire(f"{DOMAIN}_cost_report_result", result)
         return result
 

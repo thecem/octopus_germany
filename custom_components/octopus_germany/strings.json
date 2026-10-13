@@ -30,6 +30,26 @@
       "reconfigure_successful": "Reconfiguration successful"
     }
   },
+  "services": {
+    "export_cost_report": {
+      "name": "Export electricity cost report",
+      "description": "Export cost CSV or a package with offline formula XLSX and quarter-hour measurement CSV from one shared fetch.",
+      "fields": {
+        "format": {
+          "name": "Export format",
+          "description": "csv: existing cost CSV. package: XLSX and measurement CSV with two download links, without an additional cost CSV."
+        },
+        "network_comparison": {
+          "name": "Module 3 comparison basis",
+          "description": "XLSX: contract_start or current_year. Changing comparison does not change actual costs."
+        },
+        "standard_network_charge_ct_kwh": {
+          "name": "Normal annual grid fee (net ct/kWh)",
+          "description": "Required for current_year and used for package intervals before Module 3. Enter the documented normal annual fee, not the Module 3 ST band."
+        }
+      }
+    }
+  },
   "options": {
     "step": {
       "init": {

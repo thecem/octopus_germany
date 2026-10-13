@@ -6,7 +6,7 @@ import json
 import re
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 from .tariff import (
@@ -15,6 +15,9 @@ from .tariff import (
     parse_product_datetime,
     parse_tariff_time,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 _MONTHS_PER_YEAR = Decimal(12)
 _DAYS_PER_STANDING_CHARGE_YEAR = Decimal(365)
@@ -458,7 +461,7 @@ def _standing_charge(
 def build_daily_cost_report(
     readings_by_date: dict[str, list[dict[str, Any]]],
     products: list[dict[str, Any]],
-    grid_fees_by_month: dict[tuple[int, int], dict[str, Any] | None],
+    grid_fees_by_month: Mapping[tuple[int, int], dict[str, Any] | None],
     start_date: date,
     end_date: date,
     timezone: str,
@@ -468,13 +471,18 @@ def build_daily_cost_report(
     fallback_vat_fraction: Decimal,
     module3_start_date: date | None = None,
     manual_module3_rates: list[dict[str, Any]] | None = None,
+    *,
+    interval_details: list[dict[str, Any]] | None = None,
+    normal_network_charge_ct_kwh: Decimal | None = None,
+    strict_standard_grid_fee: bool = False,
 ) -> list[dict[str, Any]]:
     """Build one detailed billing CSV row per local day."""
     contract_start_network_charge_ct_kwh = _decimal(
         contract_start_network_charge_ct_kwh
     ) or Decimal(0)
     module1_annual_net_eur = _decimal(module1_annual_net_eur) or Decimal(0)
-    fallback_vat_fraction = _decimal(fallback_vat_fraction) or Decimal("0.19")
+    parsed_vat = _decimal(fallback_vat_fraction)
+    fallback_vat_fraction = parsed_vat if parsed_vat is not None else Decimal("0.19")
     manual_module3_rates = manual_module3_rates or []
     local_timezone = ZoneInfo(timezone)
     rows = []
@@ -536,6 +544,7 @@ def build_daily_cost_report(
             }
             network_rate = None
             band = "BASE"
+            interval_source = "API STANDARD grid fee"
             if module3_selected:
                 active = (
                     get_active_grid_fee(grid_fee_data, local_at)
@@ -546,6 +555,7 @@ def build_daily_cost_report(
                 if active is None:
                     active = get_active_grid_fee(manual_fee_data, local_at)
                     source = "Module 3 manual rates"
+                interval_source = source
                 if active is not None:
                     network_rate = _decimal(active.get("rate_eur_per_kwh"))
                     band = str(active.get("rate_type") or "BASE").upper()
@@ -558,14 +568,27 @@ def build_daily_cost_report(
                         module3_rate_bases.add(
                             "API STANDARD grid fee fallback: Module 3 rates unavailable"
                         )
+                        interval_source = (
+                            "API STANDARD grid fee fallback: Module 3 rates unavailable"
+                        )
                     else:
                         module3_rate_bases.add("Module 3 rate unavailable")
+                        interval_source = "Module 3 rate unavailable"
             else:
-                standard = _standard_grid_fee(grid_fee_data, local_at)
-                if standard is not None:
-                    network_rate = _decimal(standard.get("rate_eur_per_kwh"))
-                    band = str(standard.get("rate_type") or "BASE").upper()
-                module3_rate_bases.add("API STANDARD grid fee")
+                if normal_network_charge_ct_kwh is not None:
+                    network_rate = normal_network_charge_ct_kwh / 100
+                    band = "STANDARD"
+                    interval_source = "Manual normal annual grid fee"
+                elif strict_standard_grid_fee and api_has_module3_rates:
+                    interval_source = (
+                        "Normal grid fee unavailable: variable ST is not an annual fee"
+                    )
+                else:
+                    standard = _standard_grid_fee(grid_fee_data, local_at)
+                    if standard is not None:
+                        network_rate = _decimal(standard.get("rate_eur_per_kwh"))
+                        band = str(standard.get("rate_type") or "BASE").upper()
+                module3_rate_bases.add(interval_source)
             modules_seen.add(api_module)
             tariff_slug = _column_slug(tariff)
             tariff_labels[tariff_slug] = tariff
@@ -604,6 +627,23 @@ def build_daily_cost_report(
                 )
                 grid_fee_weighted_kwh[block] = (
                     grid_fee_weighted_kwh.get(block, Decimal(0)) + quantity
+                )
+            if interval_details is not None:
+                interval_details.append(
+                    {
+                        "start": start_at.astimezone(UTC),
+                        "local_start": local_at,
+                        "quantity": quantity,
+                        "agreement": str(product.get("name") or product.get("code")),
+                        "tariff": tariff,
+                        "gross_rate": base_rate,
+                        "vat": vat,
+                        "network_rate": network_rate,
+                        "band": band,
+                        "network_source": interval_source,
+                        "module3_selected": module3_selected,
+                        "reading_status": reading.get("reading_status", "OK"),
+                    }
                 )
 
         noon = datetime.combine(current_date, time(12), tzinfo=local_timezone)

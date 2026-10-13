@@ -100,7 +100,7 @@ class OctopusExportDownloadView(HomeAssistantView):
         return (token,)
 
     async def get(self, _request: web.Request, filename: str) -> web.FileResponse:
-        """Download one generated CSV file, without allowing path traversal."""
+        """Download one generated export file, without allowing path traversal."""
         file_path = (self._export_directory / filename).resolve()
         if file_path.parent != self._export_directory or not file_path.is_file():
             raise web.HTTPNotFound
@@ -157,3 +157,27 @@ async def async_notify_export_ready(
         notification_id=f"{DOMAIN}_export_{filename}",
     )
     return url
+
+
+async def async_notify_export_package_ready(
+    hass: HomeAssistant, filenames: list[str], export_description: str
+) -> dict[str, str]:
+    """Create one notification with independently scoped links for a package."""
+    view = await async_register_export_download_view(hass)
+    urls = {}
+    links = []
+    for filename in filenames:
+        token = await view.async_issue_download_token(filename)
+        url = export_download_url(filename, token)
+        urls[filename] = url
+        links.append(
+            f'<a href="{escape(url, quote=True)}" target="_blank">'
+            f"Download {escape(filename)}</a>"
+        )
+    persistent_notification.async_create(
+        hass,
+        f"{escape(export_description)} is ready.\n\n" + "\n\n".join(links),
+        title="Octopus Germany export package ready",
+        notification_id=f"{DOMAIN}_export_{filenames[0]}",
+    )
+    return urls

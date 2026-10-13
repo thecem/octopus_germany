@@ -4,6 +4,96 @@
 
 Der Bericht ist eine nachvollziehbare Berechnungshilfe, keine Lieferantenrechnung und keine rechtliche Entscheidung ueber Anspruch oder Teilnahme nach §14a EnWG. Fehlende Preise und Saetze werden nicht stillschweigend als null behandelt.
 
+## Exportpaket: ein Abruf, zwei Dateien
+
+Im UI unter **Entwicklerwerkzeuge > Aktionen** die Aktion
+`octopus_germany.export_cost_report` auswaehlen und zum UI-Modus wechseln.
+Kontonummer, Jahr und bei Monatsberichten den Monat eingeben; fuer das
+Exportpaket `format: package` auswaehlen. Nach einem Integrationsupdate
+Home Assistant neu starten und die Browserseite neu laden, damit die
+Aktionsbeschreibung aktualisiert wird.
+
+Mit `format: package` erzeugt derselbe Messwertabruf:
+
+1. eine `.xlsx` mit Rohwerten, editierbaren Preisen und Excel-Formeln,
+2. eine `_measurements_15min.csv` mit ungerundeten Viertelstunden-kWh,
+   96 regulaeren Uhrzeitspalten je Tag und Datenstatus.
+
+Die Downloadmeldung enthaelt zwei separat geschuetzte Links. Im Paketmodus
+verweisen `output_file` und `download_url` auf die XLSX;
+zusaetzlich enthaelt `files` die zwei Eintraege mit `type`, `output_file`
+und `download_url`. Ohne `format` bleibt der bisherige CSV-Export erhalten.
+Es ist kein vorheriger Aufruf von `export_smart_meter_csv` erforderlich.
+Dieser separate Messwerte-CSV-Service bleibt verfuegbar. Der Paketmodus
+erzeugt keine Kosten-CSV mehr; bereits exportierte Dateien werden nicht geloescht.
+
+```yaml
+action: octopus_germany.export_cost_report
+data:
+  account_number: A-REPLACE-ME
+  period: month
+  year: 2026
+  month: 5
+  format: package
+  contract_start_network_charge_ct_kwh: 7.65  # eigenen Vertragswert pruefen
+  network_comparison: contract_start
+response_variable: cost_export
+```
+
+Die XLSX hat die Blaetter **Rechnung**, **Eingaben**, **Messwerte**,
+**Tarifpreise**, **Grundpreise**, **Netzpreise**, **Intervalle**,
+**Tageswerte** und **Basis**. Blau markierte Messwerte, Tarif-/Netzpreise
+und Intervall-Preis-IDs sind editierbar. Monatsrechnungen, Tarif- und
+Netzband-Tagesmengen sowie Kosten aktualisieren sich offline, ohne Makros,
+API-Verbindungen oder externe Arbeitsmappenlinks. Der Export speichert
+initiale Formelergebnisse fuer Vorschauprogramme.
+
+Die im Abruf gueltige **Vertragszuordnung** entscheidet, ob beispielsweise
+GO/STANDARD oder Heat Niedrig/Standard/Hoch verwendet wird. Es gibt kein
+festes Modell GO + STANDARD + HEAT. Heat-Zeitfenster und Preise kommen
+aus dem gueltigen Agreement, nicht pauschal von einer Website. Heat-
+Messentgelte, die schon im Vertragsgrundpreis enthalten sind, werden nicht
+nochmals berechnet. Netz-NT/ST/HT wird unabhaengig von den Vertragspreiszonen
+zugeordnet. Historische Intelligent-GO-Zusatzslots werden nicht erfunden:
+eine manuelle Tarif-ID-Zuordnung in Excel ist moeglich, soweit die
+historischen Agreement-Preise diese Slots nicht bereits abbilden.
+
+`network_comparison: current_year` benoetigt
+`standard_network_charge_ct_kwh`, den dokumentierten **normalen**
+Netzentgeltsatz des Berichtjahrs in netto ct/kWh. Das Modul-3-ST-Band
+ist nicht automatisch dieser Satz. Der Vergleich veraendert den
+ausgewiesenen Modul-3-Effekt, nicht die effektiven Endkosten:
+
+```text
+Tarifkosten + Grundgebuehr
++ Anpassung Vertragsnetz an Vergleichsnetz
+- Modul 1 Gutschrift
+- (Vergleichs-Netzkosten - tatsaechliche NT/ST/HT-Netzkosten)
+= Gesamtkosten
+```
+
+Vor Modul-3-Wirksamkeit wird die normale Netzaenderung als
+Referenzanpassung ausgewiesen, nicht als Modul-3-Einsparung.
+
+Der Paketmodus prueft Vollstaendigkeit: normale lokale Tage haben 96,
+Zeitwechseltage 92 oder 100 Intervalle. Zusaetzliche Herbstwerte erhalten
+`(2)`-Spalten; in der XLSX stehen UTC und lokale Uhrzeit mit Offset.
+Nicht existierende Fruehlingsintervalle bleiben leer und zaehlen nicht
+als fehlend. Echte Nullmessungen bleiben null, fehlende Messwerte leer.
+Fehlende Preise oder Messwerte sperren die Rechnung. Fehlende Messwerte
+koennen in Excel nachgetragen werden; ungueltige/duplizierte Quelldaten
+bleiben gesperrt und erfordern einen korrigierten neuen Export.
+
+Der aktuelle Jahresvergleich verwendet einen eingegebenen normalen
+Jahressatz. Im Paketmodus wird dieser auch fuer die tatsaechlichen
+Netzkosten vor Modul-3-Wirksamkeit verwendet. Ohne diesen Wert wird ein
+variabler ST-Satz nicht als normales Jahresentgelt akzeptiert; die
+betroffene Rechnung bleibt unvollstaendig. Tatsaechliche zeitvariable Saetze und Vertragswechsel werden
+weiterhin intervallgenau aus den gelieferten Gueltigkeiten ausgewaehlt;
+die vollstaendigen Zeitplaene stehen im Blatt Basis. Preis-IDs erlauben
+manuelle Szenarien, berechnen bei einer Aenderung von Zeitfenstern jedoch
+nicht automatisch eine neue Vertragszuordnung.
+
 ## Berechnungsgrundlage
 
 ### Vertrags-Arbeitspreis und Netzentgeltkorrektur

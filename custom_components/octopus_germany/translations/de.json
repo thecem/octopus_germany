@@ -29,6 +29,26 @@
       }
     }
   },
+  "services": {
+    "export_cost_report": {
+      "name": "Stromkostenbericht exportieren",
+      "description": "Kosten-CSV oder Exportpaket mit Offline-Formel-XLSX und Viertelstunden-Messwerte-CSV aus einem gemeinsamen Abruf.",
+      "fields": {
+        "format": {
+          "name": "Exportformat",
+          "description": "csv: bisherige Kosten-CSV. package: XLSX und Messwerte-CSV mit zwei Downloadlinks, ohne zusaetzliche Kosten-CSV."
+        },
+        "network_comparison": {
+          "name": "Vergleichsbasis Modul 3",
+          "description": "XLSX: contract_start (Vertragsstart) oder current_year (Berichtjahr). Der Vergleich veraendert nicht die tatsaechlichen Kosten."
+        },
+        "standard_network_charge_ct_kwh": {
+          "name": "Normales Jahres-Netzentgelt (netto ct/kWh)",
+          "description": "Erforderlich bei current_year und im Paket fuer Intervalle vor Modul 3 verwendet. Dokumentierten normalen Jahressatz eingeben, nicht das ST-Band von Modul 3."
+        }
+      }
+    }
+  },
   "options": {
     "error": {
       "invalid_auth": "E-Mail oder Passwort sind ung\u00fcltig."

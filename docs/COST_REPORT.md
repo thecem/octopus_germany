@@ -4,6 +4,78 @@
 
 This is a calculation aid, not a supplier invoice or a legal decision about eligibility or enrollment under §14a EnWG. Missing prices and rates are not silently treated as zero.
 
+## Export package: one fetch, two files
+
+In **Developer Tools > Actions**, select `octopus_germany.export_cost_report`
+and switch to UI mode. Enter the account number, year and (for monthly
+reports) month, then select `package` for the format. After updating the
+integration, restart Home Assistant and reload the browser to refresh
+action descriptions.
+
+Set `format: package` to generate an editable formula `.xlsx` and a
+`_measurements_15min.csv` from the same
+measurement fetch. No preceding `export_smart_meter_csv` call is needed.
+One notification contains two independently scoped download links.
+In package mode, `output_file` and `download_url` point to the XLSX. The response
+adds `files`, with `type`, `output_file` and `download_url` for each file.
+Omitting `format` preserves the existing cost-CSV-only behavior.
+The separate measurement-CSV service remains available. Package mode does
+not generate a cost CSV or delete previously exported files.
+
+```yaml
+action: octopus_germany.export_cost_report
+data:
+  account_number: A-REPLACE-ME
+  period: month
+  year: 2026
+  month: 5
+  format: package
+  contract_start_network_charge_ct_kwh: 7.65  # verify your contract value
+  network_comparison: contract_start
+response_variable: cost_export
+```
+
+The workbook contains invoice, inputs, raw measurements, contract prices,
+standing charges, network prices, intervals, daily breakdowns and source
+basis sheets (German labels). Blue cells are editable. Excel formulas
+recalculate prices, quantities, Module 1/3 effects and monthly invoices
+offline, without macros, external links or API calls. Initial formula
+results are included for viewers.
+
+Price zones come from the **valid contract**: for example GO/STANDARD
+or Heat Low/Standard/High, never a fixed GO + STANDARD + HEAT model.
+Heat activation windows are contract-dependent; website example prices
+are not applied. Metering charges already included in the Heat standing
+charge are not added again. Contract zones and network NT/ST/HT are
+independent. Historical Intelligent GO extra slots are not reconstructed
+from aggregate consumption; interval tariff IDs can be adjusted manually
+when historical agreement pricing does not already reflect those slots.
+
+For `network_comparison: current_year`, provide the documented normal
+annual net grid fee in `standard_network_charge_ct_kwh`. The Module 3 ST
+rate is not automatically that fee. The workbook first adjusts the
+contract-included grid fee to the comparison fee, then subtracts the
+comparison grid cost and adds actual band costs. Changing comparison
+basis changes the displayed saving, not the effective total. Before
+Module 3 applies, ordinary grid-fee changes are not shown as Module 3 savings.
+
+Package validation expects 96 slots on normal local days, 92/100 on DST
+transition days. Autumn repeated slots have explicit `(2)` CSV/matrix
+columns; the workbook also retains UTC and local offsets. Nonexistent
+spring slots do not count as missing. Exact raw CSV quantities are not
+rounded. Missing values stay blank rather than becoming zero; missing
+prices or readings block invoices. Missing readings may be filled offline;
+invalid/duplicate source readings require a corrected export.
+
+The annual comparison currently uses one manually documented fee for the
+report year. In package intervals before Module 3 applies, this fee also
+supplies the normal actual grid fee. Without it, variable ST rates are not
+accepted as normal annual fees and affected invoices remain incomplete.
+Actual price validity and contract changes are selected
+per interval, with full source schedules retained in the Basis sheet.
+Editing price IDs supports offline scenarios; editing schedule times does
+not automatically rerun contract selection.
+
 ## How the calculation works
 
 ### Contract energy price and grid-fee adjustment
