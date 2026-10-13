@@ -9,6 +9,12 @@ This custom component integrates Octopus Germany services with Home Assistant, p
 
 *This integration is in no way affiliated with Octopus Energy.*
 
+Development and regression tests target Home Assistant **2026.10.1**.
+The minimum supported version is declared separately in `../../hacs.json`.
+Local brand icons are the existing integration assets from
+[Home Assistant Brands](https://github.com/home-assistant/brands/tree/2f58791c0fcd701b195506a076f18e0248dc2ef9/custom_integrations/octopus_germany).
+Validation and release workflows use Ubuntu 24.04 and Node-24-based checkout.
+
 ---
 
 **💚 Support the Project**
@@ -398,6 +404,9 @@ Home Assistant and reload the browser to refresh action descriptions.
 The valid agreement supplies the price zones (GO/STANDARD or Heat zones);
 network NT/ST/HT is independent. Heat metering charges already included in
 the contract standing charge are not added again.
+Invoice totals show bold quantities and cost amounts. Network details
+include consumption and consumption-weighted gross comparison/NT/ST/HT
+prices in ct/kWh; prices remain blank for zero consumption or incomplete data.
 
 ## iMSys / SMGW-HAN
 

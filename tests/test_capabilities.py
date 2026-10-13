@@ -10,6 +10,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 from urllib.parse import parse_qs, urlsplit
 
+# HA 2026.10 installs its validation alias before integrations import voluptuous.
+import homeassistant  # noqa: F401
 import voluptuous as vol
 
 from custom_components.octopus_germany import _async_fetch_account_data

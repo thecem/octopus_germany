@@ -47,6 +47,14 @@ und Intervall-Preis-IDs sind editierbar. Monatsrechnungen, Tarif- und
 Netzband-Tagesmengen sowie Kosten aktualisieren sich offline, ohne Makros,
 API-Verbindungen oder externe Arbeitsmappenlinks. Der Export speichert
 initiale Formelergebnisse fuer Vorschauprogramme.
+Gesamtmengen und Gesamtbetraege je Monat und fuer den gesamten Zeitraum
+sind fett. Die Netzdetails zeigen Mengen und positive Bruttopreise in
+ct/kWh fuer Vergleichsnetz und NT/ST/HT. Bei wechselnden Preisen oder
+Umsatzsteuersaetzen sind dies verbrauchsgewichtete Durchschnittspreise
+(Brutto-Netzkosten geteilt durch Verbrauch); einzelne Nettopreise stehen
+im Blatt Netzpreise. Bei Nullverbrauch oder unvollstaendigen Daten bleiben
+die Preise leer. Die Details sind bereits im Gesamtbetrag verrechnet
+und duerfen nicht erneut addiert werden.
 
 Die im Abruf gueltige **Vertragszuordnung** entscheidet, ob beispielsweise
 GO/STANDARD oder Heat Niedrig/Standard/Hoch verwendet wird. Es gibt kein

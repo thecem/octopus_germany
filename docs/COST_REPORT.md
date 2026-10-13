@@ -41,6 +41,13 @@ basis sheets (German labels). Blue cells are editable. Excel formulas
 recalculate prices, quantities, Module 1/3 effects and monthly invoices
 offline, without macros, external links or API calls. Initial formula
 results are included for viewers.
+Monthly and overall total quantities and cost amounts are bold. Invoice
+network details show consumption and positive gross prices in ct/kWh for
+the comparison network and each NT/ST/HT band. If prices or VAT change,
+these are consumption-weighted averages (gross network cost divided by
+consumption); individual net rates remain in Netzpreise. Prices are blank
+for zero consumption or incomplete data. These details are already
+included in the invoice total and must not be added again.
 
 Price zones come from the **valid contract**: for example GO/STANDARD
 or Heat Low/Standard/High, never a fixed GO + STANDARD + HEAT model.

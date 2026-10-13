@@ -1,5 +1,28 @@
 # Release Notes
 
+## Version 0.0.192 (2026-10-13)
+
+### Maintenance
+
+- Target Home Assistant 2026.10.1 in the development/test requirements;
+  retain the separately declared minimum supported version.
+- Initialize Home Assistant before validation imports in regression tests
+  to match its 2026.10 Probatio/Voluptuous compatibility layer.
+- Update checkout to Node-24-based v6 and pin workflow runners to Ubuntu
+  24.04, preserving manifest-based tags and curated release notes.
+- Include the integration's existing Home Assistant Brands icons locally
+  so HACS branding validation does not require the remote brands fallback.
+
+## Version 0.0.191 (2026-10-13)
+
+### Improvements
+
+- Show total consumption and consumption-weighted gross ct/kWh prices for
+  the comparison network and NT/ST/HT in XLSX invoice details. Prices stay
+  blank for zero consumption or incomplete data.
+- Make monthly and overall invoice totals bold, including consumption
+  and the numeric cost amount, without changing the cost calculation.
+
 ## Version 0.0.190 (2026-10-13)
 
 ### Changes

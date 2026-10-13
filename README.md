@@ -9,6 +9,12 @@ This custom component integrates Octopus Germany services with Home Assistant, p
 
 *This integration is in no way affiliated with Octopus Energy.*
 
+Development and regression tests target Home Assistant **2026.10.1**.
+The minimum supported version is declared separately in `hacs.json`.
+Local brand icons are the existing integration assets from
+[Home Assistant Brands](https://github.com/home-assistant/brands/tree/2f58791c0fcd701b195506a076f18e0248dc2ef9/custom_integrations/octopus_germany).
+Validation and release workflows use Ubuntu 24.04 and Node-24-based checkout.
+
 ---
 
 **💚 Support the Project**
@@ -118,6 +124,7 @@ To keep this start page compact, detailed documentation is split across focused 
   - Select `format: package` to create an offline formula XLSX and quarter-hour measurement CSV from one shared fetch, with two download links; no additional cost CSV is generated
   - Fields are available in Developer Tools > Actions; after updating, restart Home Assistant and reload the browser to refresh action descriptions
   - Contract zones are selected from the valid agreement (GO/STANDARD or Heat zones); network NT/ST/HT remains independent
+  - XLSX invoices show bold total consumption/costs and consumption-weighted gross comparison-network and NT/ST/HT prices
 - `octopus_germany.export_smart_meter_csv`
   - Export iMSys readings to CSV (month/year) using paginated monthly range queries
   - Uses the Home Assistant timezone and retains OE meter-quality metadata while loading

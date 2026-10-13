@@ -6,7 +6,7 @@ on:
 jobs:
   close-issues:
     if: ${{ github.repository_owner == 'thecem' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       issues: write
       pull-requests: write

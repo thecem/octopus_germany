@@ -173,6 +173,20 @@ def cached_number(cell: ET.Element) -> float:
     return float(value.text)
 
 
+def invoice_labels(path: Path) -> dict[str, str]:
+    """Locate invoice positions by their visible labels."""
+    with ZipFile(path) as archive:
+        root = ET.fromstring(archive.read("xl/sharedStrings.xml"))  # noqa: S314
+    strings = ["".join(node.itertext()) for node in root.findall("s:si", NS)]
+    labels = {}
+    for ref, cell in sheet_cells(path, 1).items():
+        if ref.startswith("A") and cell.attrib.get("t") == "s":
+            value = cell.findtext("s:v", namespaces=NS)
+            assert value is not None
+            labels[strings[int(value)]] = ref[1:]
+    return labels
+
+
 class CostExportTest(unittest.TestCase):
     """Check raw data, pricing parity, workbook formulas and DST coverage."""
 
@@ -247,6 +261,149 @@ class CostExportTest(unittest.TestCase):
                 assert archive.testzip() is None
                 assert not any("externalLinks" in name for name in archive.namelist())
                 assert not any("vbaProject" in name for name in archive.namelist())
+
+    def test_invoice_network_quantities_prices_and_bold_totals(self) -> None:
+        """Show positive gross reference/band prices and bold numeric totals."""
+        for comparison, current, reference_rate in (
+            ("contract_start", None, 8.33),
+            ("current_year", Decimal(8), 9.52),
+        ):
+            with tempfile.TemporaryDirectory() as directory:
+                path, daily, _, _ = self.build(
+                    directory, comparison=comparison, current=current
+                )
+                cells = sheet_cells(path, 1)
+                labels = invoice_labels(path)
+                total = labels["GESAMTKOSTEN"]
+                assert cached_number(cells[f"B{total}"]) == 96
+                assert isclose(
+                    cached_number(cells[f"D{total}"]),
+                    float(daily[0]["total_after_module1_gross_eur"]),
+                )
+                reference = labels["Modul 3 Detail: Vergleichsnetz abziehen"]
+                assert cached_number(cells[f"B{reference}"]) == 96
+                assert isclose(cached_number(cells[f"C{reference}"]), reference_rate)
+                assert cached_number(cells[f"D{reference}"]) < 0
+                for band, quantity, price in (
+                    ("NT (Niedertarif)", 32, 2.38),
+                    ("ST (Standardtarif)", 44, 5.95),
+                    ("HT (Hochtarif)", 20, 11.9),
+                ):
+                    row = labels[f"Netzentgelt {band} hinzufuegen"]
+                    assert cached_number(cells[f"B{row}"]) == quantity
+                    assert isclose(cached_number(cells[f"C{row}"]), price)
+                    assert isclose(
+                        cached_number(cells[f"D{row}"]), quantity * price / 100
+                    )
+                    assert cells[f"C{row}"].find("s:f", NS) is not None
+                with ZipFile(path) as archive:
+                    styles = ET.fromstring(archive.read("xl/styles.xml"))  # noqa: S314
+                formats = styles.findall("s:cellXfs/s:xf", NS)
+                fonts = styles.findall("s:fonts/s:font", NS)
+                for column in ("B", "D"):
+                    style = formats[int(cells[f"{column}{total}"].attrib["s"])]
+                    assert (
+                        fonts[int(style.attrib["fontId"])].find("s:b", NS) is not None
+                    )
+
+    def test_invoice_network_price_is_consumption_weighted(self) -> None:
+        """Do not present one arbitrary price when an NT rate changes."""
+        fees = grid_fees()
+        fees[(2026, 5)]["rates"][-1]["rate_eur_per_kwh"] = "0.03"
+        source = readings()
+        # Four kWh per slot in the final eight slots, otherwise one kWh.
+        for item in source[str(DAY)][-8:]:
+            item["value"] = "4"
+        with tempfile.TemporaryDirectory() as directory:
+            path, _, _, _ = self.build(directory, source=source, fees=fees)
+            cells = sheet_cells(path, 1)
+            row = invoice_labels(path)["Netzentgelt NT (Niedertarif) hinzufuegen"]
+            assert cached_number(cells[f"B{row}"]) == 56
+            assert isclose(
+                cached_number(cells[f"C{row}"]),
+                (24 * 2 + 32 * 3) / 56 * 1.19,
+            )
+
+    def test_invoice_overall_quantity_and_cost_are_bold(self) -> None:
+        """Keep the multi-month aggregate consistent with monthly totals."""
+        start, end = date(2026, 5, 31), date(2026, 6, 1)
+        source, issues = prepare_package_readings(
+            readings(start, end), start, end, "Europe/Berlin"
+        )
+        assert not issues
+        fees = {**grid_fees(), (2026, 6): grid_fees()[(2026, 5)]}
+        details = []
+        daily = build_daily_cost_report(
+            source,
+            products(),
+            fees,
+            start,
+            end,
+            "Europe/Berlin",
+            Decimal(7),
+            DAY,
+            Decimal(100),
+            Decimal("0.19"),
+            DAY,
+            interval_details=details,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "two-months.xlsx"
+            write_cost_workbook(
+                path,
+                source,
+                details,
+                daily,
+                [],
+                "Europe/Berlin",
+                Decimal(7),
+                Decimal(100),
+                DAY,
+                Decimal("0.19"),
+                "contract_start",
+                None,
+                [],
+            )
+            cells = sheet_cells(path, 1)
+            row = invoice_labels(path)["GESAMTER BERICHTSZEITRAUM"]
+            assert cached_number(cells[f"B{row}"]) == 192
+            assert isclose(
+                cached_number(cells[f"D{row}"]),
+                sum(float(item["total_after_module1_gross_eur"]) for item in daily),
+            )
+            with ZipFile(path) as archive:
+                styles = ET.fromstring(archive.read("xl/styles.xml"))  # noqa: S314
+            formats = styles.findall("s:cellXfs/s:xf", NS)
+            fonts = styles.findall("s:fonts/s:font", NS)
+            for column in ("B", "D"):
+                style = formats[int(cells[f"{column}{row}"].attrib["s"])]
+                assert fonts[int(style.attrib["fontId"])].find("s:b", NS) is not None
+
+    def test_invoice_zero_and_missing_values_do_not_show_false_prices(self) -> None:
+        """Avoid division by zero and block reference prices for missing data."""
+        for missing in (False, True):
+            source = readings()
+            for item in source[str(DAY)]:
+                item["value"] = "0"
+            if missing:
+                source[str(DAY)].pop()
+            with tempfile.TemporaryDirectory() as directory:
+                path, _, _, _ = self.build(directory, source=source)
+                cells = sheet_cells(path, 1)
+                labels = invoice_labels(path)
+                for label in (
+                    "Modul 3 Detail: Vergleichsnetz abziehen",
+                    "Netzentgelt NT (Niedertarif) hinzufuegen",
+                    "Netzentgelt ST (Standardtarif) hinzufuegen",
+                    "Netzentgelt HT (Hochtarif) hinzufuegen",
+                ):
+                    assert cells[f"C{labels[label]}"].findtext(
+                        "s:v", namespaces=NS
+                    ) in (None, "")
+                if missing:
+                    assert cells[f"B{labels['GESAMTKOSTEN']}"].findtext(
+                        "s:v", namespaces=NS
+                    ) in (None, "")
 
     def test_heat_has_three_contract_zones_not_go_plus_heat(self) -> None:
         """Select Heat zones without adding unrelated GO positions."""

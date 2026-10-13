@@ -209,6 +209,8 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
         number_fmt = book.add_format({"num_format": "0.000000"})
         money = book.add_format({"num_format": '#,##0.00 "EUR"'})
         quantity_fmt = book.add_format({"num_format": '0.000 "kWh"'})
+        total_money = book.add_format({"bold": True, "num_format": '#,##0.00 "EUR"'})
+        total_quantity = book.add_format({"bold": True, "num_format": '0.000 "kWh"'})
         date_fmt = book.add_format({"num_format": "dd.mm.yyyy"})
         date_input_fmt = book.add_format(
             {"num_format": "dd.mm.yyyy", "bg_color": "#E5F3FF"}
@@ -954,6 +956,15 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 line_rows.append(invoice_row + 1)
                 invoice_row += 1
             invoice.write(invoice_row, 0, "GESAMTKOSTEN", header)
+            month_quantity = sum(item["quantity"] for item in selected)
+            formula(
+                invoice,
+                invoice_row,
+                1,
+                f'=IF({status_cell}<>"OK","",SUM(Tageswerte!C{first_day}:C{last_day}))',
+                month_quantity if valid else "",
+                total_quantity,
+            )
             invoice_sum = ",".join(f"D{r}" for r in line_rows)
             formula(
                 invoice,
@@ -961,12 +972,35 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 3,
                 f'=IF({status_cell}<>"OK","",SUM({invoice_sum}))',
                 sum(item["total"] for item in selected) if valid else "",
+                total_money,
             )
             invoice_row += 2
             for label, col, cache_index in (
                 ("Modul 3 Detail: Vergleichsnetz abziehen", "O", 2),
             ):
                 invoice.write(invoice_row, 0, label)
+                r = invoice_row + 1
+                formula(
+                    invoice,
+                    invoice_row,
+                    1,
+                    f'=IF({status_cell}<>"OK","",'
+                    f"SUM(Tageswerte!C{first_day}:C{last_day}))",
+                    month_quantity if valid else "",
+                    quantity_fmt,
+                )
+                formula(
+                    invoice,
+                    invoice_row,
+                    2,
+                    f'=IF({status_cell}<>"OK","",IF(B{r}=0,"",-D{r}/B{r}*100))',
+                    -sum(item["amounts"][cache_index] for item in selected)
+                    / month_quantity
+                    * 100
+                    if valid and month_quantity
+                    else "",
+                    number_fmt,
+                )
                 formula(
                     invoice,
                     invoice_row,
@@ -991,6 +1025,7 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     "STANDARD": "ST (Standardtarif)",
                     "PEAK": "HT (Hochtarif)",
                 }.get(band, band)
+                r = invoice_row + 1
                 invoice.write(invoice_row, 0, f"Netzentgelt {band_label} hinzufuegen")
                 band_items = [
                     item
@@ -1021,6 +1056,14 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 formula(
                     invoice,
                     invoice_row,
+                    2,
+                    f'=IF({status_cell}<>"OK","",IF(B{r}=0,"",D{r}/B{r}*100))',
+                    band_cost / band_quantity * 100 if valid and band_quantity else "",
+                    number_fmt,
+                )
+                formula(
+                    invoice,
+                    invoice_row,
                     3,
                     f'=IF({status_cell}<>"OK","",'
                     f'SUMIF(Intervalle!J{first_slot}:J{last_slot},"{band_literal}",'
@@ -1028,16 +1071,31 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     band_cost if valid else "",
                 )
                 invoice_row += 1
-            invoice.write(
+            invoice.merge_range(
                 invoice_row,
                 0,
-                "Details oben bereits verrechnet - nicht erneut addieren.",
+                invoice_row,
+                3,
+                "Details oben bereits verrechnet - nicht erneut addieren. "
+                "Netzpreise: verbrauchsgewichtete Bruttopreise in ct/kWh; "
+                "bei 0 kWh leer. Einzelpreise im Blatt Netzpreise.",
                 note,
             )
+            invoice.set_row(invoice_row, 48)
             invoice_row += 3
         if len(months) > 1:
             invoice.write(invoice_row, 0, "GESAMTER BERICHTSZEITRAUM", header)
             valid = all(item["valid"] for item in day_caches)
+            formula(
+                invoice,
+                invoice_row,
+                1,
+                f'=IF(COUNTIF(Tageswerte!B2:B{len(day_caches) + 1},"OK")='
+                f"{len(day_caches)},"
+                f'SUM(Tageswerte!C2:C{len(day_caches) + 1}),"")',
+                sum(item["quantity"] for item in day_caches) if valid else "",
+                total_quantity,
+            )
             formula(
                 invoice,
                 invoice_row,
@@ -1046,6 +1104,7 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 f"{len(day_caches)},"
                 f'SUM(Tageswerte!K2:K{len(day_caches) + 1}),"")',
                 sum(item["total"] for item in day_caches) if valid else "",
+                total_money,
             )
             invoice_row += 1
         invoice.set_landscape()
