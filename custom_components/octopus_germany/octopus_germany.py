@@ -209,6 +209,17 @@ class OctopusGermany(AccountApiMixin, DeviceApiMixin, GridFeeApiMixin, MeterApiM
                             "message", "Unknown error"
                         )
 
+                        if error_code == "KT-CT-1136":
+                            _LOGGER.error(
+                                "Login rejected by Kraken (KT-CT-1136): the API "
+                                "reports missing email/password input. Verify the "
+                                "configured credentials. If both are present and "
+                                "website login works, contact Octopus Germany "
+                                "support with this error code to investigate API "
+                                "authentication. Not retrying this rejection"
+                            )
+                            break
+
                         if error_code == "KT-CT-1199":  # Too many requests
                             _LOGGER.warning(
                                 "Rate limit hit. Retrying in %s seconds... "
@@ -223,8 +234,9 @@ class OctopusGermany(AccountApiMixin, DeviceApiMixin, GridFeeApiMixin, MeterApiM
                             )  # Exponential backoff with max cap
                             continue
                         _LOGGER.error(
-                            "Login failed: %s (attempt %s of %s)",
+                            "Login failed: %s (code: %s, attempt %s of %s)",
                             error_message,
+                            error_code or "unknown",
                             attempt,
                             retries,
                         )
@@ -276,7 +288,7 @@ class OctopusGermany(AccountApiMixin, DeviceApiMixin, GridFeeApiMixin, MeterApiM
                         await asyncio.sleep(delay)
                         delay = min(delay * 2, max_delay)
 
-            _LOGGER.error("All %s login attempts failed.", retries)
+            _LOGGER.error("All %s login attempts failed.", attempt)
             # Restore the previous token if login failed completely
             if old_token:
                 self._token_manager._token = old_token

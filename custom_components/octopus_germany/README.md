@@ -427,6 +427,7 @@ logger:
 #### Token/Authentication Errors
 - **Cause**: API token has expired or login credentials are invalid
 - **Solution**: The integration automatically handles token refresh. If issues persist, try reloading the integration or re-entering credentials
+- **`KT-CT-1136`**: Kraken reports that email/password input is missing. The integration sends both as GraphQL variables and stops retrying this rejection. Check that both configured fields are populated. If website login works and a direct API request with both fields also returns this code, contact Octopus Germany support with the code and failure time to investigate API authentication. This does not establish that the password is wrong or that a tariff change caused the failure. Do not share passwords, tokens, or unsanitized request/response logs.
 
 #### No Devices Found
 - **Cause**: No smart-capable devices connected to your Octopus account

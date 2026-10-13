@@ -1,5 +1,15 @@
 # Release Notes
 
+## Version 0.0.187 (2026-10-13)
+
+### Fixes
+
+- Stop repeated login attempts for Kraken's `KT-CT-1136` missing-input rejection,
+  provide actionable API authentication diagnostics, and include API error codes
+  in other login failure logs. Document troubleshooting when website credentials
+  work but API authentication is rejected; no server-side authentication bypass
+  is introduced.
+
 ## Version 0.0.186 (2026-10-11)
 
 ### Features
