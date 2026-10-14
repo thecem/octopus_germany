@@ -4,7 +4,7 @@ import asyncio
 import json
 import tempfile
 import unittest
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlsplit
 # HA 2026.10 installs its validation alias before integrations import voluptuous.
 import homeassistant  # noqa: F401
 import voluptuous as vol
+from aiohttp import web
 
 from custom_components.octopus_germany import _async_fetch_account_data
 from custom_components.octopus_germany.api.queries import (
@@ -3220,8 +3221,8 @@ class TariffCapabilitiesTest(unittest.TestCase):
             json.loads(api_fees["basis_value"])["rates"][0]["rate_type"], "OFFPEAK"
         )
 
-    def test_export_files_are_sanitized_and_download_requires_auth(self) -> None:
-        """Issue a file-scoped query token for direct authenticated downloads."""
+    def test_export_files_are_sanitized_and_download_tokens_are_scoped(self) -> None:
+        """Issue a file-scoped query token for direct downloads."""
         hass = Mock()
         hass.data = {}
         hass.config.config_dir = "/config"
@@ -3247,8 +3248,7 @@ class TariffCapabilitiesTest(unittest.TestCase):
             url = asyncio.run(async_notify_export_ready(hass, path.name, "Cost report"))
 
         self.assertEqual(path.name, "customer_report.csv")
-        self.assertTrue(OctopusExportDownloadView.requires_auth)
-        self.assertTrue(OctopusExportDownloadView.use_query_token_for_auth)
+        self.assertFalse(OctopusExportDownloadView.requires_auth)
         parsed_url = urlsplit(url)
         query_token = parse_qs(parsed_url.query)["token"][0]
         self.assertEqual(parsed_url.scheme, "")
@@ -3256,15 +3256,42 @@ class TariffCapabilitiesTest(unittest.TestCase):
         self.assertEqual(
             parsed_url.path, "/api/octopus_germany/exports/customer_report.csv"
         )
-        self.assertIn(query_token, view.get_valid_auth_tokens({"filename": path.name}))
-        self.assertNotIn(
-            query_token, view.get_valid_auth_tokens({"filename": "other.csv"})
-        )
+        self.assertTrue(view._has_valid_download_token(path.name, query_token))
+        self.assertFalse(view._has_valid_download_token("other.csv", query_token))
         self.assertEqual(notify.call_args.args[0], hass)
         self.assertIn(
             f'<a href="{url}" target="_blank">Download {path.name}</a>',
             notify.call_args.args[1],
         )
+
+    def test_export_download_validates_the_query_token_before_serving(self) -> None:
+        """Serve only existing exports requested with their unexpired token."""
+
+        async def exercise() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                filename = "report.csv"
+                (Path(directory) / filename).write_text("data", encoding="utf-8")
+                hass = Mock(data={})
+                hass.config.config_dir = directory
+                view = OctopusExportDownloadView(hass, Path(directory))
+                token = "valid-token"
+                view._download_tokens[filename] = (
+                    token,
+                    datetime.now(UTC) + timedelta(days=1),
+                )
+                request = Mock(query={"token": token})
+
+                response = await view.get(request, filename)
+                self.assertIsInstance(response, web.FileResponse)
+
+                for bad_request in (
+                    Mock(query={"token": "wrong-token"}),
+                    Mock(query={}),
+                ):
+                    with self.assertRaises(web.HTTPUnauthorized):
+                        await view.get(bad_request, filename)
+
+        asyncio.run(exercise())
 
     def test_price_sensor_keeps_agreements_without_current_product(self) -> None:
         products = [

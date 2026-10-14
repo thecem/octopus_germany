@@ -1,5 +1,13 @@
 # Release Notes
 
+## Version 0.0.193 (2026-10-14)
+
+### Fixes
+
+- Validate export download tokens in the integration view. Home Assistant
+  2026.10's HTTP auth middleware does not recognize the integration's custom
+  `?token=` query parameter, which caused valid export links to return `401`.
+
 ## Version 0.0.192 (2026-10-13)
 
 ### Maintenance
