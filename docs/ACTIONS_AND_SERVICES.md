@@ -107,7 +107,7 @@ data:
 
 Export meter readings to CSV.
 
-The file is saved under `/config/octopus_germany/exports`. A persistent Home Assistant notification includes a same-origin browser-download link that opens in a new tab, also returned in the service response and result event. Using the current HA origin avoids exposing internal container addresses. Its file-specific token is stored in Home Assistant's private storage and expires after 30 days.
+The file is saved under `/config/octopus_germany/exports`. A persistent Home Assistant notification includes a same-origin browser-download link that opens in a new tab, also returned in the service response and result event. Using the current HA origin avoids exposing internal container addresses. Its file-specific bearer token is stored in Home Assistant's private storage and expires after the configured lifetime (default 24 hours, adjustable from 1 to 168 hours under the integration options). Changing the setting affects new exports only; existing links retain their original expiry.
 
 The export uses paginated monthly range requests and local calendar boundaries from the configured Home Assistant timezone. A yearly export is split into monthly requests. Meter source and quality metadata are retained while loading, but the CSV contains consumption values only; metadata should be used separately before treating values as confirmed physical meter readings.
 
@@ -154,7 +154,7 @@ This is one network operator's 2025 schedule, valid only from 1 April through 31
 
 The service also checks `/config/octopus_germany/grid_fee_schedules.json`. If the file is missing or has no entry for the detected operator code and report year, the response warns that it can be created from the [schedule-file example](examples/grid_fee_schedules.example.json). Each validity period stores all 24 hours independently; the service never merges adjacent hours. API rates take precedence, then explicit JSON entries fill gaps, followed by file rates. The file's Module 1 amount is used only when `module1_annual_credit_net_eur` is left blank. The response includes the file path and match status.
 
-The response and `octopus_germany_cost_report_result` event include the download URL, day counts, and warnings. A persistent download link expires after 30 days; an incomplete day leaves the monthly total blank.
+The response and `octopus_germany_cost_report_result` event include the download URL, day counts, and warnings. Download-link lifetime follows the integration option above; an incomplete day leaves the monthly total blank.
 
 For a one-time sequential export of December 2024 through August 2026 with a 10-second pause between months, see [the script example](examples/export_monthly_cost_reports.yaml). Replace the account and verify the contract baseline and effective dates before running it.
 

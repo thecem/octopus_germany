@@ -26,9 +26,11 @@ from custom_components.octopus_germany.binary_sensor import (
 from custom_components.octopus_germany.config_flow import build_options_schema
 from custom_components.octopus_germany.const import (
     CONF_EMAIL,
+    CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS,
     CONF_INTELLIGENT_UPDATE_INTERVAL,
     CONF_PASSWORD,
     CONF_UPDATE_INTERVAL,
+    DEFAULT_EXPORT_DOWNLOAD_TOKEN_TTL_HOURS,
     INTELLIGENT_UPDATE_INTERVAL,
     UPDATE_INTERVAL,
 )
@@ -1126,6 +1128,29 @@ class TariffCapabilitiesTest(unittest.TestCase):
 
         assert validated[CONF_UPDATE_INTERVAL] == 15
         assert validated[CONF_INTELLIGENT_UPDATE_INTERVAL] == 5
+        assert (
+            validated[CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS]
+            == DEFAULT_EXPORT_DOWNLOAD_TOKEN_TTL_HOURS
+        )
+
+    def test_options_schema_validates_export_download_token_lifetime(self) -> None:
+        schema = build_options_schema("user@example.test", 30, 3)
+        values = {
+            CONF_EMAIL: "user@example.test",
+            CONF_PASSWORD: "secret",
+            CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS: "6",
+        }
+
+        assert schema(values)[CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS] == 6
+        for invalid_hours in (0, 169):
+            with self.subTest(invalid_hours=invalid_hours):
+                with self.assertRaises(vol.Invalid):
+                    schema(
+                        {
+                            **values,
+                            CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS: invalid_hours,
+                        }
+                    )
 
     def test_options_schema_rejects_intervals_outside_bounds(self) -> None:
         schema = build_options_schema("user@example.test", 30, 3)
@@ -3245,7 +3270,12 @@ class TariffCapabilitiesTest(unittest.TestCase):
         ):
             view = asyncio.run(async_register_export_download_view(hass))
             path = export_file_path(hass, "../../customer report.csv")
-            url = asyncio.run(async_notify_export_ready(hass, path.name, "Cost report"))
+            issued_at = datetime.now(UTC)
+            url = asyncio.run(
+                async_notify_export_ready(
+                    hass, path.name, "Cost report", timedelta(hours=6)
+                )
+            )
 
         self.assertEqual(path.name, "customer_report.csv")
         self.assertFalse(OctopusExportDownloadView.requires_auth)
@@ -3258,6 +3288,9 @@ class TariffCapabilitiesTest(unittest.TestCase):
         )
         self.assertTrue(view._has_valid_download_token(path.name, query_token))
         self.assertFalse(view._has_valid_download_token("other.csv", query_token))
+        expires_at = view._download_tokens[path.name][1]
+        self.assertGreaterEqual(expires_at, issued_at + timedelta(hours=6))
+        self.assertLessEqual(expires_at, datetime.now(UTC) + timedelta(hours=6))
         self.assertEqual(notify.call_args.args[0], hass)
         self.assertIn(
             f'<a href="{url}" target="_blank">Download {path.name}</a>',
@@ -3274,12 +3307,12 @@ class TariffCapabilitiesTest(unittest.TestCase):
                 hass = Mock(data={})
                 hass.config.config_dir = directory
                 view = OctopusExportDownloadView(hass, Path(directory))
-                token = "valid-token"
+                download_key = "valid-download-key"
                 view._download_tokens[filename] = (
-                    token,
+                    download_key,
                     datetime.now(UTC) + timedelta(days=1),
                 )
-                request = Mock(query={"token": token})
+                request = Mock(query={"token": download_key})
 
                 response = await view.get(request, filename)
                 self.assertIsInstance(response, web.FileResponse)

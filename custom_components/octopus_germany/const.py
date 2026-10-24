@@ -8,10 +8,16 @@ CONF_EMAIL = "email"
 CONF_PASSWORD = HA_CONF_PASSWORD
 CONF_UPDATE_INTERVAL = "update_interval"
 CONF_INTELLIGENT_UPDATE_INTERVAL = "intelligent_update_interval"
+CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS = "export_download_link_validity_hours"
 
 # Default polling intervals in minutes
 UPDATE_INTERVAL = 30
 INTELLIGENT_UPDATE_INTERVAL = 3
+
+# Export download tokens
+DEFAULT_EXPORT_DOWNLOAD_TOKEN_TTL_HOURS = 24
+MIN_EXPORT_DOWNLOAD_TOKEN_TTL_HOURS = 1
+MAX_EXPORT_DOWNLOAD_TOKEN_TTL_HOURS = 168
 
 # Schema exploration (run once for debugging)
 EXPLORE_SCHEMA_ONCE = False  # Enable only while debugging the OEG schema

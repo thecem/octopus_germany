@@ -2,12 +2,17 @@
 
 Sprache / Language: [Deutsch](README.de.md) | [English](README.md)
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![marketplace_badge](https://img.shields.io/badge/Home%20Assistant-Marketplace-41BDF5.svg)](https://www.home-assistant.io/integrations/marketplace/)
 ![installation_badge](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=integration%20usage&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=$.octopus_germany.total)
 
 Diese Custom Integration bindet Octopus Energy Germany in Home Assistant ein. Sie liefert Kontodaten, Tarifpreise, SmartFlex-Status sowie Steuerungsmöglichkeiten fuer EV/Wallbox.
 
 *Diese Integration ist nicht offiziell mit Octopus Energy verbunden.*
+
+Voraussetzung ist Home Assistant **2026.11.0 oder neuer**. Entwicklung und
+Regressionstests verwenden Home Assistant **2026.11.0**. Die Integration
+liefert ihre Markenbilder im Ordner `custom_components/octopus_germany/brand/`
+mit.
 
 ---
 
@@ -25,8 +30,8 @@ Wenn du über [meinen Empfehlungslink](https://octopusenergy.de/empfehlungen?ref
 - Paragraph-14a-Netzentgelte mit von OE gemeldetem Modul, standardisierten NT/ST/HT-Attributen und vollstaendigem Tagesplan
 - Kombinierter Bruttopreis aus Octopus-Tarif und zeitvariablem Netzentgelt mit Tagesplan der Tarif-/Modul-3-Preiskombinationen und Zeitintervalle; numerische Werte bleiben fuer Templates und Automationen verfuegbar
 - Alle von OE gelieferten vergangenen, aktiven und zukuenftigen Stromvertraege mit Brutto-/Netto-Arbeitspreisen, MwSt. sowie Netto-Monatsgrundpreis und brutto ausgewiesenen Grundpreisstufen mit Gueltigkeitsdaten in den Attributen des Strompreis-Sensors
-- Neuer Service `octopus_germany.export_cost_report`: taegliche Kostenaufteilung nach Agreement-Preisbezeichnung als Monats-/Jahres-CSV aus Messwerten und API-Netzentgelten des tatsaechlichen Netzbetreibers, einschliesslich Waermestromtarifen
-- Smart-Meter- und Kosten-CSV-Dateien liegen unter `/config/octopus_germany/exports`; HA zeigt pro Export eine persistente Benachrichtigung mit authentifiziertem Download-Link
+- Service `octopus_germany.export_cost_report`: taegliche Kostenschaetzung nach Agreement-Preisbezeichnung als Monats-/Jahres-CSV aus Messwerten und API-Netzentgelten des tatsaechlichen Netzbetreibers, einschliesslich Waermestromtarifen. Fuer eine verlaessliche Abrechnung dynamischer Tarife ist er nicht geeignet: Historische Intervallpreise liegen nicht vor; Prognosen sind keine historischen Preise.
+- Smart-Meter- und Kosten-CSV-Dateien liegen unter `/config/octopus_germany/exports`; HA zeigt pro Export eine persistente Benachrichtigung mit dateigebundenem Download-Link. Das Bearer-Token gilt standardmaessig 24 Stunden und ist in den Integration-Optionen auf 1 bis 168 Stunden einstellbar.
 - SmartFlex-Geraetestatus, Dispatching, Session-Daten
 - Schalter fuer Smart Control und Boost Charge
 - Fahrzeug- und Ladepunktdaten wie SoC und Batteriegroesse, sofern vom Anbieter geliefert
@@ -38,13 +43,12 @@ Wenn du über [meinen Empfehlungslink](https://octopusenergy.de/empfehlungen?ref
 
 ## Installation
 
-### HACS
+### Home Assistant Marketplace
 
-1. Repository als Custom Repository in HACS eintragen
-2. Nach Octopus Germany suchen
-3. Integration installieren
-4. Home Assistant neu starten
-5. Integration in Einstellungen > Geraete und Dienste hinzufuegen
+1. **Einstellungen** > **Marketplace** öffnen
+2. Nach **Octopus Germany** suchen und die Integration installieren
+3. Home Assistant neu starten
+4. Die Integration unter **Einstellungen** > **Geräte und Dienste** > **Integration hinzufügen** hinzufügen
 
 ### Manuell
 

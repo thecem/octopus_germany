@@ -32,7 +32,7 @@
   "services": {
     "export_cost_report": {
       "name": "Export electricity cost report",
-      "description": "Export cost CSV or a package with offline formula XLSX and quarter-hour measurement CSV from one shared fetch.",
+      "description": "Export an estimated cost CSV or an offline formula XLSX and quarter-hour measurement CSV package from one shared fetch. Not suitable for reliable dynamic-tariff billing: historical interval prices are unavailable, and forecasts are not historical prices.",
       "fields": {
         "format": {
           "name": "Export format",
@@ -60,7 +60,8 @@
           "email": "Email",
           "password": "Password",
           "update_interval": "Polling interval (minutes)",
-          "intelligent_update_interval": "Intelligent polling interval (minutes)"
+          "intelligent_update_interval": "Intelligent polling interval (minutes)",
+          "export_download_link_validity_hours": "Export download link validity (hours)"
         }
       }
     }

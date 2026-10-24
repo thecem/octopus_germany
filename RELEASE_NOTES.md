@@ -1,5 +1,28 @@
 # Release Notes
 
+## Version 0.0.195-beta.2 (2026-10-24)
+
+### Changes
+
+- Make export download-token validity configurable from integration options:
+  24 hours by default, with a supported range of 1–168 hours. New settings
+  apply to new exports; existing links keep their original expiry.
+- Keep file-scoped bearer-token checks on the unauthenticated download view;
+  the Home Assistant HTTP middleware does not accept the integration's custom
+  `?token=` parameter.
+
+## Version 0.0.195-beta.1 (2026-10-24)
+
+### Changes
+
+- Set Home Assistant 2026.11.0 as the minimum supported and development
+  version, and add Energy pricing and EV charging Marketplace categories.
+- Replace installation guidance for the standalone HACS interface with
+  Home Assistant Marketplace instructions. Keep the integration's bundled
+  brand assets and the catalog validation workflow.
+- Clarify that cost reports cannot reliably reconstruct dynamic-tariff bills
+  without actual historical interval prices.
+
 ## Version 0.0.194 (2026-10-24)
 
 ### Fixes

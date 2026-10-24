@@ -32,7 +32,7 @@
   "services": {
     "export_cost_report": {
       "name": "Stromkostenbericht exportieren",
-      "description": "Kosten-CSV oder Exportpaket mit Offline-Formel-XLSX und Viertelstunden-Messwerte-CSV aus einem gemeinsamen Abruf.",
+      "description": "Schaetzungs-Kosten-CSV oder Exportpaket mit Offline-Formel-XLSX und Viertelstunden-Messwerte-CSV aus einem gemeinsamen Abruf. Nicht fuer eine verlaessliche Abrechnung dynamischer Tarife geeignet: Historische Intervallpreise fehlen; Prognosen sind keine historischen Preise.",
       "fields": {
         "format": {
           "name": "Exportformat",
@@ -60,7 +60,8 @@
           "email": "E-Mail",
           "password": "Passwort",
           "update_interval": "Abfrageintervall (Minuten)",
-          "intelligent_update_interval": "Intelligentes Abfrageintervall (Minuten)"
+          "intelligent_update_interval": "Intelligentes Abfrageintervall (Minuten)",
+          "export_download_link_validity_hours": "Gueltigkeit des Export-Downloadlinks (Stunden)"
         }
       }
     }

@@ -2,18 +2,17 @@
 
 Language / Sprache: [English](README.md) | [Deutsch](README.de.md)
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![marketplace_badge](https://img.shields.io/badge/Home%20Assistant-Marketplace-41BDF5.svg)](https://www.home-assistant.io/integrations/marketplace/)
 ![installation_badge](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=integration%20usage&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=$.octopus_germany.total)
 
 This custom component integrates Octopus Germany services with Home Assistant, providing access to your energy account data, electricity prices, device control, and vehicle charging preferences.
 
 *This integration is in no way affiliated with Octopus Energy.*
 
-Development and regression tests target Home Assistant **2026.10.1**.
-The minimum supported version is declared separately in `hacs.json`.
-Local brand icons are the existing integration assets from
-[Home Assistant Brands](https://github.com/home-assistant/brands/tree/2f58791c0fcd701b195506a076f18e0248dc2ef9/custom_integrations/octopus_germany).
-Validation and release workflows use Ubuntu 24.04 and Node-24-based checkout.
+Requires Home Assistant **2026.11.0 or newer**. Development and regression
+tests target Home Assistant **2026.11.0**. The integration includes its own
+brand assets in `custom_components/octopus_germany/brand/` for Home Assistant
+and Marketplace.
 
 ---
 
@@ -34,8 +33,8 @@ Sign up through my referral link and receive **150 €** as a bill credit. Eligi
   - Dynamic tariffs (with real-time pricing using unit rate forecasts)
   - Heat tariffs (for heat pumps)
 - **Section 14a Grid Fees**: OE-reported module and current variable grid fee with standardized NT/ST/HT attributes and full rate schedule, plus a combined gross price sensor with today's tariff/Module 3 price combinations and intervals
-- **Cost Report Service**: Export a monthly or yearly daily tariff-block cost breakdown using agreement labels and the selected network operator's API-reported module and time-valid fees; heat tariffs are supported
-- Generated smart-meter and cost-report CSVs are stored under `/config/octopus_germany/exports`; Home Assistant provides a persistent notification with an authenticated download link
+- **Cost Report Service**: Export a monthly or yearly daily tariff-block estimate using agreement prices and the selected network operator's API-reported module and time-valid fees; heat tariffs are supported. It is not suitable for reliable dynamic-tariff billing because historical interval prices are not available (forecasts are not historical prices).
+- Generated smart-meter and cost-report CSVs are stored under `/config/octopus_germany/exports`; Home Assistant provides a persistent notification with a file-scoped download link. Its bearer-token lifetime defaults to 24 hours and is configurable in integration options (1–168 hours).
 - **Agreement History**: All agreements returned by OE, including past, active and scheduled entries, with gross/net unit prices, VAT, and net/gross monthly standing charges with validity dates in electricity price sensor attributes
 - **Multi-Ledger Support**: Electricity, Gas, Heat, and other ledger types
 - **Smart Charging Sessions**: Track sessions and reward-related data
@@ -63,13 +62,12 @@ This integration primarily uses the OEG Kraken GraphQL API. Variable grid-fee qu
 
 ## Installation
 
-### HACS (Home Assistant Community Store)
+### Home Assistant Marketplace
 
-1. Add this repository as a custom repository in HACS
-2. Search for ["Octopus Germany"](https://my.home-assistant.io/redirect/hacs_repository/?owner=thecem&repository=octopus_germany&category=integration) in the HACS integrations
-3. Install the integration
-4. Restart Home Assistant
-5. Add the integration via the UI under **Settings** > **Devices & Services** > **Add Integration**
+1. Open **Settings** > **Marketplace**
+2. Search for **Octopus Germany** and install the integration
+3. Restart Home Assistant
+4. Add the integration under **Settings** > **Devices & Services** > **Add Integration**
 
 ### Manual Installation
 
@@ -159,9 +157,10 @@ It combines tariff and balance information, dispatch windows, vehicle SoC and
 target, charging preference, plugged status, meter identifiers, and charts for
 dispatch history and charging sessions.
 
-The dashboard requires the HACS frontend card
+The dashboard requires the Home Assistant frontend card
 [`custom:apexcharts-card`](https://github.com/RomRider/apexcharts-card). Before
-using the example, replace `a_xxxxxxxx` with your lower-case account number and
+using the example, install the card from **Settings** > **Marketplace** and
+replace `a_xxxxxxxx` with your lower-case account number and
 `your_vehicle` with the vehicle slug from your entity IDs.
 
 ## Debugging

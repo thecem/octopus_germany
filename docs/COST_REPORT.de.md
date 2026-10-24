@@ -4,6 +4,15 @@
 
 Der Bericht ist eine nachvollziehbare Berechnungshilfe, keine Lieferantenrechnung und keine rechtliche Entscheidung ueber Anspruch oder Teilnahme nach §14a EnWG. Fehlende Preise und Saetze werden nicht stillschweigend als null behandelt.
 
+> **Dynamische Tarife:** Mit diesem Bericht laesst sich eine dynamische
+> Stromabrechnung nicht verlaesslich rekonstruieren. Die Konto-API liefert
+> Agreement-Preise und eine aktuelle Preisprognose, aber kein Archiv der
+> tatsaechlich abgerechneten historischen Intervallpreise. Eine Prognose belegt
+> nicht den spaeter berechneten Preis. Summen fuer dynamische Tarife daher nur
+> dann als tatsaechliche Kosten verwenden, wenn die historischen Intervallpreise
+> unabhaengig beschafft, geprueft und in der exportierten Arbeitsmappe
+> entsprechend angepasst wurden.
+
 ## Exportpaket: ein Abruf, zwei Dateien
 
 Im UI unter **Entwicklerwerkzeuge > Aktionen** die Aktion
@@ -187,7 +196,7 @@ Brutto-Energiekosten nach Netzentgeltkorrektur
 
 Ist ein Tag unvollstaendig, bleibt der `MONTH_TOTAL`-Betrag leer. `status`, `unpriced_kwh` und `network_rate_missing_kwh` zeigen den Grund; ein fehlender Gesamtbetrag darf nicht als null interpretiert werden. Die CSV nutzt Semikolon als Spaltentrenner und das deutsche Dezimalkomma. Verbrauch wird mit drei Nachkommastellen, Eurobetraege auf Cent und Arbeitspreise mit sechs Nachkommastellen angezeigt. Intern bleibt die volle Genauigkeit bis zur Formatierung erhalten.
 
-Dateien werden unter `/config/octopus_germany/exports` gespeichert. Home Assistant erstellt eine persistente Benachrichtigung mit einem dateigebundenen Download-Link, der nach 30 Tagen ablaeuft.
+Dateien werden unter `/config/octopus_germany/exports` gespeichert. Home Assistant erstellt eine persistente Benachrichtigung mit einem dateigebundenen Download-Link. Die Token-Gueltigkeit betraegt standardmaessig 24 Stunden und ist in den Integration-Optionen von 1 bis 168 Stunden einstellbar; bestehende Links werden bei einer Aenderung nicht verkuerzt.
 
 ## Rechts- und Regelungskontext
 

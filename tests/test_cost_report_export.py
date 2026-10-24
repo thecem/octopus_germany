@@ -8,7 +8,7 @@ import json
 import tempfile
 import threading
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from math import isclose
 from pathlib import Path
@@ -23,7 +23,10 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.service import _SERVICES_SCHEMA, _load_services_file
 from homeassistant.util.yaml import load_yaml_dict
 
-from custom_components.octopus_germany.const import DOMAIN
+from custom_components.octopus_germany.const import (
+    CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS,
+    DOMAIN,
+)
 from custom_components.octopus_germany.cost_report import build_daily_cost_report
 from custom_components.octopus_germany.cost_report_export import (
     prepare_package_readings,
@@ -689,7 +692,13 @@ class ExportPackageServiceTest(unittest.TestCase):
                     }
                 }
             )
-            await async_register_services(hass, Mock(), Mock(), Mock(), None)
+            await async_register_services(
+                hass,
+                Mock(options={CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS: 6}),
+                Mock(),
+                Mock(),
+                None,
+            )
             handler = next(
                 call.args[2]
                 for call in hass.services.async_register.call_args_list
@@ -717,11 +726,11 @@ class ExportPackageServiceTest(unittest.TestCase):
                 patch(
                     "custom_components.octopus_germany.service_handlers.async_notify_export_package_ready",
                     new=AsyncMock(
-                        side_effect=lambda _hass, names, _description: {
+                        side_effect=lambda _hass, names, _description, _token_ttl: {
                             name: f"/download/{name}" for name in names
                         }
                     ),
-                ),
+                ) as package,
                 patch(
                     "custom_components.octopus_germany.service_handlers.async_notify_export_ready",
                     new=AsyncMock(return_value="/download/cost.csv"),
@@ -741,6 +750,7 @@ class ExportPackageServiceTest(unittest.TestCase):
                 }
                 assert result["output_file"].endswith(".xlsx")
                 assert result["download_url"] == result["files"][0]["download_url"]
+                assert package.await_args.args[3] == timedelta(hours=6)
                 assert {
                     path.name for path in Path(result["output_file"]).parent.iterdir()
                 } == {Path(item["output_file"]).name for item in result["files"]}

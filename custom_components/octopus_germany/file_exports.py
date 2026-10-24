@@ -15,7 +15,7 @@ from homeassistant.components import persistent_notification
 from homeassistant.helpers.http import HomeAssistantView
 from homeassistant.helpers.storage import Store
 
-from .const import DOMAIN
+from .const import DEFAULT_EXPORT_DOWNLOAD_TOKEN_TTL_HOURS, DOMAIN
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 _EXPORT_DIR = Path("octopus_germany") / "exports"
 _VIEW_REGISTERED_KEY = f"{DOMAIN}_export_download_view_registered"
 _TOKEN_STORE_KEY = f"{DOMAIN}_export_download_tokens"
-_DOWNLOAD_TOKEN_TTL = timedelta(days=30)
+_DOWNLOAD_TOKEN_TTL = timedelta(hours=DEFAULT_EXPORT_DOWNLOAD_TOKEN_TTL_HOURS)
 
 
 class OctopusExportDownloadView(HomeAssistantView):
@@ -64,12 +64,14 @@ class OctopusExportDownloadView(HomeAssistantView):
         if len(self._download_tokens) != len(stored_tokens):
             await self._async_save_download_tokens()
 
-    async def async_issue_download_token(self, filename: str) -> str:
+    async def async_issue_download_token(
+        self, filename: str, token_ttl: timedelta = _DOWNLOAD_TOKEN_TTL
+    ) -> str:
         """Issue a short-lived, unguessable token scoped to one filename."""
         if not self._tokens_loaded:
             await self.async_load_download_tokens()
         token = secrets.token_urlsafe(32)
-        expires_at = datetime.now(UTC) + _DOWNLOAD_TOKEN_TTL
+        expires_at = datetime.now(UTC) + token_ttl
         self._download_tokens[filename] = (token, expires_at)
         await self._async_save_download_tokens()
         return token
@@ -143,11 +145,14 @@ async def async_register_export_download_view(
 
 
 async def async_notify_export_ready(
-    hass: HomeAssistant, filename: str, export_description: str
+    hass: HomeAssistant,
+    filename: str,
+    export_description: str,
+    token_ttl: timedelta = _DOWNLOAD_TOKEN_TTL,
 ) -> str:
     """Create an HA persistent notification with a secure download link."""
     view = await async_register_export_download_view(hass)
-    token = await view.async_issue_download_token(filename)
+    token = await view.async_issue_download_token(filename, token_ttl)
     url = export_download_url(filename, token)
     safe_url = escape(url, quote=True)
     safe_filename = escape(filename)
@@ -162,14 +167,17 @@ async def async_notify_export_ready(
 
 
 async def async_notify_export_package_ready(
-    hass: HomeAssistant, filenames: list[str], export_description: str
+    hass: HomeAssistant,
+    filenames: list[str],
+    export_description: str,
+    token_ttl: timedelta = _DOWNLOAD_TOKEN_TTL,
 ) -> dict[str, str]:
     """Create one notification with independently scoped links for a package."""
     view = await async_register_export_download_view(hass)
     urls = {}
     links = []
     for filename in filenames:
-        token = await view.async_issue_download_token(filename)
+        token = await view.async_issue_download_token(filename, token_ttl)
         url = export_download_url(filename, token)
         urls[filename] = url
         links.append(
