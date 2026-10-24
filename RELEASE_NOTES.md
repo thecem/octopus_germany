@@ -1,5 +1,14 @@
 # Release Notes
 
+## Version 0.0.194 (2026-10-24)
+
+### Fixes
+
+- Exclude the combined electricity sensor's `price_combinations` forecast
+  from Recorder history while preserving the live forecast, numeric price,
+  and measurement unit. This prevents oversized state attributes from
+  disrupting Recorder storage and long-term statistics.
+
 ## Version 0.0.193 (2026-10-14)
 
 ### Fixes
