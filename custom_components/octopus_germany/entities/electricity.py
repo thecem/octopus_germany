@@ -558,6 +558,8 @@ class OctopusVariableGridFeeSensor(CoordinatorEntity, SensorEntity):
 class OctopusCombinedElectricityPriceSensor(CoordinatorEntity, SensorEntity):
     """Expose gross tariff price adjusted by the active variable grid fee."""
 
+    _unrecorded_attributes = frozenset({"price_combinations"})
+
     def __init__(
         self, account_number: str, coordinator: OctopusDataCoordinator
     ) -> None:
