@@ -20,7 +20,11 @@ from homeassistant.helpers import device_registry as dr
 from xlsxwriter.exceptions import XlsxWriterException
 
 from .api.smart_meter import SmartMeterFetchError
-from .const import DOMAIN
+from .const import (
+    CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS,
+    DEFAULT_EXPORT_DOWNLOAD_TOKEN_TTL_HOURS,
+    DOMAIN,
+)
 from .cost_report import (
     COST_REPORT_HEADERS,
     build_cost_report_basis_rows,
@@ -433,6 +437,12 @@ async def async_register_services(
 ) -> None:
     """Register integration services with unchanged behavior."""
     await async_register_export_download_view(hass)
+    download_token_ttl = timedelta(
+        hours=entry.options.get(
+            CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS,
+            DEFAULT_EXPORT_DOWNLOAD_TOKEN_TTL_HOURS,
+        )
+    )
 
     async def handle_set_device_preferences(call: ServiceCall) -> dict[str, bool]:
         """Handle the set_device_preferences service call."""
@@ -889,7 +899,10 @@ async def async_register_services(
             await hass.async_add_executor_job(write_csv)
 
             download_url = await async_notify_export_ready(
-                hass, output_path.name, "Smart meter CSV export"
+                hass,
+                output_path.name,
+                "Smart meter CSV export",
+                download_token_ttl,
             )
             result = {
                 "success": True,
@@ -1444,6 +1457,7 @@ async def async_register_services(
                 hass,
                 [workbook_path.name, measurement_path.name],
                 description,
+                download_token_ttl,
             )
             download_url = urls[workbook_path.name]
             package_files = [
@@ -1461,7 +1475,7 @@ async def async_register_services(
         else:
             await hass.async_add_executor_job(write_cost_csv)
             download_url = await async_notify_export_ready(
-                hass, output_path.name, description
+                hass, output_path.name, description, download_token_ttl
             )
         result = {
             "success": True,

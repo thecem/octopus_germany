@@ -136,7 +136,9 @@ class DevicePreferencesTest(unittest.TestCase):
     def test_service_maps_dropdown_device_to_octopus_id(self) -> None:
         async def exercise_service() -> None:
             hass = Mock()
-            await async_register_services(hass, Mock(), self.api, Mock(), None)
+            await async_register_services(
+                hass, Mock(options={}), self.api, Mock(), None
+            )
             handler = next(
                 call.args[2]
                 for call in hass.services.async_register.call_args_list
@@ -177,7 +179,9 @@ class DevicePreferencesTest(unittest.TestCase):
     def test_service_refreshes_only_after_confirmed_success(self) -> None:
         async def exercise_service() -> None:
             hass = Mock()
-            await async_register_services(hass, Mock(), self.api, Mock(), None)
+            await async_register_services(
+                hass, Mock(options={}), self.api, Mock(), None
+            )
             handler = next(
                 call.args[2]
                 for call in hass.services.async_register.call_args_list

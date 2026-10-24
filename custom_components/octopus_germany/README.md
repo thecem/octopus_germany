@@ -2,18 +2,16 @@
 
 Language / Sprache: [English](README.md) | [Deutsch](README.de.md)
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![marketplace_badge](https://img.shields.io/badge/Home%20Assistant-Marketplace-41BDF5.svg)](https://www.home-assistant.io/integrations/marketplace/)
 ![installation_badge](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=integration%20usage&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=$.octopus_germany.total)
 
 This custom component integrates Octopus Germany services with Home Assistant, providing access to your energy account data, electricity prices, device control, and vehicle charging preferences.
 
 *This integration is in no way affiliated with Octopus Energy.*
 
-Development and regression tests target Home Assistant **2026.10.1**.
-The minimum supported version is declared separately in `../../hacs.json`.
-Local brand icons are the existing integration assets from
-[Home Assistant Brands](https://github.com/home-assistant/brands/tree/2f58791c0fcd701b195506a076f18e0248dc2ef9/custom_integrations/octopus_germany).
-Validation and release workflows use Ubuntu 24.04 and Node-24-based checkout.
+Requires Home Assistant **2026.11.0 or newer**. Development and regression
+tests target Home Assistant **2026.11.0**. The integration includes its own
+brand assets in `brand/` for Home Assistant and Marketplace.
 
 ---
 
@@ -55,13 +53,12 @@ This integration primarily uses the OEG Kraken GraphQL API. Variable grid-fee qu
 
 ## Installation
 
-### HACS (Home Assistant Community Store)
+### Home Assistant Marketplace
 
-1. Add this repository as a custom repository in HACS
-2. Search for ["Octopus Germany"](https://my.home-assistant.io/redirect/hacs_repository/?owner=thecem&repository=octopus_germany&category=integration) in the HACS integrations
-3. Install the integration
-4. Restart Home Assistant
-5. Add the integration via the UI under **Settings** > **Devices & Services** > **Add Integration**
+1. Open **Settings** > **Marketplace**
+2. Search for **Octopus Germany** and install the integration
+3. Restart Home Assistant
+4. Add the integration under **Settings** > **Devices & Services** > **Add Integration**
 
 ### Manual Installation
 
@@ -92,7 +89,7 @@ Cost reports use agreement prices and the network operator's time-valid API rate
 
 When API rates are missing, an optional [operator-specific hourly schedule file](../../docs/examples/grid_fee_schedules.example.json) can supply separate values for each hour and validity period.
 
-Generated CSV files are stored under `/config/octopus_germany/exports`. Each export creates a persistent Home Assistant notification with a file-scoped browser-download link that expires after 30 days.
+Generated CSV files are stored under `/config/octopus_germany/exports`. Each export creates a persistent Home Assistant notification with a file-scoped download link. Its bearer token defaults to 24 hours and can be configured from 1 to 168 hours in the integration options; changing the setting affects new exports only.
 
 ## Documentation Structure
 
@@ -109,9 +106,10 @@ It combines tariff and balance information, dispatch windows, vehicle SoC and
 target, charging preference, plugged status, meter identifiers, and charts for
 dispatch history and charging sessions.
 
-The dashboard requires the HACS frontend card
+The dashboard requires the Home Assistant frontend card
 [`custom:apexcharts-card`](https://github.com/RomRider/apexcharts-card). Before
-using the example, replace `a_xxxxxxxx` with your lower-case account number and
+using the example, install the card from **Settings** > **Marketplace** and
+replace `a_xxxxxxxx` with your lower-case account number and
 `your_vehicle` with the vehicle slug from your entity IDs.
 
 ## Entities

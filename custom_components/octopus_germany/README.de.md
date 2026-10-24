@@ -2,10 +2,13 @@
 
 Sprache / Language: [Deutsch](README.de.md) | [English](README.md)
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![marketplace_badge](https://img.shields.io/badge/Home%20Assistant-Marketplace-41BDF5.svg)](https://www.home-assistant.io/integrations/marketplace/)
 ![installation_badge](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=integration%20usage&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=$.octopus_germany.total)
 
 Diese Dokumentation beschreibt die Entitaeten und die Bedienung innerhalb der Integration.
+
+Voraussetzung ist Home Assistant **2026.11.0 oder neuer**. Die Markenbilder
+werden mit der Integration im Ordner `brand/` ausgeliefert.
 
 ## Freund*innen werben
 
@@ -13,7 +16,10 @@ Wenn du über [meinen Empfehlungslink](https://octopusenergy.de/empfehlungen?ref
 
 ## Installation und Konfiguration
 
-Die Einrichtung erfolgt in Home Assistant ueber:
+Installation über **Einstellungen** > **Marketplace**: nach **Octopus Germany**
+suchen und installieren. Anschließend Home Assistant neu starten.
+
+Die Einrichtung erfolgt anschließend in Home Assistant ueber:
 
 1. Einstellungen > Geraete und Dienste
 2. Integration hinzufuegen
@@ -35,7 +41,7 @@ Kostenberichte verwenden Agreement-Preise und zeitgueltige API-Netzentgelte. Sie
 
 Fehlen API-Saetze, kann eine optionale Datei stunden- und gueltigkeitsbezogene Werte je Netzbetreiber enthalten. Die [Beispieldatei](../../docs/examples/grid_fee_schedules.example.json) zeigt das Format mit einzeln erhaltenen Stunden 0 bis 23.
 
-CSV-Dateien werden unter `/config/octopus_germany/exports` gespeichert. Zu jedem Export erscheint eine persistente Home-Assistant-Benachrichtigung mit einem dateigebundenen Download-Link, der nach 30 Tagen ablaeuft.
+CSV-Dateien werden unter `/config/octopus_germany/exports` gespeichert. Zu jedem Export erscheint eine persistente Home-Assistant-Benachrichtigung mit einem dateigebundenen Download-Link. Das Bearer-Token ist standardmaessig 24 Stunden gueltig und kann in den Integration-Optionen auf 1 bis 168 Stunden eingestellt werden; die Einstellung gilt nur fuer neue Exporte.
 
 ## Entitaeten (Ueberblick)
 

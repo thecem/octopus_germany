@@ -59,7 +59,8 @@
           "email": "Email",
           "password": "Password",
           "update_interval": "Polling interval (minutes)",
-          "intelligent_update_interval": "Intelligent polling interval (minutes)"
+          "intelligent_update_interval": "Intelligent polling interval (minutes)",
+          "export_download_link_validity_hours": "Export download link validity (hours)"
         }
       }
     }
