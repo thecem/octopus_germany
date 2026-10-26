@@ -1,5 +1,17 @@
 # Release Notes
 
+## Version 0.0.195 (2026-10-26)
+
+### Fixes
+
+- Reconcile external electricity consumption statistics when Octopus delivers
+  late or corrected quarter-hour readings. Preserve incomplete legacy hours,
+  reject conflicting duplicates, and update later cumulative sums consistently.
+- Persist the recent interval cache across restarts and prevent overlapping
+  imports. Scan the last seven completed local days during normal updates and
+  the last 30 completed days on the first run and once daily after 06:00 local
+  time.
+
 ## Version 0.0.194 (2026-10-24)
 
 ### Fixes
