@@ -1,293 +1,265 @@
-"""Statistics import helpers for Octopus Germany integration."""
+"""Restart-safe, correction-aware Octopus external statistics reconciliation."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from datetime import UTC, date, datetime, time, timedelta
+from copy import deepcopy
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
-from homeassistant.util.dt import as_utc
+from homeassistant.components.recorder import get_instance
+from homeassistant.components.recorder.models import (
+    StatisticMeanType,
+    StatisticMetaData,
+)
+from homeassistant.components.recorder.statistics import (
+    async_add_external_statistics,
+    statistics_during_period,
+)
+from homeassistant.helpers.storage import Store
 
-from .api.smart_meter import SmartMeterFetchError
 from .const import DOMAIN
+from .statistics_reconciliation import (
+    complete_hours,
+    merge_measurements,
+    rebuild_statistics,
+    utc_datetime,
+    window_bounds,
+)
 
 if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
     from .coordinator import OctopusDataCoordinator
 
-try:
-    from homeassistant.components.recorder import get_instance
-    from homeassistant.components.recorder.models import (
-        StatisticData,
-        StatisticMeanType,
-        StatisticMetaData,
-    )
-    from homeassistant.components.recorder.statistics import (
-        async_add_external_statistics,
-        statistics_during_period,
-    )
-
-    HAS_RECORDER = True
-except ImportError:
-    HAS_RECORDER = False
-
 _LOGGER = logging.getLogger(__name__)
+RECONCILIATION_VERSION = 1
+LOOKBACK_DAYS = 30
+RECENT_DAYS = 7
+FULL_SCAN_HOUR = 6
+STATISTICS_TOLERANCE = 0.0000005
 
 
-_STATISTICS_LOOKBACK_DAYS = 7
-_HISTORICAL_LOOKBACK_DAYS = 7
+class StatisticsReconciler:
+    """One serialized importer and managed interval cache per config entry."""
 
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        api: Any,
+        coordinator: OctopusDataCoordinator,
+        account_numbers: list[str],
+        entry_id: str,
+    ) -> None:
+        """Initialize the importer for one config entry."""
+        self.hass = hass
+        self.api = api
+        self.coordinator = coordinator
+        self.account_numbers = account_numbers
+        self.store = Store(hass, 1, f"{DOMAIN}.statistics_reconciliation.{entry_id}")
+        self.data: dict[str, Any] = {"accounts": {}}
+        self.lock = asyncio.Lock()
+        self.task: asyncio.Task | None = None
+        self.stopped = False
+        self.status: dict[str, Any] = {"phase": "idle"}
 
-def _determine_dates_to_import(
-    account_num: str,
-    imported_stats_dates: dict[str, set[str]],
-) -> list[str]:
-    """Determine daily date strings that should be imported for one account."""
-    today = datetime.now(UTC).date()
-    imported_dates = imported_stats_dates.setdefault(account_num, set())
-    return [
-        (today - timedelta(days=days_back)).isoformat()
-        for days_back in range(1, _STATISTICS_LOOKBACK_DAYS + 1)
-        if (today - timedelta(days=days_back)).isoformat() not in imported_dates
-    ]
+    async def async_load(self) -> None:
+        """Restore intervals and successful full-scan date across restarts."""
+        self.data = await self.store.async_load() or {"accounts": {}}
 
+    def schedule(self) -> None:
+        """Coalesce notifications rather than queue overlapping scans."""
+        if not self.stopped and (self.task is None or self.task.done()):
+            self.task = self.hass.async_create_background_task(
+                self.async_run(), f"{DOMAIN} statistics reconciliation"
+            )
 
-async def _get_last_running_sum(
-    hass: HomeAssistant,
-    statistic_id: str,
-    dates_to_import: list[str],
-) -> float:
-    """Get the last recorder sum prior to the import window."""
-    if not dates_to_import:
-        return 0.0
+    def stop(self) -> None:
+        """Cancel the task when unloading; an interrupted run is never checkpointed."""
+        self.stopped = True
+        if self.task is not None:
+            self.task.cancel()
 
-    earliest_date = datetime.fromisoformat(min(dates_to_import))
-    try:
-        last_stat = await get_instance(hass).async_add_executor_job(
+    async def async_run(self, now: datetime | None = None) -> None:
+        """Fetch -> validate -> recorder upsert -> read back -> checkpoint."""
+        if self.stopped or self.lock.locked():
+            return
+        async with self.lock:
+            for account_num in self.account_numbers:
+                if self.stopped:
+                    return
+                try:
+                    await self._async_reconcile(account_num, now or datetime.now(UTC))
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    self.status["phase"] = "failed"
+                    # API, validation, storage and recorder failures never mark a
+                    # scan successful; the next coordinator update retries.
+                    _LOGGER.exception(
+                        "Octopus statistics reconciliation failed for %s", account_num
+                    )
+
+    async def _async_reconcile(self, account_num: str, now: datetime) -> None:
+        account = (self.coordinator.data or {}).get(account_num, {})
+        properties = account.get("property_ids", [])
+        malo = account.get("malo_number")
+        if not properties or not malo:
+            return
+        self.status = {"phase": "fetching", "started_at": now.isoformat()}
+        zone = self.hass.config.time_zone
+        local_now = now.astimezone(ZoneInfo(zone))
+        old = self.data["accounts"].get(account_num, {})
+        full = not old.get("last_full_scan") or (
+            local_now.hour >= FULL_SCAN_HOUR
+            and old["last_full_scan"] != local_now.date().isoformat()
+        )
+        cutoff, end = window_bounds(now, zone, LOOKBACK_DAYS)
+        start, _ = window_bounds(now, zone, LOOKBACK_DAYS if full else RECENT_DAYS)
+        self.status.update(start=start.isoformat(), end=end.isoformat())
+        async with asyncio.timeout(600):
+            readings = await self.api.fetch_electricity_measurements_range(
+                properties[0], malo, start.isoformat(), end.isoformat(), zone, "15min"
+            )
+        if not readings:
+            self.status["phase"] = "empty_response"
+            _LOGGER.warning(
+                "Octopus %s: no intervals returned; statistics retained", account_num
+            )
+            return
+        intervals, counts, conflicts = merge_measurements(
+            old.get("intervals", {}), readings, start, end, cutoff, now, str(malo)
+        )
+        if not (
+            counts["added"]
+            + counts["corrected"]
+            + counts["metadata_changed"]
+            + counts["identical"]
+        ):
+            self.status["phase"] = "invalid_response"
+            _LOGGER.warning(
+                "Octopus %s: no valid unambiguous intervals; retry required (%s)",
+                account_num,
+                counts,
+            )
+            return
+        hours = complete_hours(intervals, conflicts)
+        incomplete = len(
+            {utc_datetime(key).replace(minute=0) for key in intervals}
+        ) - len(hours)
+        if conflicts:
+            _LOGGER.warning(
+                "Octopus %s: conflicting intervals retained, not adopted: %s",
+                account_num,
+                sorted(conflicts)[:12],
+            )
+        safe_account = account_num.replace("-", "_").lower()
+        statistic_id = f"{DOMAIN}:electricity_{safe_account}_consumption"
+        recorder = get_instance(self.hass)
+        self.status.update(phase="reading_statistics", received_intervals=len(readings))
+        # Read the true preceding sum, never assume a seven-day baseline.
+        history = await recorder.async_add_executor_job(
             statistics_during_period,
-            hass,
-            earliest_date - timedelta(days=_HISTORICAL_LOOKBACK_DAYS),
-            earliest_date,
+            self.hass,
+            datetime(1970, 1, 1, tzinfo=UTC),
+            None,
             {statistic_id},
             "hour",
             None,
-            {"sum"},
+            {"state", "sum"},
         )
-        history = last_stat.get(statistic_id) or []
-        return float(history[-1].get("sum", 0.0)) if history else 0.0
-    except (TypeError, ValueError, KeyError) as err:
-        _LOGGER.debug("Could not get last statistics sum: %s", err)
-        return 0.0
-
-
-def _build_hourly_buckets(readings: list[dict[str, Any]]) -> dict[str, float]:
-    """Aggregate quarter-hour readings into hourly buckets."""
-    hourly_buckets: dict[str, float] = {}
-    for reading in readings:
-        start_str = reading.get("start_time", "")
-        if not start_str:
-            continue
-        try:
-            start_dt = datetime.fromisoformat(start_str)
-            hour_key = start_dt.replace(minute=0, second=0, microsecond=0).isoformat()
-            value = float(reading.get("value", 0) or 0)
-        except TypeError, ValueError:
-            continue
-        hourly_buckets[hour_key] = hourly_buckets.get(hour_key, 0.0) + value
-    return hourly_buckets
-
-
-def _build_statistic_entries(
-    hourly_buckets: dict[str, float],
-    running_sum: float,
-) -> tuple[list[StatisticData], float]:
-    """Build recorder StatisticData entries and return updated running sum."""
-    entries: list[StatisticData] = []
-    for hour_key in sorted(hourly_buckets):
-        consumption = hourly_buckets[hour_key]
-        running_sum += consumption
-        hour_dt = as_utc(datetime.fromisoformat(hour_key))
-        entries.append(
-            StatisticData(
-                start=hour_dt,
-                state=round(consumption, 6),
-                sum=round(running_sum, 6),
-            )
+        changes, unverified = rebuild_statistics(
+            history.get(statistic_id, []), hours, cutoff, now
         )
-    return entries, running_sum
-
-
-async def async_import_consumption_statistics(
-    hass: HomeAssistant,
-    api: Any,
-    coordinator: OctopusDataCoordinator,
-    account_numbers: list[str],
-    imported_stats_dates: dict[str, set[str]],
-) -> None:
-    """Import smart-meter data into HA long-term statistics."""
-    if not HAS_RECORDER:
-        return
-
-    for account_num in account_numbers:
-        if not coordinator.data or account_num not in coordinator.data:
-            continue
-
-        account_data = coordinator.data[account_num]
-        property_ids = account_data.get("property_ids", [])
-        if not property_ids:
-            continue
-
-        property_id = property_ids[0]
-        safe_account = account_num.replace("-", "_").lower()
-        statistic_id = f"{DOMAIN}:electricity_{safe_account}_consumption"
-
-        dates_to_import = _determine_dates_to_import(account_num, imported_stats_dates)
-
-        if not dates_to_import:
-            continue
-
-        timezone = hass.config.time_zone
-        local_timezone = ZoneInfo(timezone)
-        first_date = date.fromisoformat(min(dates_to_import))
-        last_date = date.fromisoformat(max(dates_to_import))
-        start_at = (
-            datetime.combine(first_date, time.min, tzinfo=local_timezone)
-            .astimezone(UTC)
-            .isoformat()
-        )
-        end_at = (
-            datetime.combine(
-                last_date + timedelta(days=1), time.min, tzinfo=local_timezone
-            )
-            .astimezone(UTC)
-            .isoformat()
-        )
-        market_supply_point_id = account_data.get("malo_number")
-        if not market_supply_point_id:
-            _LOGGER.warning(
-                "Skipping smart-meter statistics for %s: no market supply point ID",
-                account_num,
-            )
-            continue
-
-        try:
-            readings = await api.fetch_electricity_measurements_range(
-                property_id,
-                market_supply_point_id,
-                start_at,
-                end_at,
-                timezone,
-                "15min",
-            )
-        except SmartMeterFetchError as err:
-            _LOGGER.warning(
-                "Failed to fetch 15-min statistics for %s across %s to %s: %s",
-                account_num,
-                first_date,
-                last_date,
-                err,
-            )
-            continue
-        except (RuntimeError, ValueError, TypeError) as err:
-            _LOGGER.warning(
-                "Failed to fetch 15-min statistics for %s across %s to %s: %s",
-                account_num,
-                first_date,
-                last_date,
-                err,
-            )
-            continue
-
-        readings_by_date: dict[str, list[dict[str, Any]]] = {}
-        for reading in readings:
-            start_time = reading.get("start_time")
-            if not start_time:
-                continue
-            try:
-                local_date = (
-                    datetime.fromisoformat(start_time)
-                    .astimezone(local_timezone)
-                    .date()
-                    .isoformat()
-                )
-            except TypeError, ValueError:
-                continue
-            readings_by_date.setdefault(local_date, []).append(reading)
-
-        running_sum = await _get_last_running_sum(hass, statistic_id, dates_to_import)
-        all_statistics = []
-        requested_dates = set(dates_to_import)
-        current_date = first_date
-        while current_date <= last_date:
-            date_str = current_date.isoformat()
-            day_readings = readings_by_date.get(date_str, [])
-            if day_readings:
-                hourly_buckets = _build_hourly_buckets(day_readings)
-                if date_str in imported_stats_dates[account_num]:
-                    running_sum += sum(hourly_buckets.values())
-                elif date_str in requested_dates:
-                    entries, running_sum = _build_statistic_entries(
-                        hourly_buckets, running_sum
-                    )
-                    all_statistics.extend(entries)
-                    imported_stats_dates[account_num].add(date_str)
-                    _LOGGER.debug(
-                        "Prepared %d hourly statistics for %s on %s "
-                        "(running sum: %.3f)",
-                        len(hourly_buckets),
-                        account_num,
-                        date_str,
-                        running_sum,
-                    )
-            current_date += timedelta(days=1)
-
-        if all_statistics:
-            meter_info = account_data.get("meter", {})
-            meter_number = (
-                meter_info.get("number", account_num) if meter_info else account_num
-            )
-
+        if changes:
+            self.status.update(phase="writing_statistics", changed_hours=len(changes))
+            meter = (account.get("meter") or {}).get("number", account_num)
             async_add_external_statistics(
-                hass,
+                self.hass,
                 StatisticMetaData(
                     has_mean=False,
                     mean_type=StatisticMeanType.NONE,
                     has_sum=True,
-                    name=f"Electricity Consumption ({meter_number}/{account_num})",
+                    name=f"Electricity Consumption ({meter}/{account_num})",
                     source=DOMAIN,
                     statistic_id=statistic_id,
                     unit_of_measurement="kWh",
                     unit_class="energy",
                 ),
-                all_statistics,
+                changes,
             )
-            _LOGGER.info(
-                "Imported %d hourly statistics for account %s into energy dashboard",
-                len(all_statistics),
-                account_num,
+            await recorder.async_block_till_done()
+            written = await recorder.async_add_executor_job(
+                statistics_during_period,
+                self.hass,
+                changes[0]["start"],
+                None,
+                {statistic_id},
+                "hour",
+                None,
+                {"state", "sum"},
             )
-
-
-async def _safe_import_statistics(
-    hass: HomeAssistant,
-    api: Any,
-    coordinator: OctopusDataCoordinator,
-    account_numbers: list[str],
-    imported_stats_dates: dict[str, set[str]],
-) -> None:
-    """Run statistics import with guarded error handling."""
-    try:
-        await async_import_consumption_statistics(
-            hass,
-            api,
-            coordinator,
-            account_numbers,
-            imported_stats_dates,
+            verified = {
+                utc_datetime(row["start"]): row for row in written.get(statistic_id, [])
+            }
+            if any(
+                row["start"] not in verified
+                or any(
+                    abs(float(verified[row["start"]][key]) - row[key])
+                    > STATISTICS_TOLERANCE
+                    for key in ("state", "sum")
+                )
+                for row in changes
+            ):
+                self.stopped = True
+                message = "Recorder read-back differs; reconciliation halted"
+                raise RuntimeError(message)
+        candidate = deepcopy(self.data)
+        candidate["accounts"][account_num] = {
+            "intervals": intervals,
+            "last_success": now.isoformat(),
+            "last_full_scan": (
+                local_now.date() - timedelta(days=local_now.hour < FULL_SCAN_HOUR)
+            ).isoformat()
+            if full
+            else old.get("last_full_scan"),
+            "diagnostics": {
+                **counts,
+                "written_hours": len(changes),
+                "complete_hours": len(hours),
+                "incomplete_hours": incomplete,
+                "unverified_hours": unverified,
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+            },
+        }
+        self.status["phase"] = "saving_checkpoint"
+        await self.store.async_save(candidate)
+        self.data = candidate
+        self.status["phase"] = "complete"
+        log = (
+            _LOGGER.warning
+            if (
+                counts["invalid"]
+                or counts["conflicts"]
+                or counts["missing"]
+                or unverified
+            )
+            else _LOGGER.info
         )
-    except (RuntimeError, ValueError, TypeError, KeyError) as err:
-        _LOGGER.warning("Error importing consumption statistics: %s", err)
+        log(
+            "Octopus %s %s-day reconciliation: %s; complete_hours=%s, "
+            "unverified_legacy_hours=%s, written_hours=%s",
+            account_num,
+            LOOKBACK_DAYS if full else RECENT_DAYS,
+            counts,
+            len(hours),
+            unverified,
+            len(changes),
+        )
 
 
 async def async_setup_statistics_import(
@@ -295,32 +267,15 @@ async def async_setup_statistics_import(
     api: Any,
     coordinator: OctopusDataCoordinator,
     account_numbers: list[str],
-) -> None:
-    """Set up coordinator listener and initial statistics import."""
-    imported_stats_dates: dict[str, set[str]] = {acc: set() for acc in account_numbers}
-
-    def _on_coordinator_update() -> None:
-        """Schedule statistics import when coordinator data updates."""
-        hass.async_create_task(
-            _safe_import_statistics(
-                hass,
-                api,
-                coordinator,
-                account_numbers,
-                imported_stats_dates,
-            )
-        )
-
-    coordinator.async_add_listener(_on_coordinator_update)
-
-    if HAS_RECORDER and coordinator.data:
-        try:
-            await async_import_consumption_statistics(
-                hass,
-                api,
-                coordinator,
-                account_numbers,
-                imported_stats_dates,
-            )
-        except (RuntimeError, ValueError, TypeError, KeyError) as err:
-            _LOGGER.warning("Error during initial statistics import: %s", err)
+    entry: ConfigEntry,
+) -> StatisticsReconciler:
+    """Start in the background; pagination must not delay integration setup."""
+    reconciler = StatisticsReconciler(
+        hass, api, coordinator, account_numbers, entry.entry_id
+    )
+    await reconciler.async_load()
+    entry.async_on_unload(coordinator.async_add_listener(reconciler.schedule))
+    entry.async_on_unload(reconciler.stop)
+    if coordinator.data:
+        reconciler.schedule()
+    return reconciler

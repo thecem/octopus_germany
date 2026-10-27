@@ -936,10 +936,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 else "None",
             )
 
-    await async_setup_statistics_import(hass, api, coordinator, account_numbers)
+    statistics_reconciler = await async_setup_statistics_import(
+        hass, api, coordinator, account_numbers, entry
+    )
 
     # Store API, account number and coordinator in hass.data
     hass.data[DOMAIN][entry.entry_id] = {
+        "statistics_reconciler": statistics_reconciler,
         "api": api,
         "account_number": primary_account_number,
         "account_numbers": account_numbers,

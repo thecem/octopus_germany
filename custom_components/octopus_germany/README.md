@@ -38,6 +38,7 @@ Sign up through my referral link and receive **150 €** as a bill credit. Eligi
 - **Boost Charging**: Instant charge boost functionality (requires smart charging enabled)
 - **Intelligent Dispatching**: Real-time status of Octopus Intelligent charge scheduling
 - **Octopus Historical Data Readout**: Read historical consumption and meter readings stored by Octopus
+- **Energy Dashboard Statistics**: Reconcile late or corrected Octopus consumption readings over the last 30 completed local days; incomplete or conflicting intervals do not overwrite existing hours.
 - **Multi-Account**: Support for multiple Octopus accounts under one integration
 - **Gas infrastructure monitoring** (MALO/MELO numbers, meters, readings)
 - **Latest Electricity meter reading**
