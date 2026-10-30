@@ -144,7 +144,7 @@ Erstellt eine taegliche und monatliche Kostenschaetzung als CSV. Der Bericht nut
 
 - `account_number` (erforderlich); `property_id` (optional)
 - `period` und `year` (erforderlich); `month` bei Monatsberichten erforderlich
-- `contract_start_network_charge_ct_kwh` (erforderlich; Vorgabe `7.65` ist ein unbestaetigter Referenzwert)
+- `contract_start_network_charge_ct_kwh` (optional; explizite Werte einschliesslich `0` haben Vorrang; ohne Eingabe wird je Vertrag der eindeutige, zeitlich passende `basis_rate_net_ct_per_kwh`-Wert aus der lokalen Datei verwendet)
 - `module3_start_date`, `module3_rates_json` (optional)
 - `module1_start_date` (optional); `module1_annual_credit_net_eur` (optional; leer nutzt den Jahreswert aus der passenden Datei, sonst null)
 - `vat_percent` (MwSt.-Ersatzwert, Vorgabe 19); `filename` (optional)

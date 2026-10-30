@@ -154,13 +154,15 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
     daily_rows: list[dict[str, Any]],
     basis_rows: list[dict[str, Any]],
     timezone: str,
-    baseline: Decimal,
+    baseline: Decimal | None,
     module1_annual: Decimal | None,
     module1_start: date | None,
     vat: Decimal,
     comparison: str,
     current_network: Decimal | None,
     warnings: list[str],
+    contract_start_details: list[dict[str, Any]] | None = None,
+    schedule_period_rows: list[dict[str, Any]] | None = None,
 ) -> None:
     """Write contract-specific invoice lines and editable offline Excel formulas."""
     by_instant = {item["start"]: item for item in details}
@@ -293,6 +295,58 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     input_fmt,
                 )
             inputs.write(row, 2, explanation, note)
+        inputs.write_row(
+            0,
+            3,
+            [
+                "Vertrag",
+                "Vertragsstart",
+                "Baseline netto ct/kWh",
+                "Quelle",
+                "Gueltig von",
+                "Gueltig bis",
+            ],
+            header,
+        )
+        for row, item in enumerate(contract_start_details or [], 1):
+            inputs.write(row, 3, item.get("agreement") or "Unknown")
+            start = item.get("contract_start_date")
+            if isinstance(start, date):
+                inputs.write_datetime(
+                    row, 4, datetime.combine(start, time.min), date_fmt
+                )
+            elif start is not None:
+                inputs.write(row, 4, str(start))
+            value = item.get("value")
+            if value is not None:
+                inputs.write_number(row, 5, float(value), input_fmt)
+            else:
+                inputs.write_blank(row, 5, None, input_fmt)
+            inputs.write(row, 6, item.get("source") or "missing")
+            inputs.write(row, 7, item.get("valid_from") or "")
+            inputs.write(row, 8, item.get("valid_to") or "")
+        inputs.write_row(
+            0,
+            9,
+            [
+                "Modul-3-/Netzentgelt-Zeitraeume",
+                "Jahr",
+                "Gueltig von",
+                "Gueltig bis",
+                "Basis netto ct/kWh",
+            ],
+            header,
+        )
+        for row, item in enumerate(schedule_period_rows or [], 1):
+            inputs.write(row, 9, "Netzentgelt-Zeitraum")
+            inputs.write_number(row, 10, int(item["year"]))
+            inputs.write(row, 11, item.get("valid_from") or "")
+            inputs.write(row, 12, item.get("valid_to") or "")
+            value = item.get("basis_rate_net_ct_per_kwh")
+            if value is not None:
+                inputs.write_number(row, 13, float(value), input_fmt)
+            else:
+                inputs.write_blank(row, 13, None, input_fmt)
         inputs.data_validation(
             2,
             1,
@@ -310,6 +364,10 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
             )
         inputs.set_column(0, 0, 38)
         inputs.set_column(2, 2, 90)
+        inputs.set_column(3, 5, 24)
+        inputs.set_column(6, 8, 34)
+        inputs.set_column(9, 9, 34)
+        inputs.set_column(10, 13, 24)
         inputs.write(8, 0, "Vergleichsnetz netto ct/kWh")
         reference = baseline if comparison == "contract_start" else current_network
         formula(
@@ -325,10 +383,13 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
             inputs,
             9,
             1,
-            "=IF(AND(ISNUMBER(B2),B2>=0,ISNUMBER(B5),B5>=0,"
-            "ISNUMBER(B6),B6>=0,B6<=1,ISNUMBER(B9),B9>=0,"
+            '=IF(AND(OR(B2="",AND(ISNUMBER(B2),B2>=0)),'
+            'OR(B5="",AND(ISNUMBER(B5),B5>=0)),'
+            "ISNUMBER(B6),B6>=0,B6<=1,"
             'OR(B7="",ISNUMBER(B7))),"OK","EINGABE UNGUELTIG")',
-            "OK" if reference is not None else "EINGABE UNGUELTIG",
+            "OK"
+            if comparison != "current_year" or current_network is not None
+            else "EINGABE UNGUELTIG",
             note,
         )
         inputs.write(10, 0, "Grundgebuehr")
@@ -454,6 +515,8 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 "Modul 3 Einsparung EUR",
                 "Energie gesamt EUR",
                 "Modul 3 aktiv",
+                "Vertragsstart-Netto ct/kWh",
+                "Baseline-Quelle",
             ],
         )
         daily_ranges = {}
@@ -495,6 +558,9 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 tariff_id = (
                     tariff_indices.get(tariff_key, 0) if tariff_key is not None else 0
                 )
+                contract_baseline = (
+                    item.get("contract_start_network_charge_ct_kwh") if item else None
+                )
                 network_id = (
                     network_indices.get(network_key, 0)
                     if network_key is not None
@@ -504,6 +570,19 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 interval_sheet.write_number(row, 8, network_id, input_fmt)
                 module3 = bool(item and item["module3_selected"])
                 interval_sheet.write_number(row, 18, int(module3))
+                if contract_baseline is not None:
+                    interval_sheet.write_number(
+                        row, 19, float(contract_baseline), input_fmt
+                    )
+                else:
+                    interval_sheet.write_blank(row, 19, None, input_fmt)
+                interval_sheet.write(
+                    row,
+                    20,
+                    item.get("contract_start_baseline_source", "missing")
+                    if item
+                    else "missing",
+                )
                 for col, expression, cached in (
                     (
                         5,
@@ -545,7 +624,8 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     present
                     and item is not None
                     and item["network_rate"] is not None
-                    and reference is not None
+                    and contract_baseline is not None
+                    and (comparison != "current_year" or current_network is not None)
                 )
                 formula(
                     interval_sheet,
@@ -555,7 +635,8 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     f'IF(NOT(ISNUMBER(D{r})),"MESSWERT UNGUELTIG",'
                     f'IF(D{r}<0,"MESSWERT UNGUELTIG",'
                     f"IF(OR(NOT(ISNUMBER(G{r})),NOT(ISNUMBER(H{r})),"
-                    f'NOT(ISNUMBER(K{r})),Eingaben!$B$10<>"OK"),"PREIS FEHLT",'
+                    f"NOT(ISNUMBER(K{r})),NOT(ISNUMBER(T{r})),"
+                    f'Eingaben!$B$10<>"OK"),"PREIS FEHLT",'
                     f'IF(OR(H{r}<0,H{r}>1,K{r}<0),"PREIS UNGUELTIG","OK")))))',
                     "OK" if complete else "UNVOLLSTAENDIG",
                     note,
@@ -563,7 +644,11 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 base = q * item["gross_rate"] if item else _ZERO
                 tax = item["vat"] if item else vat
                 ref = (
-                    (reference if reference is not None else _ZERO)
+                    (
+                        contract_baseline
+                        if comparison == "contract_start"
+                        else (current_network if current_network is not None else _ZERO)
+                    )
                     if module3
                     else (
                         item["network_rate"] * 100
@@ -571,7 +656,11 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         else _ZERO
                     )
                 )
-                adjust = q * (ref - baseline) * (1 + tax) / 100
+                adjust = (
+                    q * (ref - contract_baseline) * (1 + tax) / 100
+                    if contract_baseline is not None
+                    else _ZERO
+                )
                 remove = -q * ref * (1 + tax) / 100
                 network = (
                     q * item["network_rate"] * (1 + tax)
@@ -587,10 +676,13 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     saving,
                     base + adjust - saving,
                 ]
-                ref_formula = f"IF(S{r}=1,Eingaben!$B$9,K{r})"
+                ref_formula = (
+                    f'IF(S{r}=1,IF(Eingaben!$B$3="contract_start",'
+                    f"T{r},Eingaben!$B$4),K{r})"
+                )
                 expressions = [
                     f"D{r}*G{r}",
-                    f"D{r}*({ref_formula}-Eingaben!$B$2)*(1+H{r})/100",
+                    f"D{r}*({ref_formula}-T{r})*(1+H{r})/100",
                     f"-D{r}*{ref_formula}*(1+H{r})/100",
                     f"D{r}*K{r}*(1+H{r})/100",
                     f"-O{r}-P{r}",
@@ -616,7 +708,7 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 )
                 row += 1
             daily_ranges[day] = (first, row)
-        interval_sheet.autofilter(0, 0, row - 1, 17)
+        interval_sheet.autofilter(0, 0, row - 1, 20)
         for col, upper in ((4, len(tariffs)), (8, len(networks))):
             if upper:
                 interval_sheet.data_validation(

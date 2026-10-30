@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "description": "Example only. Replace the operator code and verify every value against the network operator's documents.",
+  "description": "Example only. Replace the operator code and verify every value against the network operator's documents. basis_rate_net_ct_per_kwh is the original contract's normal net network-fee component used when the service baseline is omitted; never derive it from a variable Module 3 ST band.",
   "grid_operators": [
     {
       "grid_operator_code": "REPLACE_WITH_GRID_OPERATOR_CODE",

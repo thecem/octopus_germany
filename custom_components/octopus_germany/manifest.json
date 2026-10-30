@@ -14,5 +14,5 @@
     "python-graphql-client>=0.4.3",
     "XlsxWriter==3.2.9"
   ],
-  "version": "0.0.196"
+  "version": "0.0.197"
 }

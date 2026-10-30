@@ -45,6 +45,10 @@
         "standard_network_charge_ct_kwh": {
           "name": "Normales Jahres-Netzentgelt (netto ct/kWh)",
           "description": "Erforderlich bei current_year und im Paket fuer Intervalle vor Modul 3 verwendet. Dokumentierten normalen Jahressatz eingeben, nicht das ST-Band von Modul 3."
+        },
+        "contract_start_network_charge_ct_kwh": {
+          "name": "Netzentgelt bei Vertragsbeginn",
+          "description": "Optionaler Netto-Basiswert, der bereits im urspruenglichen Brutto-Vertragspreis enthalten war. Ohne Eingabe wird je Vertragsbeginn der eindeutige, zeitlich passende basis_rate_net_ct_per_kwh-Wert aus der lokalen Datei verwendet; andernfalls den belegten Wert manuell eingeben."
         }
       }
     }

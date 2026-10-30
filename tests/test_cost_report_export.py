@@ -24,7 +24,10 @@ from homeassistant.helpers.service import _SERVICES_SCHEMA, _load_services_file
 from homeassistant.util.yaml import load_yaml_dict
 
 from custom_components.octopus_germany.const import DOMAIN
-from custom_components.octopus_germany.cost_report import build_daily_cost_report
+from custom_components.octopus_germany.cost_report import (
+    agreement_key,
+    build_daily_cost_report,
+)
 from custom_components.octopus_germany.cost_report_export import (
     prepare_package_readings,
     write_cost_workbook,
@@ -33,7 +36,10 @@ from custom_components.octopus_germany.cost_report_export import (
 from custom_components.octopus_germany.file_exports import (
     async_notify_export_package_ready,
 )
-from custom_components.octopus_germany.grid_fee_schedule import load_grid_fee_schedule
+from custom_components.octopus_germany.grid_fee_schedule import (
+    contract_start_basis_period,
+    load_grid_fee_schedule,
+)
 from custom_components.octopus_germany.service_handlers import async_register_services
 
 DAY = date(2026, 5, 1)
@@ -73,6 +79,8 @@ def test_action_descriptions_load_with_all_cost_fields() -> None:
     assert (
         fields["standard_network_charge_ct_kwh"]["selector"]["number"]["step"] == "any"
     )
+    assert not fields["contract_start_network_charge_ct_kwh"]["required"]
+    assert "default" not in fields["contract_start_network_charge_ct_kwh"]
     assert {"csv", "package"} == set(fields["format"]["selector"]["select"]["options"])
     assert descriptions == _load_services_file(
         Mock(domain=DOMAIN, file_path=integration_path)
@@ -164,6 +172,18 @@ def sheet_cells(path: Path, sheet_number: int) -> dict[str, ET.Element]:
             archive.read(f"xl/worksheets/sheet{sheet_number}.xml")
         )
     return {cell.attrib["r"]: cell for cell in root.findall(".//s:c", NS)}
+
+
+def sheet_text(path: Path, sheet_number: int, reference: str) -> str:
+    """Read a visible cell string, resolving shared-string references."""
+    with ZipFile(path) as archive:
+        cell = sheet_cells(path, sheet_number)[reference]
+        value = cell.findtext("s:v", namespaces=NS) or ""
+        if cell.attrib.get("t") != "s":
+            return value
+        root = ET.fromstring(archive.read("xl/sharedStrings.xml"))  # noqa: S314
+    strings = ["".join(node.itertext()) for node in root.findall("s:si", NS)]
+    return strings[int(value)]
 
 
 def cached_number(cell: ET.Element) -> float:
@@ -535,6 +555,84 @@ class CostExportTest(unittest.TestCase):
                 float(daily[0]["total_after_module1_gross_eur"]),
             )
 
+    def test_contract_baselines_follow_each_agreement_and_explicit_zero_wins(
+        self,
+    ) -> None:
+        """Resolve per-agreement baselines while preserving explicit zero."""
+        go = products()[0]
+        heat = products(heat=True)[0]
+        go["validTo"] = "2026-05-01T10:00:00+00:00"
+        heat["validFrom"] = go["validTo"]
+        agreements = [go, heat]
+        baselines = {
+            agreement_key(go): Decimal("7.65"),
+            agreement_key(heat): Decimal("5.48"),
+        }
+        details: list[dict[str, Any]] = []
+        daily = build_daily_cost_report(
+            readings(),
+            agreements,
+            grid_fees(),
+            DAY,
+            DAY,
+            "Europe/Berlin",
+            None,
+            DAY,
+            Decimal(100),
+            Decimal("0.19"),
+            DAY,
+            interval_details=details,
+            contract_start_baselines=baselines,
+        )
+        assert [
+            item["contract_start_network_charge_ct_kwh"] for item in details[:48]
+        ] == [Decimal("7.65")] * 48
+        assert [
+            item["contract_start_network_charge_ct_kwh"] for item in details[48:]
+        ] == [Decimal("5.48")] * 48
+        assert daily[0]["status"] == "complete"
+
+        explicit_details: list[dict[str, Any]] = []
+        build_daily_cost_report(
+            readings(),
+            agreements,
+            grid_fees(),
+            DAY,
+            DAY,
+            "Europe/Berlin",
+            Decimal(0),
+            DAY,
+            Decimal(100),
+            Decimal("0.19"),
+            DAY,
+            interval_details=explicit_details,
+            contract_start_baselines=baselines,
+        )
+        assert all(
+            item["contract_start_network_charge_ct_kwh"] == 0
+            and item["contract_start_baseline_source"] == "explicit"
+            for item in explicit_details
+        )
+
+        incomplete = build_daily_cost_report(
+            readings(),
+            agreements,
+            grid_fees(),
+            DAY,
+            DAY,
+            "Europe/Berlin",
+            None,
+            DAY,
+            Decimal(100),
+            Decimal("0.19"),
+            DAY,
+            contract_start_baselines={agreement_key(go): Decimal("7.65")},
+        )
+        assert incomplete[0]["status"] == (
+            "incomplete: contract-start network charge missing"
+        )
+        assert incomplete[0]["contract_start_baseline_missing_kwh"] > 0
+
     def test_missing_values_are_blank_and_block_total(self) -> None:
         """Keep missing inputs blank and refuse an incomplete invoice."""
         source = readings()
@@ -792,6 +890,40 @@ def test_schedule_dates_are_optional_and_validated(tmp_path: Path, field: str) -
             load_grid_fee_schedule(path, "EXAMPLE", 2026, "Europe/Berlin")
 
 
+def test_contract_start_basis_period_uses_inclusive_exclusive_boundaries() -> None:
+    """Select the basis rate only inside one unique dated schedule period."""
+    schedule = {
+        "schedules": [
+            {
+                "valid_from": "2024-01-01",
+                "valid_to": "2024-07-01",
+                "basis_rate_net_ct_per_kwh": Decimal("7.65"),
+            },
+            {
+                "valid_from": "2024-07-01",
+                "valid_to": "2025-01-01",
+                "basis_rate_net_ct_per_kwh": Decimal("6.64"),
+            },
+        ]
+    }
+
+    assert contract_start_basis_period(schedule, date(2024, 1, 1))[
+        "basis_rate_net_ct_per_kwh"
+    ] == Decimal("7.65")
+    assert contract_start_basis_period(schedule, date(2024, 6, 30))[
+        "basis_rate_net_ct_per_kwh"
+    ] == Decimal("7.65")
+    assert contract_start_basis_period(schedule, date(2024, 7, 1))[
+        "basis_rate_net_ct_per_kwh"
+    ] == Decimal("6.64")
+    assert contract_start_basis_period(schedule, date(2025, 1, 1)) is None
+    schedule["schedules"][1]["basis_rate_net_ct_per_kwh"] = None
+    assert contract_start_basis_period(schedule, date(2024, 7, 1)) is None
+    schedule["schedules"][1]["valid_from"] = "2024-06-30"
+    with pytest.raises(ValueError, match="multiple"):
+        contract_start_basis_period(schedule, date(2024, 6, 30))
+
+
 class ExportPackageServiceTest(unittest.TestCase):
     """Exercise registration, one-fetch package output and download response."""
 
@@ -812,10 +944,29 @@ class ExportPackageServiceTest(unittest.TestCase):
                         "grid_operator_code": "EXAMPLE",
                         "years": [
                             {
+                                "year": 2024,
+                                "schedules": [
+                                    {
+                                        "valid_from": "2024-01-01",
+                                        "valid_to": "2025-01-01",
+                                        "basis_rate_net_ct_per_kwh": 7.65,
+                                        "hourly_rate_types": [None] * 24,
+                                        "rates_net_ct_per_kwh": {},
+                                    }
+                                ],
+                            },
+                            {
                                 "year": 2026,
-                                "hourly_rate_types": [None] * 24,
-                                "rates_net_ct_per_kwh": {},
-                            }
+                                "schedules": [
+                                    {
+                                        "valid_from": "2026-01-01",
+                                        "valid_to": "2027-01-01",
+                                        "basis_rate_net_ct_per_kwh": 5.48,
+                                        "hourly_rate_types": [None] * 24,
+                                        "rates_net_ct_per_kwh": {},
+                                    }
+                                ],
+                            },
                         ],
                     }
                 ],
@@ -853,7 +1004,12 @@ class ExportPackageServiceTest(unittest.TestCase):
             coordinator = Mock(
                 data={
                     "A-EXAMPLE": {
-                        "products": products(),
+                        "products": [
+                            {
+                                **products()[0],
+                                "validFrom": "2024-01-01T00:00:00+00:00",
+                            }
+                        ],
                         "property_ids": ["EXAMPLE"],
                         "malo_number": "EXAMPLE",
                         "grid_operator_code": "EXAMPLE",
@@ -901,12 +1057,17 @@ class ExportPackageServiceTest(unittest.TestCase):
                 result = await handler(
                     ServiceCall(hass, DOMAIN, "export_cost_report", fields)
                 )
-                client.fetch_electricity_measurements_range.assert_awaited_once()
                 assert result["incomplete_days"] == 0
                 assert result["grid_fee_schedule_file_status"] == "matched"
-                assert schedule_io == ["is_file", "open"]
+                assert schedule_io == ["is_file", "open", "is_file", "open"]
                 annual_input = sheet_cells(Path(result["output_file"]), 2)["B5"]
                 assert annual_input.find("s:v", NS) is None
+                inputs = sheet_cells(Path(result["output_file"]), 2)
+                assert cached_number(inputs["F2"]) == 7.65
+                assert sheet_text(Path(result["output_file"]), 2, "H2") == "2024-01-01"
+                assert sheet_text(Path(result["output_file"]), 2, "I2") == "2025-01-01"
+                assert cached_number(inputs["N2"]) == 7.65
+                assert cached_number(inputs["N3"]) == 5.48
                 assert len(result["files"]) == 2
                 assert {item["type"] for item in result["files"]} == {
                     "xlsx",
@@ -920,8 +1081,36 @@ class ExportPackageServiceTest(unittest.TestCase):
                 for item in result["files"]:
                     assert await asyncio.to_thread(Path(item["output_file"]).is_file)
                 assert not single.called
-                await asyncio.to_thread(schedule_path.unlink)
+                fields["contract_start_network_charge_ct_kwh"] = 0
+                explicit = await handler(
+                    ServiceCall(hass, DOMAIN, "export_cost_report", fields)
+                )
+                interval_cells = sheet_cells(Path(explicit["output_file"]), 7)
+                assert cached_number(interval_cells["T2"]) == 0
+                assert sheet_text(Path(explicit["output_file"]), 7, "U2") == "explicit"
                 fields.pop("format")
+                fields.pop("contract_start_network_charge_ct_kwh")
+                csv_result = await handler(
+                    ServiceCall(hass, DOMAIN, "export_cost_report", fields)
+                )
+                with Path(csv_result["output_file"]).open(
+                    encoding="utf-8-sig"
+                ) as stream:
+                    csv_rows = list(csv.DictReader(stream, delimiter=";"))
+                resolution = json.loads(
+                    next(
+                        row["basis_value"]
+                        for row in csv_rows
+                        if row["basis_key"] == "contract_start_baseline_resolution"
+                    )
+                )
+                assert resolution[0]["contract_start_date"] == "2024-01-01"
+                assert resolution[0]["value"] == "7.65"
+                assert resolution[0]["valid_from"] == "2024-01-01"
+                assert resolution[0]["valid_to"] == "2025-01-01"
+                single.assert_awaited_once()
+                client.fetch_electricity_measurements_range.assert_awaited()
+                await asyncio.to_thread(schedule_path.unlink)
                 default = await handler(
                     ServiceCall(hass, DOMAIN, "export_cost_report", fields)
                 )
@@ -932,7 +1121,10 @@ class ExportPackageServiceTest(unittest.TestCase):
                     == Path(result["output_file"]).stem
                 )
                 assert default["grid_fee_schedule_file_status"] == "missing"
-                single.assert_awaited_once()
+                assert any(
+                    "contract-start" in warning for warning in default["warnings"]
+                )
+                assert single.await_count == 2
                 for document, expected_status in (
                     ("{", "invalid"),
                     (
