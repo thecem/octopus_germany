@@ -62,7 +62,7 @@ def build_cost_report_basis_rows(
     module3_start_date: date | None,
     manual_module3_rates: list[dict[str, Any]],
     module1_start_date: date | None,
-    module1_annual_net_eur: Decimal,
+    module1_annual_net_eur: Decimal | None,
     vat_percent: Decimal,
 ) -> list[dict[str, Any]]:
     """Create auditable CSV rows for user inputs, agreements, and API fees."""
@@ -467,7 +467,7 @@ def build_daily_cost_report(
     timezone: str,
     contract_start_network_charge_ct_kwh: Decimal,
     module1_start_date: date | None,
-    module1_annual_net_eur: Decimal,
+    module1_annual_net_eur: Decimal | None,
     fallback_vat_fraction: Decimal,
     module3_start_date: date | None = None,
     manual_module3_rates: list[dict[str, Any]] | None = None,
@@ -480,7 +480,7 @@ def build_daily_cost_report(
     contract_start_network_charge_ct_kwh = _decimal(
         contract_start_network_charge_ct_kwh
     ) or Decimal(0)
-    module1_annual_net_eur = _decimal(module1_annual_net_eur) or Decimal(0)
+    module1_annual_net_eur = _decimal(module1_annual_net_eur)
     parsed_vat = _decimal(fallback_vat_fraction)
     fallback_vat_fraction = parsed_vat if parsed_vat is not None else Decimal("0.19")
     manual_module3_rates = manual_module3_rates or []
@@ -650,7 +650,11 @@ def build_daily_cost_report(
         current_product = _select_product(products, noon)
         standing = _standing_charge(current_product, noon, fallback_vat_fraction)
         module1_net = Decimal(0)
-        if module1_start_date is not None and current_date >= module1_start_date:
+        if (
+            module1_start_date is not None
+            and current_date >= module1_start_date
+            and module1_annual_net_eur is not None
+        ):
             days_in_year = (
                 date(current_date.year + 1, 1, 1) - date(current_date.year, 1, 1)
             ).days

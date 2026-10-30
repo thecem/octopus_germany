@@ -103,6 +103,12 @@ def load_grid_fee_schedule(
         "status": entry.get("status"),
         "source_note": entry.get("source_note"),
         "module1_credit_net_eur": module1_credit,
+        "module1_start_date": _schedule_date(
+            entry.get("module1_start_date"), "module1_start_date"
+        ),
+        "module3_start_date": _schedule_date(
+            entry.get("module3_start_date"), "module3_start_date"
+        ),
         "schedules": [
             {key: value for key, value in period.items() if key != "rates"}
             for period in parsed_periods

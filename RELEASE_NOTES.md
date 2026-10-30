@@ -1,5 +1,16 @@
 # Release Notes
 
+## Version 0.0.196 (2026-10-30)
+
+### Fixes
+
+- Use the matching grid-fee schedule's Module 1 annual net credit when the
+  action leaves it blank. Keep missing credits unset instead of assuming zero;
+  explicit action values, including zero, take precedence.
+- Support optional `module1_start_date` (eligibility) and `module3_start_date`
+  (effective date) in each schedule year as fallbacks for omitted action dates.
+  Leave dates unset when neither source provides them.
+
 ## Version 0.0.195 (2026-10-26)
 
 ### Fixes

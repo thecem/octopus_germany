@@ -11,6 +11,8 @@
           "status": "historical-example",
           "source_note": "User-provided reference values; verify before use.",
           "module1_credit_net_eur": 124.60,
+          "module1_start_date": null,
+          "module3_start_date": null,
           "schedules": [
             {
               "valid_from": "2024-01-01",
@@ -26,6 +28,8 @@
           "status": "example",
           "source_note": "User-provided reference values; verify before use.",
           "module1_credit_net_eur": 117.03,
+          "module1_start_date": null,
+          "module3_start_date": null,
           "schedules": [
             {
               "valid_from": "2025-04-01",
@@ -41,6 +45,8 @@
           "status": "example",
           "source_note": "User-provided reference values; verify before use.",
           "module1_credit_net_eur": 108.33,
+          "module1_start_date": null,
+          "module3_start_date": null,
           "schedules": [
             {
               "valid_from": "2026-01-01",
@@ -56,6 +62,8 @@
           "status": "provisional",
           "source_note": "User-provided provisional reference values; verify the final published schedule before use.",
           "module1_credit_net_eur": 108.10,
+          "module1_start_date": null,
+          "module3_start_date": null,
           "schedules": [
             {
               "valid_from": "2027-01-01",

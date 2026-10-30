@@ -33,6 +33,7 @@ from custom_components.octopus_germany.cost_report_export import (
 from custom_components.octopus_germany.file_exports import (
     async_notify_export_package_ready,
 )
+from custom_components.octopus_germany.grid_fee_schedule import load_grid_fee_schedule
 from custom_components.octopus_germany.service_handlers import async_register_services
 
 DAY = date(2026, 5, 1)
@@ -621,6 +622,176 @@ class CostExportTest(unittest.TestCase):
             assert cell.find("s:f", NS) is None
 
 
+@pytest.mark.parametrize(
+    ("schedule_credit", "action_credit", "expected_credit"),
+    [
+        (365, None, "365"),
+        (365, "", "365"),
+        (365, 730, "730"),
+        (365, 0, "0"),
+        (0, None, "0"),
+        (None, None, None),
+        (None, "", None),
+        (None, 730, "730"),
+    ],
+)
+def test_schedule_credit_and_date_fallbacks(
+    tmp_path: Path,
+    schedule_credit: int | None,
+    action_credit: int | str | None,
+    expected_credit: str | None,
+) -> None:
+    """Resolve optional schedule inputs without replacing explicit action values."""
+
+    async def exercise() -> None:
+        hass = Mock()
+        hass.config.time_zone = "Europe/Berlin"
+        hass.config.path = lambda *parts: str(tmp_path.joinpath(*parts))
+        hass.async_add_executor_job = AsyncMock(side_effect=asyncio.to_thread)
+        schedule_path = tmp_path / "octopus_germany/grid_fee_schedules.json"
+        schedule_path.parent.mkdir()
+        entry = {
+            "year": 2026,
+            "module1_start_date": "2026-05-16",
+            "module3_start_date": "2026-05-17",
+            "hourly_rate_types": [None] * 24,
+            "rates_net_ct_per_kwh": {},
+        }
+        if schedule_credit is not None:
+            entry["module1_credit_net_eur"] = schedule_credit
+        schedule_path.write_text(
+            json.dumps(
+                {
+                    "format_version": 1,
+                    "grid_operators": [
+                        {"grid_operator_code": "EXAMPLE", "years": [entry]}
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        client = Mock()
+        client.fetch_electricity_measurements_range = AsyncMock(
+            return_value=[
+                item
+                for items in readings(DAY, date(2026, 5, 31)).values()
+                for item in items
+            ]
+        )
+        coordinator = Mock(
+            data={
+                "A-EXAMPLE": {
+                    "products": products(),
+                    "property_ids": ["EXAMPLE"],
+                    "malo_number": "EXAMPLE",
+                    "grid_operator_code": "EXAMPLE",
+                }
+            }
+        )
+        await async_register_services(hass, Mock(), Mock(), Mock(), None)
+        handler = next(
+            call.args[2]
+            for call in hass.services.async_register.call_args_list
+            if call.args[1] == "export_cost_report"
+        )
+        fields = {
+            "account_number": "A-EXAMPLE",
+            "period": "month",
+            "year": 2026,
+            "month": 5,
+            "module3_rates_json": [
+                {
+                    "rate_type": "STANDARD",
+                    "start_time": "00:00:00",
+                    "end_time": "00:00:00",
+                    "rate_cents_per_kwh": 5,
+                }
+            ],
+        }
+        if action_credit is not None:
+            fields["module1_annual_credit_net_eur"] = action_credit
+        with (
+            patch(
+                "custom_components.octopus_germany.service_handlers._resolve_account_context",
+                return_value=(coordinator, client),
+            ),
+            patch(
+                "custom_components.octopus_germany.service_handlers._fetch_grid_fee_schedules",
+                new=AsyncMock(return_value=grid_fees()[(2026, 5)]),
+            ),
+            patch(
+                "custom_components.octopus_germany.service_handlers.async_notify_export_ready",
+                new=AsyncMock(return_value="/download/cost.csv"),
+            ),
+        ):
+            for explicit_dates in (False, True):
+                if explicit_dates:
+                    fields["module1_start_date"] = "2026-05-20"
+                    fields["module3_start_date"] = "2026-05-21"
+                result = await handler(
+                    ServiceCall(hass, DOMAIN, "export_cost_report", fields)
+                )
+                contents = await asyncio.to_thread(
+                    Path(result["output_file"]).read_text, encoding="utf-8-sig"
+                )
+                rows = list(csv.DictReader(contents.splitlines(), delimiter=";"))
+                parameters = json.loads(
+                    next(
+                        row["basis_value"]
+                        for row in rows
+                        if row["basis_key"] == "calculation_parameters"
+                    )
+                )
+                assert parameters["module1_annual_credit_net_eur"] == expected_credit
+                assert parameters["module1_effective_date"] == (
+                    "2026-05-20" if explicit_dates else "2026-05-16"
+                )
+                assert parameters["module3_effective_date"] == (
+                    "2026-05-21" if explicit_dates else "2026-05-17"
+                )
+                day = next(row for row in rows if row["date"] == "2026-05-20")
+                assert Decimal(day["module1_credit_net_eur"].replace(",", ".")) == (
+                    Decimal(expected_credit) / 365
+                    if expected_credit is not None
+                    else Decimal(0)
+                )
+                before = next(row for row in rows if row["date"] == "2026-05-15")
+                assert Decimal(before["module1_credit_net_eur"].replace(",", ".")) == 0
+                if expected_credit is None:
+                    assert any(
+                        "no credit is applied" in warning
+                        for warning in result["warnings"]
+                    )
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("field", ["module1_start_date", "module3_start_date"])
+def test_schedule_dates_are_optional_and_validated(tmp_path: Path, field: str) -> None:
+    """Keep unknown dates and credit unset and reject malformed dates."""
+    entry = {
+        "year": 2026,
+        "hourly_rate_types": [None] * 24,
+        "rates_net_ct_per_kwh": {},
+    }
+    document = {
+        "format_version": 1,
+        "grid_operators": [{"grid_operator_code": "EXAMPLE", "years": [entry]}],
+    }
+    path = tmp_path / "grid_fee_schedules.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    loaded = load_grid_fee_schedule(path, "EXAMPLE", 2026, "Europe/Berlin")
+    assert loaded is not None
+    assert loaded["module1_credit_net_eur"] is None
+    assert loaded["module1_start_date"] is None
+    assert loaded["module3_start_date"] is None
+    for value in ("2026-02-30", "not-a-date"):
+        entry[field] = value
+        path.write_text(json.dumps(document), encoding="utf-8")
+        with pytest.raises(ValueError, match=field):
+            load_grid_fee_schedule(path, "EXAMPLE", 2026, "Europe/Berlin")
+
+
 class ExportPackageServiceTest(unittest.TestCase):
     """Exercise registration, one-fetch package output and download response."""
 
@@ -734,6 +905,8 @@ class ExportPackageServiceTest(unittest.TestCase):
                 assert result["incomplete_days"] == 0
                 assert result["grid_fee_schedule_file_status"] == "matched"
                 assert schedule_io == ["is_file", "open"]
+                annual_input = sheet_cells(Path(result["output_file"]), 2)["B5"]
+                assert annual_input.find("s:v", NS) is None
                 assert len(result["files"]) == 2
                 assert {item["type"] for item in result["files"]} == {
                     "xlsx",

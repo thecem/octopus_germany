@@ -93,6 +93,11 @@ Cost reports use agreement prices and the network operator's time-valid API rate
 
 When API rates are missing, an optional [operator-specific hourly schedule file](../../docs/examples/grid_fee_schedules.example.json) can supply separate values for each hour and validity period.
 
+Each schedule year may also supply `module1_credit_net_eur`,
+`module1_start_date` (eligibility), and `module3_start_date` (effective date)
+when the action omits them. Explicit action values, including a zero credit,
+take precedence. Missing credits and dates remain unset; no credit is assumed.
+
 Generated CSV files are stored under `/config/octopus_germany/exports`. Each export creates a persistent Home Assistant notification with a file-scoped browser-download link that expires after 30 days.
 
 ## Documentation Structure

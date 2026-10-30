@@ -988,10 +988,7 @@ async def async_register_services(
             call.data.get(ATTR_MODULE3_RATES_JSON)
         )
         eam_2025_prefill = _is_eam_2025_module3_prefill(manual_module3_rates)
-        if manual_module3_rates and module3_start is None and not eam_2025_prefill:
-            _raise_validation_error(
-                "module3_start_date is required when manual Module 3 rates are entered"
-            )
+        has_manual_module3_rates = bool(manual_module3_rates)
         module1_start = _optional_service_date(
             call.data.get(ATTR_MODULE1_START_DATE), ATTR_MODULE1_START_DATE
         )
@@ -1105,24 +1102,33 @@ async def async_register_services(
                 "docs/examples/grid_fee_schedules.example.json."
             )
 
+        if user_schedule is not None:
+            if module1_start is None:
+                module1_start = user_schedule.get("module1_start_date")
+            if module3_start is None:
+                module3_start = user_schedule.get("module3_start_date")
+        if has_manual_module3_rates and module3_start is None and not eam_2025_prefill:
+            _raise_validation_error(
+                "module3_start_date is required when manual Module 3 rates are entered"
+            )
         if module1_annual_input in (None, ""):
             schedule_module1_credit = (
                 user_schedule.get("module1_credit_net_eur")
                 if user_schedule is not None
                 else None
             )
-            module1_annual = schedule_module1_credit or Decimal(0)
+            module1_annual = schedule_module1_credit
             if module1_start is not None and schedule_module1_credit is None:
                 preset_warnings.append(
                     "No Module 1 annual credit was entered or found in the matching "
-                    "schedule file; zero is used. Verify the credit or enter it in "
-                    "module1_annual_credit_net_eur."
+                    "schedule file; no credit is applied. Verify the credit or "
+                    "enter it in module1_annual_credit_net_eur."
                 )
         else:
             module1_annual = _decimal_service_value(
                 module1_annual_input, ATTR_MODULE1_ANNUAL_CREDIT
             )
-        if module1_annual < 0:
+        if module1_annual is not None and module1_annual < 0:
             _raise_validation_error("Module 1 must be non-negative")
         readings_by_date: dict[str, list[dict[str, Any]]] = {}
         grid_fees_by_month: dict[tuple[int, int], dict[str, Any] | None] = {}
@@ -1277,6 +1283,12 @@ async def async_register_services(
                             "source_note": user_schedule.get("source_note"),
                             "module1_credit_net_eur": user_schedule.get(
                                 "module1_credit_net_eur"
+                            ),
+                            "module1_start_date": user_schedule.get(
+                                "module1_start_date"
+                            ),
+                            "module3_start_date": user_schedule.get(
+                                "module3_start_date"
                             ),
                             "schedules": user_schedule.get("schedules"),
                         },

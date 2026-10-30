@@ -155,7 +155,7 @@ def write_cost_workbook(  # noqa: C901, PLR0912, PLR0913, PLR0915
     basis_rows: list[dict[str, Any]],
     timezone: str,
     baseline: Decimal,
-    module1_annual: Decimal,
+    module1_annual: Decimal | None,
     module1_start: date | None,
     vat: Decimal,
     comparison: str,

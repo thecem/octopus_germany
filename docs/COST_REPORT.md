@@ -125,13 +125,21 @@ Each year contains a `schedules` array for one or more non-overlapping validity 
 
 The year's optional `module1_credit_net_eur` is used only when `module1_annual_credit_net_eur` is blank in the service call. An explicit service value, including zero, takes precedence. `basis_rate_net_ct_per_kwh` is informational and is **not** the contract-start baseline used in the unit-price adjustment. The matched schedule and its hourly values are recorded in a `BASIS` CSV row. Missing, invalid, or unmatched files generate a service warning rather than being silently ignored.
 
+Each year may also contain `module1_start_date` (Module 1 eligibility date)
+and `module3_start_date` (customer-selected Module 3 effective date), using
+`YYYY-MM-DD`. These are customer-specific dates, not the operator's rate
+validity dates. Explicit action dates take precedence; otherwise the matching
+file dates are used. Omit these keys or use `null` when unknown; the example
+does not assume eligibility or enrollment. If neither source supplies an annual
+credit, it stays unset in the calculation inputs and no credit is applied.
+
 ### Standing charge
 
 The report uses the agreement's validity-dated gross monthly standing charge when available. If only the net monthly amount is available, it applies the VAT fallback. The monthly amount is converted to a daily amount using `monthly amount * 12 / 365`, then applied to each actual day in the report period. This reflects tariffs billed by day rather than assigning the same standing charge to every calendar month.
 
 ### Module 1 credit
 
-When `module1_start_date` is set, `module1_annual_credit_net_eur` is divided by the number of days in each calendar year and applied from that date onward. The report converts the daily net credit to gross using the VAT fallback and subtracts it from the gross total. Enter the annual amount that applies to the selected report year; leave the date unset and use zero when it does not apply or is unknown.
+When both the Module 1 start date and annual credit are available from the action or matching schedule, the annual credit is divided by the number of days in each calendar year and applied from that date onward. The report converts the daily net credit to gross using the VAT fallback and subtracts it from the gross total. Enter the annual amount that applies to the selected report year. Unknown amounts and dates remain unset; an explicit zero credit in the action disables the credit even if the file provides an amount.
 
 ## Parameters
 
@@ -141,10 +149,10 @@ When `module1_start_date` is set, `module1_annual_credit_net_eur` is divided by 
 | `property_id` | Optional electricity property; defaults to the first property. |
 | `period`, `year`, `month` | Select month or calendar year; `month` is required for a monthly report. Current-year data ends two days before today. |
 | `contract_start_network_charge_ct_kwh` | Required documented net contract-start baseline in ct/kWh; default `7.65` is an unverified reference only. |
-| `module3_start_date` | Optional customer-declared/selected Module 3 effective date; controls when time-variable rates are used. |
+| `module3_start_date` | Optional customer-declared/selected Module 3 effective date; falls back to the matching file date and controls when time-variable rates are used. |
 | `module3_rates_json` | Optional manual net-rate intervals for periods when the API lacks matching rates. |
-| `module1_start_date` | Optional effective date for prorating the Module 1 credit. |
-| `module1_annual_credit_net_eur` | Optional net annual credit for the selected report year; an explicit value (including zero) wins, otherwise the matching file value is used, then zero. |
+| `module1_start_date` | Optional eligibility date for prorating the Module 1 credit; falls back to the matching file date. |
+| `module1_annual_credit_net_eur` | Optional net annual credit for the selected report year; an explicit value (including zero) wins, otherwise the matching file value is used. If neither supplies a value, it remains unset and no credit is applied. |
 | `vat_percent` | VAT fallback when an agreement price tier has no VAT value; defaults to 19%. |
 | `filename` | Optional output filename. |
 
