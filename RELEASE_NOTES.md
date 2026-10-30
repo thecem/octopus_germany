@@ -1,5 +1,16 @@
 # Release Notes
 
+## Version 0.0.197 (2026-10-30)
+
+### Fixes
+
+- Make the contract-start network charge optional. When omitted, resolve the
+  original contract's normal basis fee by network operator, agreement start
+  year, and schedule validity period; missing or ambiguous values mark affected
+  calculations incomplete. Explicit values, including zero, remain overrides.
+- Record each resolved baseline and show schedule validity periods and basis
+  values on the XLSX `Eingaben` sheet.
+
 ## Version 0.0.196 (2026-10-30)
 
 ### Fixes

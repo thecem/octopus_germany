@@ -133,7 +133,7 @@ Exports a daily/monthly electricity-cost estimate for a month or calendar year. 
 
 - `account_number` (required); `property_id` (optional)
 - `period` and `year` (required); `month` required for monthly reports
-- `contract_start_network_charge_ct_kwh` (required; default `7.65` is an unverified reference)
+- `contract_start_network_charge_ct_kwh` (optional; explicit values, including `0`, take precedence; blank resolves the unique date-valid `basis_rate_net_ct_per_kwh` for each agreement from the local schedule file)
 - `module3_start_date`, `module3_rates_json` (optional)
 - `module1_start_date` (optional); `module1_annual_credit_net_eur` (optional; blank uses the matching file's yearly value, otherwise zero)
 - `vat_percent` (fallback, default 19); `filename` (optional)

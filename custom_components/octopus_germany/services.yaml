@@ -164,7 +164,7 @@ export_smart_meter_csv:
 
 export_cost_report:
   name: Export electricity cost report
-  description: Create a cost CSV or an offline XLSX and quarter-hour measurement CSV package from agreement prices, smart-meter readings, and variable grid fees. The service checks /config/octopus_germany/grid_fee_schedules.json for the detected network-operator code and report year; if missing or unmatched, the service response warns that it can be created from docs/examples/grid_fee_schedules.example.json. API rates take precedence, followed by explicit service rates and matching file rates. Files are saved under /config/octopus_germany/exports with a browser-download notification.
+  description: Create a cost CSV or an offline XLSX and quarter-hour measurement CSV package from agreement prices, smart-meter readings, and variable grid fees. The service checks /config/octopus_germany/grid_fee_schedules.json for the detected network-operator code and report year and, when needed, each agreement's start year; omitted contract-start network charge uses its unique date-valid basis_rate_net_ct_per_kwh. If schedules are missing or unmatched, the service response warns that the file can be created from docs/examples/grid_fee_schedules.example.json. API rates take precedence, followed by explicit service rates and matching file rates. Files are saved under /config/octopus_germany/exports with a browser-download notification.
   fields:
     format:
       name: Export format
@@ -244,15 +244,15 @@ export_cost_report:
         Net grid-fee component in ct/kWh that the original contract price sheet
         says is already included in the gross energy price. The report replaces
         this baseline with the applicable VNB grid fee; it does not add the full
-        grid fee again. Enter the documented contract value. The default 7.65
-        is a reference value from one VNB's 2024 price sheet, not a universal
-        or legal default; use it only if your original contract supports it. For
-        §14a EnWG calculations, the effective grid-fee schedule is selected
+        grid fee again. Optional: when blank, the integration selects the normal
+        basis_rate_net_ct_per_kwh for each agreement's validFrom date from the
+        matching local grid-fee schedule. The file must reflect the original
+        contract's embedded network-fee component; otherwise enter it manually.
+        For §14a EnWG calculations, the effective grid-fee schedule is selected
         using the declared Module 3 date and the VNB data/manual rates below.
         Regulatory context: BNetzA BK6-22-300 and BK8-22/010-A; this input alone
         does not establish eligibility or enrollment.
-      required: true
-      default: 7.65
+      required: false
       selector:
         number:
           min: 0

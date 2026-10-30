@@ -23,6 +23,7 @@ from .api.smart_meter import SmartMeterFetchError
 from .const import DOMAIN
 from .cost_report import (
     COST_REPORT_HEADERS,
+    agreement_key,
     build_cost_report_basis_rows,
     build_daily_cost_report,
     build_monthly_cost_summaries,
@@ -40,7 +41,10 @@ from .file_exports import (
     async_register_export_download_view,
     export_file_path,
 )
-from .grid_fee_schedule import load_grid_fee_schedule
+from .grid_fee_schedule import (
+    contract_start_basis_period,
+    load_grid_fee_schedule,
+)
 from .services import async_request_intelligent_refresh
 from .tariff import (
     normalize_variable_grid_fees,
@@ -96,6 +100,10 @@ def _decimal_service_value(value: Any, field_name: str) -> Decimal:
     if not result.is_finite():
         _raise_validation_error(f"{field_name} must be finite")
     return result
+
+
+def _is_negative_optional_decimal(value: Decimal | None) -> bool:
+    return value is not None and value < 0
 
 
 def _optional_service_date(value: Any, field_name: str) -> date | None:
@@ -422,6 +430,133 @@ ATTR_MODULE1_START_DATE = "module1_start_date"
 ATTR_MODULE1_ANNUAL_CREDIT = "module1_annual_credit_net_eur"
 ATTR_VAT_PERCENT = "vat_percent"
 ATTR_MODULE3_ENABLED = "module3_enabled"
+
+
+async def _resolve_contract_start_baselines(  # noqa: PLR0913
+    hass: HomeAssistant,
+    products: list[dict[str, Any]],
+    baseline: Decimal | None,
+    schedule_path: Path,
+    grid_operator_code: str | None,
+    timezone: str,
+    report_year: int,
+    report_schedule: dict[str, Any] | None,
+) -> tuple[
+    dict[tuple[str, str], Decimal | None],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[str],
+]:
+    """Resolve each agreement's baseline from its start-year schedule."""
+    schedule_by_year: dict[int, dict[str, Any] | None] = {report_year: report_schedule}
+    contract_baselines: dict[tuple[str, str], Decimal | None] = {}
+    details: list[dict[str, Any]] = []
+    warnings = []
+    if baseline is not None:
+        for product in products:
+            start = parse_product_datetime(product.get("validFrom"))
+            details.append(
+                {
+                    "agreement": product.get("name")
+                    or product.get("code")
+                    or "Unknown",
+                    "validFrom": product.get("validFrom"),
+                    "contract_start_date": (
+                        start.astimezone(ZoneInfo(timezone)).date()
+                        if start is not None
+                        else None
+                    ),
+                    "value": baseline,
+                    "source": "service input",
+                }
+            )
+    else:
+        for product in products:
+            key = agreement_key(product)
+            start = parse_product_datetime(product.get("validFrom"))
+            detail: dict[str, Any] = {
+                "agreement": product.get("name") or product.get("code") or "Unknown",
+                "validFrom": product.get("validFrom"),
+                "contract_start_date": None,
+                "value": None,
+                "source": "missing",
+            }
+            if start is not None:
+                contract_start_date = start.astimezone(ZoneInfo(timezone)).date()
+                contract_year = contract_start_date.year
+                detail["contract_start_date"] = contract_start_date
+                schedule = schedule_by_year.get(contract_year)
+                if contract_year not in schedule_by_year:
+                    schedule = None
+                    if await hass.async_add_executor_job(schedule_path.is_file):
+                        try:
+                            schedule = await hass.async_add_executor_job(
+                                load_grid_fee_schedule,
+                                schedule_path,
+                                grid_operator_code,
+                                contract_year,
+                                timezone,
+                            )
+                        except (OSError, json.JSONDecodeError, ValueError) as err:
+                            warnings.append(
+                                "The contract-start grid-fee schedule for "
+                                f"{contract_year} could not be used: {err}. "
+                                "Enter contract_start_network_charge_ct_kwh manually "
+                                "or correct "
+                                "/config/octopus_germany/grid_fee_schedules.json."
+                            )
+                    schedule_by_year[contract_year] = schedule
+                detail["schedule_year"] = contract_year
+                if schedule is not None:
+                    try:
+                        period_data = contract_start_basis_period(
+                            schedule, contract_start_date
+                        )
+                    except ValueError as err:
+                        period_data = None
+                        warnings.append(
+                            f"Contract-start net fee for {detail['agreement']} is not "
+                            f"unique: {err}. Enter "
+                            "contract_start_network_charge_ct_kwh manually."
+                        )
+                    if period_data is not None:
+                        value = period_data["basis_rate_net_ct_per_kwh"]
+                        contract_baselines[key] = value
+                        detail.update(
+                            {
+                                "value": value,
+                                "source": str(schedule_path),
+                                "valid_from": period_data.get("valid_from"),
+                                "valid_to": period_data.get("valid_to"),
+                            }
+                        )
+            if key not in contract_baselines:
+                contract_baselines[key] = None
+                if detail["source"] == "missing":
+                    contract_start_label = (
+                        detail["contract_start_date"] or "unknown contract start"
+                    )
+                    warnings.append(
+                        "No unique contract-start basis net fee was found for "
+                        f"{detail['agreement']} at {contract_start_label} "
+                        "in /config/octopus_germany/grid_fee_schedules.json. "
+                        "Enter contract_start_network_charge_ct_kwh manually; "
+                        "affected calculations will be incomplete."
+                    )
+            details.append(detail)
+
+    schedule_period_rows = [
+        {
+            "year": schedule_year,
+            "valid_from": period.get("valid_from"),
+            "valid_to": period.get("valid_to"),
+            "basis_rate_net_ct_per_kwh": period.get("basis_rate_net_ct_per_kwh"),
+        }
+        for schedule_year, schedule in sorted(schedule_by_year.items())
+        if schedule is not None
+        for period in schedule.get("schedules", [])
+    ]
+    return contract_baselines, details, schedule_period_rows, warnings
 
 
 async def async_register_services(
@@ -977,9 +1112,11 @@ async def async_register_services(
         if month_value is not None and not _MIN_MONTH <= int(month_value) <= _MAX_MONTH:
             _raise_validation_error("Month must be between 1 and 12")
 
-        baseline = _decimal_service_value(
-            call.data.get(ATTR_CONTRACT_START_NETWORK_CHARGE, 7.65),
-            ATTR_CONTRACT_START_NETWORK_CHARGE,
+        baseline_input = call.data.get(ATTR_CONTRACT_START_NETWORK_CHARGE)
+        baseline = (
+            _decimal_service_value(baseline_input, ATTR_CONTRACT_START_NETWORK_CHARGE)
+            if baseline_input not in (None, "")
+            else None
         )
         module3_start = _optional_service_date(
             call.data.get(ATTR_MODULE3_START_DATE), ATTR_MODULE3_START_DATE
@@ -996,7 +1133,7 @@ async def async_register_services(
         vat_percent = _decimal_service_value(
             call.data.get(ATTR_VAT_PERCENT, 19), ATTR_VAT_PERCENT
         )
-        if baseline < 0 or not 0 <= vat_percent <= 100:
+        if _is_negative_optional_decimal(baseline) or not 0 <= vat_percent <= 100:
             _raise_validation_error(
                 "Network baseline and Module 1 must be non-negative; VAT must be 0-100"
             )
@@ -1045,8 +1182,10 @@ async def async_register_services(
             if module3_start is not None:
                 preset_warnings.append(
                     "The prefilled 2025 sample Module 3 rates were not applied because "
-                    f"the detected network operator is {grid_operator_name or grid_operator_code or 'unknown'}, "
-                    "not the operator for those example rates. Enter this operator's rates in "
+                    "the detected network operator is "
+                    f"{grid_operator_name or grid_operator_code or 'unknown'}, "
+                    "not the operator for those example rates. Enter this operator's "
+                    "rates in "
                     "module3_rates_json."
                 )
         schedule_path = Path(
@@ -1075,7 +1214,8 @@ async def async_register_services(
                 schedule_file_status = "unmatched"
                 preset_warnings.append(
                     "No user grid-fee schedule matches the detected network-operator "
-                    f"code and report year ({grid_operator_code or 'unknown'}, {year}). "
+                    "code and report year "
+                    f"({grid_operator_code or 'unknown'}, {year}). "
                     "Add that operator and year to "
                     "/config/octopus_germany/grid_fee_schedules.json if needed."
                 )
@@ -1102,6 +1242,22 @@ async def async_register_services(
                 "docs/examples/grid_fee_schedules.example.json."
             )
 
+        (
+            contract_start_baselines,
+            contract_start_details,
+            schedule_period_rows,
+            baseline_warnings,
+        ) = await _resolve_contract_start_baselines(
+            hass,
+            products,
+            baseline,
+            schedule_path,
+            grid_operator_code,
+            timezone,
+            year,
+            user_schedule,
+        )
+        preset_warnings.extend(baseline_warnings)
         if user_schedule is not None:
             if module1_start is None:
                 module1_start = user_schedule.get("module1_start_date")
@@ -1166,7 +1322,10 @@ async def async_register_services(
                     "15min",
                 )
             except SmartMeterFetchError as err:
-                msg = f"Unable to fetch cost-report readings {range_start} to {range_end}: {err}"
+                msg = (
+                    "Unable to fetch cost-report readings "
+                    f"{range_start} to {range_end}: {err}"
+                )
                 _LOGGER.exception("%s", msg)
                 raise HomeAssistantError(msg) from err
             readings_by_date.update(_group_readings_by_local_date(readings, timezone))
@@ -1217,18 +1376,20 @@ async def async_register_services(
                 current_network if export_format == "package" else None
             ),
             strict_standard_grid_fee=export_format == "package",
+            contract_start_baselines=contract_start_baselines,
         )
         if export_format == "package":
             priced_instants = {
                 item["start"]
                 for item in interval_details
                 if item["network_rate"] is not None
+                and item["contract_start_network_charge_ct_kwh"] is not None
             }
             for row in report_rows:
                 day = row["date"]
                 if day in reading_issues:
                     row["status"] = f"incomplete: {reading_issues[day]}"
-                elif any(
+                elif row["status"] == "complete" and any(
                     datetime.fromisoformat(reading["start_time"]) not in priced_instants
                     for reading in readings_by_date[day]
                 ):
@@ -1248,6 +1409,19 @@ async def async_register_services(
             module1_annual_net_eur=module1_annual,
             vat_percent=vat_percent,
         )
+        basis_rows.append(
+            {
+                "record_type": "BASIS",
+                "date": "BASIS",
+                "basis_key": "contract_start_baseline_resolution",
+                "basis_value": json.dumps(
+                    contract_start_details,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    default=str,
+                ),
+            }
+        )
         if export_format == "package":
             basis_rows.append(
                 {
@@ -1263,7 +1437,9 @@ async def async_register_services(
                                 else None
                             ),
                             "measurement_timezone": timezone,
-                            "intervals": "15min; local days may contain 92, 96 or 100 slots",
+                            "intervals": (
+                                "15min; local days may contain 92, 96 or 100 slots"
+                            ),
                         },
                     ),
                 }
@@ -1442,6 +1618,8 @@ async def async_register_services(
                         comparison,
                         current_network,
                         warnings,
+                        contract_start_details,
+                        schedule_period_rows,
                     )
                     for target in (measurement_path, workbook_path):
                         (staging / target.name).replace(target)
@@ -1515,7 +1693,7 @@ async def async_register_services(
             _raise_validation_error("Month must be between 1 and 12")
 
         baseline = _decimal_service_value(
-            call.data.get(ATTR_CONTRACT_START_NETWORK_CHARGE, 7.65),
+            call.data.get(ATTR_CONTRACT_START_NETWORK_CHARGE),
             ATTR_CONTRACT_START_NETWORK_CHARGE,
         )
         module3_start = _optional_service_date(

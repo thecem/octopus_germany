@@ -45,6 +45,10 @@
         "standard_network_charge_ct_kwh": {
           "name": "Normal annual grid fee (net ct/kWh)",
           "description": "Required for current_year and used for package intervals before Module 3. Enter the documented normal annual fee, not the Module 3 ST band."
+        },
+        "contract_start_network_charge_ct_kwh": {
+          "name": "Contract-start network charge",
+          "description": "Optional net baseline already included in the original gross contract price. If blank, the unique date-valid basis_rate_net_ct_per_kwh for each agreement start is used from the local schedule; otherwise enter the documented value manually."
         }
       }
     }

@@ -117,6 +117,27 @@ def load_grid_fee_schedule(
     }
 
 
+def contract_start_basis_period(
+    schedule: dict[str, Any], contract_start: date
+) -> dict[str, Any] | None:
+    """Return the unique schedule period covering a contract start date."""
+    matching = [
+        period
+        for period in schedule.get("schedules", [])
+        if period.get("valid_from") is not None
+        and date.fromisoformat(period["valid_from"]) <= contract_start
+        and (
+            period.get("valid_to") is None
+            or contract_start < date.fromisoformat(period["valid_to"])
+        )
+    ]
+    if len(matching) > 1:
+        raise ValueError("multiple grid-fee schedules match the contract start date")
+    if not matching or matching[0].get("basis_rate_net_ct_per_kwh") is None:
+        return None
+    return matching[0]
+
+
 def _parse_schedule_period(
     schedule: dict[str, Any],
     year_entry: dict[str, Any],

@@ -58,7 +58,7 @@ def cost_report_headers(rows: list[dict[str, Any]]) -> list[str]:
 def build_cost_report_basis_rows(
     products: list[dict[str, Any]],
     grid_fees_by_month: dict[tuple[int, int], dict[str, Any] | None],
-    contract_start_network_charge_ct_kwh: Decimal,
+    contract_start_network_charge_ct_kwh: Decimal | None,
     module3_start_date: date | None,
     manual_module3_rates: list[dict[str, Any]],
     module1_start_date: date | None,
@@ -77,7 +77,9 @@ def build_cost_report_basis_rows(
             "basis_key": "calculation_parameters",
             "basis_value": encode(
                 {
-                    "contract_start_network_charge_net_ct_per_kwh": contract_start_network_charge_ct_kwh,
+                    "contract_start_network_charge_net_ct_per_kwh": (
+                        contract_start_network_charge_ct_kwh
+                    ),
                     "module3_effective_date": module3_start_date,
                     "manual_module3_rates_net": manual_module3_rates,
                     "module1_effective_date": module1_start_date,
@@ -92,11 +94,12 @@ def build_cost_report_basis_rows(
         }
     ]
     for product in products:
+        agreement_id = product.get("code") or product.get("name") or "unknown"
         rows.append(
             {
                 "record_type": "BASIS",
                 "date": "BASIS",
-                "basis_key": f"agreement:{product.get('code') or product.get('name') or 'unknown'}",
+                "basis_key": f"agreement:{agreement_id}",
                 "basis_value": encode(
                     {
                         "code": product.get("code"),
@@ -303,6 +306,73 @@ def _select_product(
     return max(matches, key=lambda item: item.get("validFrom") or "")
 
 
+def agreement_key(product: dict[str, Any]) -> tuple[str, str]:
+    """Return a stable key for one agreement and its validity start."""
+    return (
+        str(product.get("code") or product.get("name") or "unknown"),
+        str(product.get("validFrom") or ""),
+    )
+
+
+def _resolve_contract_baseline(
+    product: dict[str, Any],
+    explicit_baseline: Decimal | None,
+    contract_baselines: Mapping[tuple[str, str], Decimal | None] | None,
+) -> Decimal | None:
+    if explicit_baseline is not None:
+        return explicit_baseline
+    return (contract_baselines or {}).get(agreement_key(product))
+
+
+def _contract_baseline_source(
+    explicit_baseline: Decimal | None, baseline: Decimal | None
+) -> str:
+    if baseline is None:
+        return "missing"
+    return "explicit" if explicit_baseline is not None else "schedule"
+
+
+def _network_cost_adjustment(
+    quantity: Decimal,
+    base_rate: Decimal,
+    network_rate: Decimal | None,
+    contract_baseline: Decimal | None,
+    vat: Decimal,
+) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+    if contract_baseline is None:
+        return (
+            Decimal(0),
+            Decimal(0),
+            quantity,
+            quantity if network_rate is None else Decimal(0),
+        )
+    if network_rate is None:
+        return Decimal(0), Decimal(0), Decimal(0), quantity
+    adjustment = (
+        quantity
+        * (network_rate * Decimal(100) - contract_baseline)
+        * (Decimal(1) + vat)
+        / Decimal(100)
+    )
+    final_cost = quantity * (
+        base_rate
+        + (network_rate * Decimal(100) - contract_baseline)
+        * (Decimal(1) + vat)
+        / Decimal(100)
+    )
+    return adjustment, final_cost, Decimal(0), Decimal(0)
+
+
+def _network_incomplete_status(
+    missing_baseline_kwh: Decimal, missing_network_kwh: Decimal
+) -> str | None:
+    if missing_baseline_kwh > 0:
+        return "incomplete: contract-start network charge missing"
+    if missing_network_kwh > 0:
+        return "incomplete: network rate missing"
+    return None
+
+
 def _rule_matches(rate: dict[str, Any], at: datetime) -> bool:
     local_time = at.timetz().replace(tzinfo=None)
     rules = rate.get("activation_rules") or []
@@ -465,7 +535,7 @@ def build_daily_cost_report(
     start_date: date,
     end_date: date,
     timezone: str,
-    contract_start_network_charge_ct_kwh: Decimal,
+    contract_start_network_charge_ct_kwh: Decimal | None,
     module1_start_date: date | None,
     module1_annual_net_eur: Decimal | None,
     fallback_vat_fraction: Decimal,
@@ -475,11 +545,12 @@ def build_daily_cost_report(
     interval_details: list[dict[str, Any]] | None = None,
     normal_network_charge_ct_kwh: Decimal | None = None,
     strict_standard_grid_fee: bool = False,
+    contract_start_baselines: Mapping[tuple[str, str], Decimal | None] | None = None,
 ) -> list[dict[str, Any]]:
     """Build one detailed billing CSV row per local day."""
     contract_start_network_charge_ct_kwh = _decimal(
         contract_start_network_charge_ct_kwh
-    ) or Decimal(0)
+    )
     module1_annual_net_eur = _decimal(module1_annual_net_eur)
     parsed_vat = _decimal(fallback_vat_fraction)
     fallback_vat_fraction = parsed_vat if parsed_vat is not None else Decimal("0.19")
@@ -499,6 +570,7 @@ def build_daily_cost_report(
         tariff_labels: dict[str, str] = {}
         unpriced_kwh = Decimal(0)
         missing_network_kwh = Decimal(0)
+        missing_baseline_kwh = Decimal(0)
         agreement_names: set[str] = set()
         modules_seen: set[str] = set()
         module3_rate_bases: set[str] = set()
@@ -530,6 +602,11 @@ def build_daily_cost_report(
             if base_rate is None:
                 unpriced_kwh += quantity
                 continue
+            contract_baseline = _resolve_contract_baseline(
+                product,
+                contract_start_network_charge_ct_kwh,
+                contract_start_baselines,
+            )
 
             api_module = str(grid_fee_data.get("module") or "UNKNOWN").upper()
             module3_selected = (
@@ -594,24 +671,16 @@ def build_daily_cost_report(
             tariff_labels[tariff_slug] = tariff
             block = (tariff_slug, _column_slug(band))
             base_cost = quantity * base_rate
-            if network_rate is None:
-                missing_network_kwh += quantity
-                gross_adjustment = Decimal(0)
-                final_cost = Decimal(0)
-            else:
-                gross_adjustment = (
-                    quantity
-                    * (
-                        network_rate * Decimal(100)
-                        - contract_start_network_charge_ct_kwh
-                    )
-                    * (Decimal(1) + vat)
-                    / Decimal(100)
-                )
-                final_rate = base_rate + (
-                    network_rate * Decimal(100) - contract_start_network_charge_ct_kwh
-                ) * (Decimal(1) + vat) / Decimal(100)
-                final_cost = quantity * final_rate
+            (
+                gross_adjustment,
+                final_cost,
+                missing_baseline,
+                missing_network,
+            ) = _network_cost_adjustment(
+                quantity, base_rate, network_rate, contract_baseline, vat
+            )
+            missing_baseline_kwh += missing_baseline
+            missing_network_kwh += missing_network
             quantities[block] = quantities.get(block, Decimal(0)) + quantity
             base_costs[block] = base_costs.get(block, Decimal(0)) + base_cost
             adjustments[block] = adjustments.get(block, Decimal(0)) + gross_adjustment
@@ -639,6 +708,10 @@ def build_daily_cost_report(
                         "gross_rate": base_rate,
                         "vat": vat,
                         "network_rate": network_rate,
+                        "contract_start_network_charge_ct_kwh": contract_baseline,
+                        "contract_start_baseline_source": _contract_baseline_source(
+                            contract_start_network_charge_ct_kwh, contract_baseline
+                        ),
                         "band": band,
                         "network_source": interval_source,
                         "module3_selected": module3_selected,
@@ -669,8 +742,10 @@ def build_daily_cost_report(
             status = "missing readings"
         elif unpriced_kwh > 0:
             status = "incomplete: tariff price missing"
-        elif missing_network_kwh > 0:
-            status = "incomplete: network rate missing"
+        elif network_status := _network_incomplete_status(
+            missing_baseline_kwh, missing_network_kwh
+        ):
+            status = network_status
         elif standing is None:
             status = "incomplete: standing charge missing"
 
@@ -696,6 +771,7 @@ def build_daily_cost_report(
             - module1_gross,
             "unpriced_kwh": unpriced_kwh,
             "network_rate_missing_kwh": missing_network_kwh,
+            "contract_start_baseline_missing_kwh": missing_baseline_kwh,
             "status": status,
         }
         for (tariff_slug, band_slug), quantity in quantities.items():

@@ -35,7 +35,7 @@ data:
   year: 2026
   month: 5
   format: package
-  contract_start_network_charge_ct_kwh: 7.65  # eigenen Vertragswert pruefen
+  # Optional: weglassen, um basis_rate_net_ct_per_kwh je Vertrag zu verwenden.
   network_comparison: contract_start
 response_variable: cost_export
 ```
@@ -117,7 +117,7 @@ angepasster Brutto-AP [EUR/kWh]
 
 Die angepassten Intervallkosten ergeben sich aus kWh mal angepasstem AP. Die Netzentgeltdifferenz wird vor dem Aufschlag von ct in EUR umgerechnet. Vorrang hat der MwSt.-Satz aus der passenden Agreement-Preisstufe; andernfalls gilt `vat_percent`.
 
-`contract_start_network_charge_ct_kwh` ist der **Netto-Netzentgeltanteil, der bereits im urspruenglichen Brutto-Vertrags-AP enthalten war**. Es ist weder das gesamte aktuelle Netzentgelt noch ein aus dem Tarifnamen abgeleiteter Wert. Die Vorgabe `7.65 ct/kWh` ist nur ein unbestaetigter Referenzwert aus dem Preisblatt eines VNB aus 2024. Vor Verwendung der Summen mit dem Vertrag/Preisblatt fuer den konkreten Zaehlerpunkt abgleichen.
+`contract_start_network_charge_ct_kwh` ist der **Netto-Netzentgeltanteil, der bereits im urspruenglichen Brutto-Vertrags-AP enthalten war**. Es ist weder das gesamte aktuelle Netzentgelt noch ein aus dem Tarifnamen abgeleiteter Wert. Ein explizit angegebener Wert, auch `0`, hat Vorrang. Ohne Eingabe verwendet der Bericht je Agreement dessen `validFrom`-Datum und den passenden Netzbetreiber-/Jahreseintrag in der lokalen Datei. Ausgewaehlt wird der eindeutige Zeitraum mit inklusivem `valid_from` und exklusivem `valid_to`; verwendet wird dessen dokumentierter `basis_rate_net_ct_per_kwh`-Wert, nicht ein Modul-3-ST-Band. Die Datei muss den im urspruenglichen Vertrag enthaltenen Netzentgeltanteil abbilden. Es gibt keinen stillen Rueckfall auf `7.65` oder null. Fehlender Vertragsbeginn oder fehlender/nicht eindeutiger Basiswert erzeugt eine Warnung und markiert betroffene Berechnungen als unvollstaendig, bis der Wert manuell angegeben wird.
 
 ### Modul-3-Netzentgelte
 
@@ -142,7 +142,7 @@ Der Service kann auch `/config/octopus_germany/grid_fee_schedules.json` lesen un
 
 Jahreseintraege enthalten ein `schedules`-Array fuer einen oder mehrere, nicht ueberlappende Gueltigkeitszeitraeume. Jeder Zeitraum hat `valid_from`, ein exklusives `valid_to`, Netto-`rates_net_ct_per_kwh` und genau 24 `hourly_rate_types` fuer die Stunden 0 bis 23. Benachbarte Stunden bleiben getrennt. Akzeptierte Bezeichnungen sind `NT`/`ST`/`HT` und `OFFPEAK`/`STANDARD`/`PEAK`; `null` bedeutet, dass fuer diese Stunde kein Dateisatz vorliegt. Vorrang haben API-Saetze, dann explizite Service-JSON-Werte; passende Dateisaetze fuellen verbleibende Luecken.
 
-Der optionale Jahreswert `module1_credit_net_eur` wird nur verwendet, wenn `module1_annual_credit_net_eur` im Serviceaufruf leer ist. Ein expliziter Servicewert, auch null, hat Vorrang. `basis_rate_net_ct_per_kwh` ist ein Informationswert und **nicht** die Vertragsbaseline der Arbeitspreisanpassung. Passender Zeitplan und Stundenwerte werden in einer `BASIS`-CSV-Zeile dokumentiert. Fehlende, ungueltige oder nicht passende Dateien erzeugen eine Warnung, statt unbemerkt ignoriert zu werden.
+Der optionale Jahreswert `module1_credit_net_eur` wird nur verwendet, wenn `module1_annual_credit_net_eur` im Serviceaufruf leer ist. Ein expliziter Servicewert, auch null, hat Vorrang. `basis_rate_net_ct_per_kwh` ist der oben beschriebene normale Netto-Basiswert fuer den Vertragsstart-Fallback. Er muss den urspruenglichen Vertrag korrekt abbilden und wird nicht aus variablen Modul-3-Stundenwerten abgeleitet. Passender Zeitplan, Gueltigkeitszeitraum, Vertragsbeginn, verwendeter Basiswert und Herkunft werden in CSV und XLSX dokumentiert; das XLSX-Blatt `Eingaben` zeigt ebenfalls die Zeitraeume und Basiswerte. Fehlende, ungueltige oder nicht passende Eintraege erzeugen eine Warnung, statt unbemerkt ignoriert zu werden.
 
 ### Grundpreis
 
@@ -159,7 +159,7 @@ Ist `module1_start_date` gesetzt, wird `module1_annual_credit_net_eur` durch die
 | `account_number` | Erforderliches Konto, dessen Agreements und Messwerte exportiert werden. |
 | `property_id` | Optionale Strom-Property; ohne Angabe wird die erste verwendet. |
 | `period`, `year`, `month` | Monats- oder Kalenderjahresbericht; `month` ist fuer einen Monatsbericht erforderlich. Im laufenden Jahr endet der Abruf zwei Tage vor heute. |
-| `contract_start_network_charge_ct_kwh` | Erforderliche, dokumentierte Netto-Vertragsbaseline in ct/kWh; Vorgabe `7.65` ist nur ein unbestaetigter Referenzwert. |
+| `contract_start_network_charge_ct_kwh` | Optionaler dokumentierter Netto-Vertragsstartwert in ct/kWh; explizite Werte (auch null) haben Vorrang, sonst wird je `validFrom` des Vertrags ein eindeutiger Basiswert aus der lokalen Datei aufgeloest. |
 | `module3_start_date` | Optionales, vom Kunden angegebenes Wirksamkeitsdatum von Modul 3; bestimmt den Einsatz zeitvariabler Saetze. |
 | `module3_rates_json` | Optionale manuelle Netto-Zeitfenster fuer Zeitraeume, in denen passende API-Saetze fehlen. |
 | `module1_start_date` | Optionales Wirksamkeitsdatum fuer die zeitanteilige Modul-1-Gutschrift. |

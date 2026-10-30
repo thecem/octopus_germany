@@ -70,7 +70,7 @@ data:
   year: 2026
   month: 5
   format: package
-  contract_start_network_charge_ct_kwh: 7.65  # eigenen Vertragswert pruefen
+  # Optional: weglassen, um den belegten Basiswert je Vertragsbeginn aus der Datei zu verwenden.
   network_comparison: contract_start
 response_variable: monthly_cost_export
 ```

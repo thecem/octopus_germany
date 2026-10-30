@@ -30,7 +30,7 @@ data:
   year: 2026
   month: 5
   format: package
-  contract_start_network_charge_ct_kwh: 7.65  # verify your contract value
+  # Optional: omit to use the date-valid basis_rate_net_ct_per_kwh per agreement.
   network_comparison: contract_start
 response_variable: cost_export
 ```
@@ -98,7 +98,7 @@ adjusted gross unit price [EUR/kWh]
 
 The interval's adjusted energy cost is its kWh multiplied by that adjusted unit price. The network-fee difference is converted from cents to euros before it is added. VAT from the applicable agreement price is used when present; otherwise `vat_percent` is used.
 
-`contract_start_network_charge_ct_kwh` is the **net grid-fee component already embedded in the original gross contract unit price**. It is not the full current network fee, and it is not a value inferred from a tariff name. Its default, `7.65 ct/kWh`, is only an unverified reference from one network operator's 2024 price sheet. Check the original contract or price sheet for the metering point before relying on totals.
+`contract_start_network_charge_ct_kwh` is the **net grid-fee component already embedded in the original gross contract unit price**. It is not the full current network fee, and it is not a value inferred from a tariff name. An explicitly supplied value, including `0`, takes precedence. When omitted, the report uses each agreement's `validFrom` date and the matching network-operator/year entry in the local schedule file to find the unique period whose `valid_from` is inclusive and `valid_to` is exclusive. It uses that period's documented `basis_rate_net_ct_per_kwh`, not a Module 3 ST band. Ensure the file records the network-fee component from the original contract; there is no silent `7.65` or zero fallback. Missing contract dates or a missing/ambiguous basis value produce a warning and mark affected calculations incomplete until a value is entered manually.
 
 ### Module 3 grid fees
 
@@ -123,7 +123,7 @@ The service can also read `/config/octopus_germany/grid_fee_schedules.json`, sel
 
 Each year contains a `schedules` array for one or more non-overlapping validity periods. Each period includes `valid_from`, exclusive `valid_to`, net `rates_net_ct_per_kwh`, and exactly 24 `hourly_rate_types` entries indexed from 0 through 23. Adjacent hours remain separate. `NT`/`ST`/`HT` and `OFFPEAK`/`STANDARD`/`PEAK` are accepted labels; `null` means no file rate for that hour. API rates take precedence, then explicit service JSON rates, then matching file rates fill any remaining gaps.
 
-The year's optional `module1_credit_net_eur` is used only when `module1_annual_credit_net_eur` is blank in the service call. An explicit service value, including zero, takes precedence. `basis_rate_net_ct_per_kwh` is informational and is **not** the contract-start baseline used in the unit-price adjustment. The matched schedule and its hourly values are recorded in a `BASIS` CSV row. Missing, invalid, or unmatched files generate a service warning rather than being silently ignored.
+The year's optional `module1_credit_net_eur` is used only when `module1_annual_credit_net_eur` is blank in the service call. An explicit service value, including zero, takes precedence. `basis_rate_net_ct_per_kwh` is the normal net basis used for the contract-start fallback above; it must reflect the original contract and is never inferred from variable Module 3 hourly rates. The matched schedule, validity period, selected baseline, contract start and source are recorded in the CSV `BASIS` rows and XLSX. The XLSX `Eingaben` sheet also lists the schedule validity periods and basis values. Missing, invalid, or unmatched entries generate a service warning rather than being silently ignored.
 
 Each year may also contain `module1_start_date` (Module 1 eligibility date)
 and `module3_start_date` (customer-selected Module 3 effective date), using
@@ -148,7 +148,7 @@ When both the Module 1 start date and annual credit are available from the actio
 | `account_number` | Required account whose agreements and readings are exported. |
 | `property_id` | Optional electricity property; defaults to the first property. |
 | `period`, `year`, `month` | Select month or calendar year; `month` is required for a monthly report. Current-year data ends two days before today. |
-| `contract_start_network_charge_ct_kwh` | Required documented net contract-start baseline in ct/kWh; default `7.65` is an unverified reference only. |
+| `contract_start_network_charge_ct_kwh` | Optional documented net contract-start baseline in ct/kWh; explicit values (including zero) win, otherwise each agreement's validFrom date resolves a unique local schedule basis rate. |
 | `module3_start_date` | Optional customer-declared/selected Module 3 effective date; falls back to the matching file date and controls when time-variable rates are used. |
 | `module3_rates_json` | Optional manual net-rate intervals for periods when the API lacks matching rates. |
 | `module1_start_date` | Optional eligibility date for prorating the Module 1 credit; falls back to the matching file date. |
