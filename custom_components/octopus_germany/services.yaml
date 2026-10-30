@@ -261,7 +261,7 @@ export_cost_report:
           mode: box
     module3_start_date:
       name: Module 3 effective date
-      description: Date from which you declared or selected Module 3 for this metering point; the API module label alone does not determine applicability
+      description: Date from which you declared or selected Module 3 for this metering point; falls back to module3_start_date in the matching user schedule file. The API module label alone does not determine applicability.
       required: false
       selector:
         date:
@@ -275,13 +275,13 @@ export_cost_report:
         text:
     module1_start_date:
       name: Module 1 eligibility date
-      description: Optional date from which to prorate the annual Module 1 credit
+      description: Optional date from which to prorate the annual Module 1 credit; falls back to module1_start_date in the matching user schedule file.
       required: false
       selector:
         date:
     module1_annual_credit_net_eur:
       name: Module 1 annual credit (net)
-      description: Optional net annual Module 1 credit for the selected report year. When left empty, a matching user schedule file is used; if neither is available, zero is used and reported when a Module 1 start date is set.
+      description: Optional net annual Module 1 credit for the selected report year. Explicit values, including zero, take precedence. When left empty, a matching user schedule file is used; if neither provides a value, it remains unset and no credit is applied.
       required: false
       selector:
         number:

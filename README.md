@@ -107,6 +107,10 @@ To keep this start page compact, detailed documentation is split across focused 
   - [`docs/COST_REPORT.md`](docs/COST_REPORT.md)
 - Per-operator hourly grid-fee schedule file:
   - [`docs/examples/grid_fee_schedules.example.json`](docs/examples/grid_fee_schedules.example.json)
+  - Each year may supply `module1_credit_net_eur`, `module1_start_date` (eligibility),
+    and `module3_start_date` (effective date) when the action omits them.
+    Explicit action values, including a zero credit, take precedence.
+    Missing credits and dates remain unset; no credit is assumed.
 
 ### Quick Action Overview
 
