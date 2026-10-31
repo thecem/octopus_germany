@@ -8,7 +8,6 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.sensor import (
-    RestoreEntity,
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
@@ -16,6 +15,7 @@ from homeassistant.components.sensor import (
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN, UnitOfEnergy
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util.dt import as_utc
 

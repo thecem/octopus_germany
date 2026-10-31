@@ -272,9 +272,22 @@ class CostExportTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path, daily, details, _ = self.build(directory)
             cells = sheet_cells(path, 8)
+            invoice = sheet_cells(path, 1)
+            module1_row = invoice_labels(path)[
+                "Modul 1-Abzug (Tage / anteilig netto EUR)"
+            ]
             assert isclose(
                 cached_number(cells["K2"]),
                 float(daily[0]["total_after_module1_gross_eur"]),
+            )
+            assert cached_number(invoice[f"B{module1_row}"]) == 1
+            assert isclose(
+                cached_number(invoice[f"C{module1_row}"]),
+                float(daily[0]["module1_credit_net_eur"]),
+            )
+            assert isclose(
+                cached_number(invoice[f"D{module1_row}"]),
+                -float(daily[0]["module1_credit_gross_eur"]),
             )
             assert len(details) == 96
             assert cells["K2"].find("s:f", NS) is not None
@@ -957,6 +970,9 @@ class ExportPackageServiceTest(unittest.TestCase):
                             },
                             {
                                 "year": 2026,
+                                "module1_credit_net_eur": 108.33,
+                                "module1_start_date": "2026-05-16",
+                                "module3_start_date": "2026-05-01",
                                 "schedules": [
                                     {
                                         "valid_from": "2026-01-01",
@@ -1028,7 +1044,6 @@ class ExportPackageServiceTest(unittest.TestCase):
                 "year": 2026,
                 "month": 5,
                 "format": "package",
-                "module3_start_date": "2026-05-01",
             }
             with (
                 patch.object(Path, "open", checked_open),
@@ -1060,14 +1075,63 @@ class ExportPackageServiceTest(unittest.TestCase):
                 assert result["incomplete_days"] == 0
                 assert result["grid_fee_schedule_file_status"] == "matched"
                 assert schedule_io == ["is_file", "open", "is_file", "open"]
-                annual_input = sheet_cells(Path(result["output_file"]), 2)["B5"]
-                assert annual_input.find("s:v", NS) is None
                 inputs = sheet_cells(Path(result["output_file"]), 2)
-                assert cached_number(inputs["F2"]) == 7.65
-                assert sheet_text(Path(result["output_file"]), 2, "H2") == "2024-01-01"
-                assert sheet_text(Path(result["output_file"]), 2, "I2") == "2025-01-01"
-                assert cached_number(inputs["N2"]) == 7.65
-                assert cached_number(inputs["N3"]) == 5.48
+                assert sheet_text(Path(result["output_file"]), 2, "A9") == (
+                    "Vergleichsnetz netto ct/kWh"
+                )
+                assert sheet_text(Path(result["output_file"]), 2, "A10") == (
+                    "Eingabestatus"
+                )
+                assert cached_number(inputs["B2"]) == 7.65
+                assert "grid_fee_schedules.json" in sheet_text(
+                    Path(result["output_file"]), 2, "C2"
+                )
+                assert sheet_text(Path(result["output_file"]), 2, "D2").endswith(
+                    "Netzgrundlagen."
+                )
+                assert cached_number(inputs["B5"]) == 108.33
+                assert "grid_fee_schedules.json" in sheet_text(
+                    Path(result["output_file"]), 2, "C5"
+                )
+                excel_epoch = date(1899, 12, 30)
+                assert (
+                    cached_number(inputs["B7"])
+                    == (date(2026, 5, 16) - excel_epoch).days
+                )
+                assert (
+                    cached_number(inputs["B8"]) == (date(2026, 5, 1) - excel_epoch).days
+                )
+                assert "grid_fee_schedules.json" in sheet_text(
+                    Path(result["output_file"]), 2, "C7"
+                )
+                assert "grid_fee_schedules.json" in sheet_text(
+                    Path(result["output_file"]), 2, "C8"
+                )
+                network_basis = sheet_cells(Path(result["output_file"]), 10)
+                assert cached_number(network_basis["C2"]) == 7.65
+                assert sheet_text(Path(result["output_file"]), 10, "E2") == "2024-01-01"
+                assert sheet_text(Path(result["output_file"]), 10, "F2") == "2025-01-01"
+                scheduled_bases = {
+                    cached_number(cell)
+                    for reference, cell in network_basis.items()
+                    if reference.startswith("D")
+                    and cell.attrib.get("t") != "s"
+                    and cell.find("s:v", NS) is not None
+                }
+                assert {7.65, 5.48} <= scheduled_bases
+                invoice = sheet_cells(Path(result["output_file"]), 1)
+                module1_row = invoice_labels(Path(result["output_file"]))[
+                    "Modul 1-Abzug (Tage / anteilig netto EUR)"
+                ]
+                assert cached_number(invoice[f"B{module1_row}"]) == 16
+                assert isclose(
+                    cached_number(invoice[f"C{module1_row}"]),
+                    108.33 * 16 / 365,
+                )
+                assert isclose(
+                    cached_number(invoice[f"D{module1_row}"]),
+                    -108.33 * 16 / 365 * 1.19,
+                )
                 assert len(result["files"]) == 2
                 assert {item["type"] for item in result["files"]} == {
                     "xlsx",
@@ -1082,8 +1146,35 @@ class ExportPackageServiceTest(unittest.TestCase):
                     assert await asyncio.to_thread(Path(item["output_file"]).is_file)
                 assert not single.called
                 fields["contract_start_network_charge_ct_kwh"] = 0
+                fields["module1_annual_credit_net_eur"] = 0
+                fields["module1_start_date"] = "2026-05-20"
+                fields["module3_start_date"] = "2026-05-21"
+                fields["standard_network_charge_ct_kwh"] = 5
                 explicit = await handler(
                     ServiceCall(hass, DOMAIN, "export_cost_report", fields)
+                )
+                explicit_inputs = sheet_cells(Path(explicit["output_file"]), 2)
+                assert cached_number(explicit_inputs["B2"]) == 0
+                assert "Aktionseingabe" in sheet_text(
+                    Path(explicit["output_file"]), 2, "C2"
+                )
+                assert cached_number(explicit_inputs["B5"]) == 0
+                assert "Aktionseingabe" in sheet_text(
+                    Path(explicit["output_file"]), 2, "C5"
+                )
+                assert (
+                    cached_number(explicit_inputs["B7"])
+                    == (date(2026, 5, 20) - excel_epoch).days
+                )
+                assert "Aktionseingabe" in sheet_text(
+                    Path(explicit["output_file"]), 2, "C7"
+                )
+                assert (
+                    cached_number(explicit_inputs["B8"])
+                    == (date(2026, 5, 21) - excel_epoch).days
+                )
+                assert "Aktionseingabe" in sheet_text(
+                    Path(explicit["output_file"]), 2, "C8"
                 )
                 interval_cells = sheet_cells(Path(explicit["output_file"]), 7)
                 assert cached_number(interval_cells["T2"]) == 0
@@ -1140,6 +1231,7 @@ class ExportPackageServiceTest(unittest.TestCase):
                     )
                     assert response["grid_fee_schedule_file_status"] == expected_status
                 fields["format"] = "package"
+                fields.pop("standard_network_charge_ct_kwh")
                 fields["network_comparison"] = "current_year"
                 with pytest.raises(ServiceValidationError):
                     await handler(

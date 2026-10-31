@@ -19,6 +19,7 @@ from custom_components.octopus_germany import _async_fetch_account_data
 from custom_components.octopus_germany.api.queries import (
     AGREEMENT_STANDING_CHARGES_QUERY,
     ELECTRICITY_METERS_QUERY,
+    VEHICLE_DETAILS_QUERY,
 )
 from custom_components.octopus_germany.binary_sensor import (
     _create_intelligent_binary_entities,
@@ -57,6 +58,9 @@ from custom_components.octopus_germany.data_processing import (
     normalize_timeslots,
     normalize_unit_rate_forecast,
     process_ledgers,
+)
+from custom_components.octopus_germany.entities.charging import (
+    OctopusElectricitySmartMeterReadingsSensor as ChargingSmartMeterReadingsSensor,
 )
 from custom_components.octopus_germany.entities.electricity import (
     OctopusCombinedElectricityPriceSensor,
@@ -791,6 +795,38 @@ class TariffCapabilitiesTest(unittest.TestCase):
             {"ledgers": [{"ledgerType": "ELECTRICITY_LEDGER"}]}
         )
         assert not account_has_electricity({"ledgers": [{"ledgerType": "GAS_LEDGER"}]})
+
+    def test_device_preference_mode_is_scoped_away_from_inverters(self) -> None:
+        for query in (
+            INTELLIGENT_DATA_QUERY,
+            COMPREHENSIVE_QUERY,
+            VEHICLE_DETAILS_QUERY,
+        ):
+            assert "preferences {\n      mode" not in query
+            assert "preferences {\n        mode" not in query
+
+        assert "... on SmartFlexVehicle {\n      preferences { mode }" in (
+            INTELLIGENT_DATA_QUERY
+        )
+        assert "... on SmartFlexChargePoint {\n      preferences { mode }" in (
+            INTELLIGENT_DATA_QUERY
+        )
+        assert (
+            "... on SmartFlexVehicle {\n      id\n      name\n      preferences { mode }"
+            in COMPREHENSIVE_QUERY
+        )
+        assert (
+            "... on SmartFlexChargePoint {\n      preferences { mode }"
+            in COMPREHENSIVE_QUERY
+        )
+        assert "... on SmartFlexVehicle {\n      preferences { mode }" in (
+            VEHICLE_DETAILS_QUERY
+        )
+
+    def test_charging_sensor_uses_home_assistant_restore_entity(self) -> None:
+        from homeassistant.helpers.restore_state import RestoreEntity
+
+        assert issubclass(ChargingSmartMeterReadingsSensor, RestoreEntity)
 
     def test_device_entity_factory_skips_standard_tariffs(self) -> None:
         assert (

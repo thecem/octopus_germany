@@ -123,7 +123,6 @@ query IntelligentDataQuery($accountNumber: String!) {
       }
     }
     preferences {
-      mode
       targetType
       unit
       gridExport
@@ -146,6 +145,7 @@ query IntelligentDataQuery($accountNumber: String!) {
     }
     alerts { message publishedAt }
     ... on SmartFlexVehicle {
+      preferences { mode }
       vehicleVariant { model batterySize }
       chargingSessions(first: 100) {
         edges {
@@ -163,6 +163,7 @@ query IntelligentDataQuery($accountNumber: String!) {
       }
     }
     ... on SmartFlexChargePoint {
+      preferences { mode }
       chargingSessions(first: 100) {
         edges {
           node {
@@ -378,7 +379,6 @@ query ComprehensiveDataQuery($accountNumber: String!, $includeIntelligent: Boole
     }
     provider
     preferences {
-      mode
       schedules {
         dayOfWeek
         max
@@ -415,6 +415,7 @@ query ComprehensiveDataQuery($accountNumber: String!, $includeIntelligent: Boole
     ... on SmartFlexVehicle {
       id
       name
+      preferences { mode }
       status {
         current
         currentState
@@ -463,6 +464,7 @@ query ComprehensiveDataQuery($accountNumber: String!, $includeIntelligent: Boole
       }
     }
     ... on SmartFlexChargePoint {
+      preferences { mode }
       chargingSessions(first: 100) {
         edges {
           node {
@@ -941,9 +943,11 @@ query Vehicle($accountNumber: String = "") {
     }
     preferences {
       gridExport
-      mode
       targetType
       unit
+    }
+    ... on SmartFlexVehicle {
+      preferences { mode }
     }
   }
 }

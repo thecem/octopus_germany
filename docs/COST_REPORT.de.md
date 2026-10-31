@@ -42,8 +42,8 @@ response_variable: cost_export
 
 Die XLSX hat die Blaetter **Rechnung**, **Eingaben**, **Messwerte**,
 **Tarifpreise**, **Grundpreise**, **Netzpreise**, **Intervalle**,
-**Tageswerte** und **Basis**. Blau markierte Messwerte, Tarif-/Netzpreise
-und Intervall-Preis-IDs sind editierbar. Monatsrechnungen, Tarif- und
+**Tageswerte**, **Basis** und **Netzgrundlagen**. Blau markierte Messwerte,
+Tarif-/Netzpreise und Intervall-Preis-IDs sind editierbar. Monatsrechnungen, Tarif- und
 Netzband-Tagesmengen sowie Kosten aktualisieren sich offline, ohne Makros,
 API-Verbindungen oder externe Arbeitsmappenlinks. Der Export speichert
 initiale Formelergebnisse fuer Vorschauprogramme.
@@ -55,6 +55,16 @@ Umsatzsteuersaetzen sind dies verbrauchsgewichtete Durchschnittspreise
 im Blatt Netzpreise. Bei Nullverbrauch oder unvollstaendigen Daten bleiben
 die Preise leer. Die Details sind bereits im Gesamtbetrag verrechnet
 und duerfen nicht erneut addiert werden.
+
+Das Blatt **Eingaben** zeigt die tatsaechlich verwendeten Werte untereinander
+mit eigener Quellen- und Erlaeuterungsspalte. Das Blatt **Netzgrundlagen**
+enthaelt die Vertragsbaselines je Vertrag mit Vertragsstart, Quelle und
+Gueltigkeitszeitraum sowie die verwendeten Netzzeitraeume. Unterschiedliche
+Baselines werden nicht zu einem scheinbaren Einzelwert zusammengefasst.
+In der Rechnung zeigt die Modul-1-Zeile die beruecksichtigten Tage, den
+anteiligen Nettobetrag und den Bruttoabzug. Der Nettobetrag berechnet sich aus
+Jahresgutschrift mal beruecksichtigte Tage geteilt durch die Tage des Jahres;
+der Bruttoabzug verwendet den MwSt.-Ersatzwert.
 
 Die im Abruf gueltige **Vertragszuordnung** entscheidet, ob beispielsweise
 GO/STANDARD oder Heat Niedrig/Standard/Hoch verwendet wird. Es gibt kein
@@ -142,7 +152,7 @@ Der Service kann auch `/config/octopus_germany/grid_fee_schedules.json` lesen un
 
 Jahreseintraege enthalten ein `schedules`-Array fuer einen oder mehrere, nicht ueberlappende Gueltigkeitszeitraeume. Jeder Zeitraum hat `valid_from`, ein exklusives `valid_to`, Netto-`rates_net_ct_per_kwh` und genau 24 `hourly_rate_types` fuer die Stunden 0 bis 23. Benachbarte Stunden bleiben getrennt. Akzeptierte Bezeichnungen sind `NT`/`ST`/`HT` und `OFFPEAK`/`STANDARD`/`PEAK`; `null` bedeutet, dass fuer diese Stunde kein Dateisatz vorliegt. Vorrang haben API-Saetze, dann explizite Service-JSON-Werte; passende Dateisaetze fuellen verbleibende Luecken.
 
-Der optionale Jahreswert `module1_credit_net_eur` wird nur verwendet, wenn `module1_annual_credit_net_eur` im Serviceaufruf leer ist. Ein expliziter Servicewert, auch null, hat Vorrang. `basis_rate_net_ct_per_kwh` ist der oben beschriebene normale Netto-Basiswert fuer den Vertragsstart-Fallback. Er muss den urspruenglichen Vertrag korrekt abbilden und wird nicht aus variablen Modul-3-Stundenwerten abgeleitet. Passender Zeitplan, Gueltigkeitszeitraum, Vertragsbeginn, verwendeter Basiswert und Herkunft werden in CSV und XLSX dokumentiert; das XLSX-Blatt `Eingaben` zeigt ebenfalls die Zeitraeume und Basiswerte. Fehlende, ungueltige oder nicht passende Eintraege erzeugen eine Warnung, statt unbemerkt ignoriert zu werden.
+Der optionale Jahreswert `module1_credit_net_eur` wird nur verwendet, wenn `module1_annual_credit_net_eur` im Serviceaufruf leer ist. Ein expliziter Servicewert, auch null, hat Vorrang. `basis_rate_net_ct_per_kwh` ist der oben beschriebene normale Netto-Basiswert fuer den Vertragsstart-Fallback. Er muss den urspruenglichen Vertrag korrekt abbilden und wird nicht aus variablen Modul-3-Stundenwerten abgeleitet. Passender Zeitplan, Gueltigkeitszeitraum, Vertragsbeginn, verwendeter Basiswert und Herkunft werden in CSV und XLSX dokumentiert; das XLSX-Blatt `Netzgrundlagen` zeigt Vertragswerte und Zeitraeume. Fehlende, ungueltige oder nicht passende Eintraege erzeugen eine Warnung, statt unbemerkt ignoriert zu werden.
 
 ### Grundpreis
 

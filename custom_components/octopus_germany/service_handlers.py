@@ -1258,6 +1258,26 @@ async def async_register_services(
             user_schedule,
         )
         preset_warnings.extend(baseline_warnings)
+        module1_start_source = (
+            "Aktionseingabe"
+            if call.data.get(ATTR_MODULE1_START_DATE) not in (None, "")
+            else (
+                "grid_fee_schedules.json"
+                if user_schedule is not None
+                and user_schedule.get("module1_start_date") is not None
+                else "nicht angegeben"
+            )
+        )
+        module3_start_source = (
+            "Aktionseingabe"
+            if call.data.get(ATTR_MODULE3_START_DATE) not in (None, "")
+            else (
+                "grid_fee_schedules.json"
+                if user_schedule is not None
+                and user_schedule.get("module3_start_date") is not None
+                else "nicht angegeben"
+            )
+        )
         if user_schedule is not None:
             if module1_start is None:
                 module1_start = user_schedule.get("module1_start_date")
@@ -1284,8 +1304,46 @@ async def async_register_services(
             module1_annual = _decimal_service_value(
                 module1_annual_input, ATTR_MODULE1_ANNUAL_CREDIT
             )
+            schedule_module1_credit = None
         if module1_annual is not None and module1_annual < 0:
             _raise_validation_error("Module 1 must be non-negative")
+        module1_source = (
+            "Aktionseingabe"
+            if module1_annual_input not in (None, "")
+            else (
+                "grid_fee_schedules.json"
+                if schedule_module1_credit is not None
+                else "nicht verfuegbar"
+            )
+        )
+        resolved_baseline_values = {
+            item.get("value")
+            for item in contract_start_details
+            if item.get("value") is not None
+        }
+        all_baselines_resolved = bool(contract_start_details) and all(
+            item.get("value") is not None for item in contract_start_details
+        )
+        workbook_baseline = baseline
+        if (
+            baseline is None
+            and all_baselines_resolved
+            and len(resolved_baseline_values) == 1
+        ):
+            workbook_baseline = next(iter(resolved_baseline_values))
+        if baseline is not None:
+            workbook_baseline_source = "Aktionseingabe"
+        elif all_baselines_resolved and len(resolved_baseline_values) == 1:
+            workbook_baseline_source = "grid_fee_schedules.json"
+        elif resolved_baseline_values:
+            workbook_baseline_source = (
+                "Je Vertrag; Einzelwerte und Quellen stehen in der Vertragstabelle"
+            )
+        else:
+            workbook_baseline_source = (
+                "Nicht verfuegbar; Einzelwerte und Quellen stehen "
+                "in der Vertragstabelle"
+            )
         readings_by_date: dict[str, list[dict[str, Any]]] = {}
         grid_fees_by_month: dict[tuple[int, int], dict[str, Any] | None] = {}
         range_start = start_date
@@ -1611,7 +1669,7 @@ async def async_register_services(
                         report_rows,
                         basis_rows,
                         timezone,
-                        baseline,
+                        workbook_baseline,
                         module1_annual,
                         module1_start,
                         vat_fraction,
@@ -1620,6 +1678,11 @@ async def async_register_services(
                         warnings,
                         contract_start_details,
                         schedule_period_rows,
+                        module1_source,
+                        module1_start_source,
+                        module3_start,
+                        module3_start_source,
+                        workbook_baseline_source,
                     )
                     for target in (measurement_path, workbook_path):
                         (staging / target.name).replace(target)

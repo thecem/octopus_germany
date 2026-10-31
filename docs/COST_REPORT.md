@@ -37,7 +37,8 @@ response_variable: cost_export
 
 The workbook contains invoice, inputs, raw measurements, contract prices,
 standing charges, network prices, intervals, daily breakdowns and source
-basis sheets (German labels). Blue cells are editable. Excel formulas
+basis sheets (German labels), including a separate network-basis sheet.
+Blue cells are editable. Excel formulas
 recalculate prices, quantities, Module 1/3 effects and monthly invoices
 offline, without macros, external links or API calls. Initial formula
 results are included for viewers.
@@ -48,6 +49,14 @@ these are consumption-weighted averages (gross network cost divided by
 consumption); individual net rates remain in Netzpreise. Prices are blank
 for zero consumption or incomplete data. These details are already
 included in the invoice total and must not be added again.
+
+The `Eingaben` sheet lists the effective values vertically with separate source
+and explanation columns. `Netzgrundlagen` lists contract baselines by agreement,
+including contract start, source, and validity period, along with the schedule
+periods; differing baselines are not presented as one misleading value. The
+Module 1 invoice line shows eligible days, the prorated net credit, and the
+gross deduction. The net credit is annual credit times eligible days divided by
+the number of days in the year; the gross deduction applies the VAT fallback.
 
 Price zones come from the **valid contract**: for example GO/STANDARD
 or Heat Low/Standard/High, never a fixed GO + STANDARD + HEAT model.
@@ -123,7 +132,7 @@ The service can also read `/config/octopus_germany/grid_fee_schedules.json`, sel
 
 Each year contains a `schedules` array for one or more non-overlapping validity periods. Each period includes `valid_from`, exclusive `valid_to`, net `rates_net_ct_per_kwh`, and exactly 24 `hourly_rate_types` entries indexed from 0 through 23. Adjacent hours remain separate. `NT`/`ST`/`HT` and `OFFPEAK`/`STANDARD`/`PEAK` are accepted labels; `null` means no file rate for that hour. API rates take precedence, then explicit service JSON rates, then matching file rates fill any remaining gaps.
 
-The year's optional `module1_credit_net_eur` is used only when `module1_annual_credit_net_eur` is blank in the service call. An explicit service value, including zero, takes precedence. `basis_rate_net_ct_per_kwh` is the normal net basis used for the contract-start fallback above; it must reflect the original contract and is never inferred from variable Module 3 hourly rates. The matched schedule, validity period, selected baseline, contract start and source are recorded in the CSV `BASIS` rows and XLSX. The XLSX `Eingaben` sheet also lists the schedule validity periods and basis values. Missing, invalid, or unmatched entries generate a service warning rather than being silently ignored.
+The year's optional `module1_credit_net_eur` is used only when `module1_annual_credit_net_eur` is blank in the service call. An explicit service value, including zero, takes precedence. `basis_rate_net_ct_per_kwh` is the normal net basis used for the contract-start fallback above; it must reflect the original contract and is never inferred from variable Module 3 hourly rates. The matched schedule, validity period, selected baseline, contract start and source are recorded in the CSV `BASIS` rows and XLSX. The XLSX `Netzgrundlagen` sheet lists contract baselines and schedule periods. Missing, invalid, or unmatched entries generate a service warning rather than being silently ignored.
 
 Each year may also contain `module1_start_date` (Module 1 eligibility date)
 and `module3_start_date` (customer-selected Module 3 effective date), using

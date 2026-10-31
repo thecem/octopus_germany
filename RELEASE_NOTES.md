@@ -1,5 +1,22 @@
 # Release Notes
 
+## Version 0.0.200 (2026-10-31)
+
+### Fixes
+
+- Resolve Module 1 credit and Module 1/3 effective dates from explicit action
+  inputs or the matching grid-fee schedule, and show each effective value and
+  its source in the XLSX.
+- Prorate the annual net Module 1 credit over eligible invoice days and show
+  the day count, net credit, and gross deduction on the invoice sheet.
+- Organize XLSX inputs as a vertical value/source overview and move contract
+  baselines and schedule periods to a dedicated `Netzgrundlagen` sheet.
+- Avoid requesting inverter preference modes from the GraphQL API, where the
+  field can be null despite being declared non-null; keep mode data for
+  vehicles and charge points (#133).
+- Import `RestoreEntity` from Home Assistant's restore-state helper module
+  (#134).
+
 ## Version 0.0.197 (2026-10-30)
 
 ### Fixes
