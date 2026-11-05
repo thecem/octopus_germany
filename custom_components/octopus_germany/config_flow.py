@@ -3,24 +3,27 @@
 import logging
 from typing import TYPE_CHECKING
 
-import voluptuous as vol
+import probatio as vol
 from homeassistant import config_entries
 
 from .const import (
     CONF_EMAIL,
+    CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS,
     CONF_INTELLIGENT_UPDATE_INTERVAL,
     CONF_PASSWORD,
     CONF_UPDATE_INTERVAL,
+    DEFAULT_EXPORT_DOWNLOAD_TOKEN_TTL_HOURS,
     DOMAIN,
     INTELLIGENT_UPDATE_INTERVAL,
+    MAX_EXPORT_DOWNLOAD_TOKEN_TTL_HOURS,
+    MIN_EXPORT_DOWNLOAD_TOKEN_TTL_HOURS,
     UPDATE_INTERVAL,
 )
 from .octopus_germany import OctopusGermany
 
 if TYPE_CHECKING:
-    from homeassistant.config_entries import ConfigEntry
+    from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
     from homeassistant.core import HomeAssistant
-    from homeassistant.data_entry_flow import FlowResult
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,6 +32,7 @@ def build_options_schema(
     current_email: str,
     current_interval: object,
     current_intelligent_interval: object,
+    current_download_token_ttl_hours: object = DEFAULT_EXPORT_DOWNLOAD_TOKEN_TTL_HOURS,
 ) -> vol.Schema:
     """Build the options schema with backwards-compatible defaults."""
     return vol.Schema(
@@ -43,6 +47,16 @@ def build_options_schema(
                 CONF_INTELLIGENT_UPDATE_INTERVAL,
                 default=current_intelligent_interval,
             ): vol.All(vol.Coerce(int), vol.Range(min=1, max=60)),
+            vol.Required(
+                CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS,
+                default=current_download_token_ttl_hours,
+            ): vol.All(
+                vol.Coerce(int),
+                vol.Range(
+                    min=MIN_EXPORT_DOWNLOAD_TOKEN_TTL_HOURS,
+                    max=MAX_EXPORT_DOWNLOAD_TOKEN_TTL_HOURS,
+                ),
+            ),
         }
     )
 
@@ -83,7 +97,7 @@ class OctopusGermanyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Get the options flow for this handler."""
         return OctopusGermanyOptionsFlow()
 
-    async def async_step_user(self, user_input: dict | None = None) -> FlowResult:
+    async def async_step_user(self, user_input: dict | None = None) -> ConfigFlowResult:
         """Handle the initial step."""
         errors = {}
 
@@ -121,7 +135,7 @@ class OctopusGermanyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_reconfigure(
         self, user_input: dict | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle reconfiguration of the integration."""
         errors = {}
 
@@ -188,7 +202,7 @@ class OctopusGermanyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class OctopusGermanyOptionsFlow(config_entries.OptionsFlow):
     """Handle an options flow for Octopus Germany."""
 
-    async def async_step_init(self, user_input: dict | None = None) -> FlowResult:
+    async def async_step_init(self, user_input: dict | None = None) -> ConfigFlowResult:
         """Manage the options."""
         errors = {}
 
@@ -223,6 +237,9 @@ class OctopusGermanyOptionsFlow(config_entries.OptionsFlow):
                         CONF_INTELLIGENT_UPDATE_INTERVAL: user_input[
                             CONF_INTELLIGENT_UPDATE_INTERVAL
                         ],
+                        CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS: user_input[
+                            CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS
+                        ],
                     },
                 )
 
@@ -241,6 +258,10 @@ class OctopusGermanyOptionsFlow(config_entries.OptionsFlow):
                 CONF_INTELLIGENT_UPDATE_INTERVAL, INTELLIGENT_UPDATE_INTERVAL
             ),
         )
+        current_download_token_ttl_hours = self.config_entry.options.get(
+            CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS,
+            DEFAULT_EXPORT_DOWNLOAD_TOKEN_TTL_HOURS,
+        )
 
         return self.async_show_form(
             step_id="init",
@@ -248,6 +269,7 @@ class OctopusGermanyOptionsFlow(config_entries.OptionsFlow):
                 current_email,
                 current_interval,
                 current_intelligent_interval,
+                current_download_token_ttl_hours,
             ),
             errors=errors,
         )

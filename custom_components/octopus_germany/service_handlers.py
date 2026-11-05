@@ -20,7 +20,11 @@ from homeassistant.helpers import device_registry as dr
 from xlsxwriter.exceptions import XlsxWriterException
 
 from .api.smart_meter import SmartMeterFetchError
-from .const import DOMAIN
+from .const import (
+    CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS,
+    DEFAULT_EXPORT_DOWNLOAD_TOKEN_TTL_HOURS,
+    DOMAIN,
+)
 from .cost_report import (
     COST_REPORT_HEADERS,
     agreement_key,
@@ -559,6 +563,18 @@ async def _resolve_contract_start_baselines(  # noqa: PLR0913
     return contract_baselines, details, schedule_period_rows, warnings
 
 
+def _export_download_token_ttl(
+    coordinator: OctopusDataCoordinator, entry: ConfigEntry
+) -> timedelta:
+    account_entry = coordinator.config_entry or entry
+    return timedelta(
+        hours=account_entry.options.get(
+            CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS,
+            DEFAULT_EXPORT_DOWNLOAD_TOKEN_TTL_HOURS,
+        )
+    )
+
+
 async def async_register_services(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -1024,7 +1040,10 @@ async def async_register_services(
             await hass.async_add_executor_job(write_csv)
 
             download_url = await async_notify_export_ready(
-                hass, output_path.name, "Smart meter CSV export"
+                hass,
+                output_path.name,
+                "Smart meter CSV export",
+                _export_download_token_ttl(account_coordinator, entry),
             )
             result = {
                 "success": True,
@@ -1697,6 +1716,7 @@ async def async_register_services(
                 hass,
                 [workbook_path.name, measurement_path.name],
                 description,
+                _export_download_token_ttl(account_coordinator, entry),
             )
             download_url = urls[workbook_path.name]
             package_files = [
@@ -1714,7 +1734,10 @@ async def async_register_services(
         else:
             await hass.async_add_executor_job(write_cost_csv)
             download_url = await async_notify_export_ready(
-                hass, output_path.name, description
+                hass,
+                output_path.name,
+                description,
+                _export_download_token_ttl(account_coordinator, entry),
             )
         result = {
             "success": True,

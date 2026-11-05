@@ -2,10 +2,14 @@
 
 Sprache / Language: [Deutsch](README.de.md) | [English](README.md)
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![marketplace_badge](https://img.shields.io/badge/Home%20Assistant-Marketplace-41BDF5.svg)](https://www.home-assistant.io/integrations/marketplace/)
 ![installation_badge](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=integration%20usage&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=$.octopus_germany.total)
 
 Diese Dokumentation beschreibt die Entitaeten und die Bedienung innerhalb der Integration.
+
+Voraussetzung ist Home Assistant **2026.11.0 oder neuer**. Entwicklung,
+Regressionstests und das Setup des Entwicklungscontainers verwenden
+Home Assistant **2026.11.0**. Markenbilder werden im Ordner `brand/` mitgeliefert.
 
 ## Freund*innen werben
 
@@ -13,12 +17,33 @@ Wenn du über [meinen Empfehlungslink](https://octopusenergy.de/empfehlungen?ref
 
 ## Installation und Konfiguration
 
-Die Einrichtung erfolgt in Home Assistant ueber:
+Installation ueber **Einstellungen** > **Marketplace**: nach **Octopus Germany**
+suchen und installieren. Falls nicht gelistet, **Vom Link hinzufuegen** mit
+`https://github.com/thecem/octopus_germany` verwenden und GitHub bei Aufforderung
+verbinden. Anschliessend Home Assistant neu starten.
+
+Die Einrichtung erfolgt danach in Home Assistant ueber:
 
 1. Einstellungen > Geraete und Dienste
 2. Integration hinzufuegen
 3. Octopus Germany auswaehlen
 4. Login-Daten eingeben
+
+### Umstieg von HACS
+
+Home Assistant 2026.11 migriert HACS-Inhalte beim Start automatisch.
+Installierte Integrationen, eigene Repositories und die Entity-IDs der
+Update-Entitaeten bleiben erhalten; HACS selbst wird entfernt.
+Octopus Germany nicht deinstallieren und Entitaeten nicht neu anlegen.
+Bisherige HACS-Repository-Buttons oeffnen weiterhin den Marketplace.
+`hacs.json` bleibt erforderlich, damit eigene Repositories Updates erhalten.
+
+Eigene Templates mit `integration_entities('hacs')` auf
+`integration_entities('marketplace')` umstellen. Hinweise zum notwendigen
+Neustart stehen jetzt unter **Einstellungen** > **System** > **Reparaturen**,
+nicht im Update-Attribut `release_summary`. YAML-Dashboard-Ressourcen auf
+`/local/community/` statt `/hacsfiles/` umstellen; alte Pfade funktionieren weiter.
+Siehe [HA-Migrationshinweise](https://www.home-assistant.io/integrations/marketplace/#coming-from-hacs).
 
 ## Dokumentationsstruktur
 
@@ -31,11 +56,11 @@ Die Einrichtung erfolgt in Home Assistant ueber:
 
 Smart-Meter-Jahresdateien werden ueber paginierte Monatsabfragen in der konfigurierten Home-Assistant-Zeitzone erstellt. Quelle und Messqualitaet werden als Metadaten zurueckgegeben; auch intern konsistente Intervalle koennen geschaetzt sein.
 
-Kostenberichte verwenden Agreement-Preise und zeitgueltige API-Netzentgelte. Sie sind Schaetzungen, keine Lieferantenrechnung und keine Rechtsentscheidung. Formeln, Eingaben, unvollstaendige Daten und regulatorischer Kontext sind im [Leitfaden zum Stromkostenbericht](../../docs/COST_REPORT.de.md) beschrieben.
+Kostenberichte verwenden Agreement-Preise und zeitgueltige API-Netzentgelte. Sie sind Schaetzungen, keine Lieferantenrechnung und keine Rechtsentscheidung. Dynamische Abrechnungen lassen sich ohne historische Ist-Intervallpreise nicht verlaesslich rekonstruieren; Prognosen sind keine historischen Preise. Formeln, Eingaben, unvollstaendige Daten und regulatorischer Kontext sind im [Leitfaden zum Stromkostenbericht](../../docs/COST_REPORT.de.md) beschrieben.
 
 Fehlen API-Saetze, kann eine optionale Datei stunden- und gueltigkeitsbezogene Werte je Netzbetreiber enthalten. Die [Beispieldatei](../../docs/examples/grid_fee_schedules.example.json) zeigt das Format mit einzeln erhaltenen Stunden 0 bis 23.
 
-CSV-Dateien werden unter `/config/octopus_germany/exports` gespeichert. Zu jedem Export erscheint eine persistente Home-Assistant-Benachrichtigung mit einem dateigebundenen Download-Link, der nach 30 Tagen ablaeuft.
+CSV-Dateien werden unter `/config/octopus_germany/exports` gespeichert. Zu jedem Export erscheint eine persistente Home-Assistant-Benachrichtigung mit einem dateigebundenen Bearer-Token-Downloadlink. Gueltigkeit: standardmaessig 24 Stunden, in den Integration-Optionen auf 1 bis 168 Stunden einstellbar; die Einstellung gilt nur fuer neue Exporte.
 
 ## Entitaeten (Ueberblick)
 

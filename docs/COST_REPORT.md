@@ -4,6 +4,13 @@
 
 This is a calculation aid, not a supplier invoice or a legal decision about eligibility or enrollment under §14a EnWG. Missing prices and rates are not silently treated as zero.
 
+> **Dynamic tariffs:** This report cannot reliably reconstruct a dynamic
+> electricity bill. The account API provides agreement prices and a current
+> forecast, not an archive of actual historical interval prices. Forecasts
+> do not prove the prices later billed. Treat dynamic-tariff totals as actual
+> costs only after independently obtaining and verifying historical interval
+> prices and adjusting the exported workbook accordingly.
+
 ## Export package: one fetch, two files
 
 In **Developer Tools > Actions**, select `octopus_germany.export_cost_report`
@@ -185,7 +192,7 @@ gross energy cost after grid-fee adjustment
 
 If any day is incomplete, the `MONTH_TOTAL` amount is blank. Check `status`, `unpriced_kwh`, and `network_rate_missing_kwh`; an incomplete total must not be read as zero. CSV columns use semicolons and German decimal commas. Consumption is displayed to three decimal places, euro amounts to cents, and unit rates to six decimal places; calculations retain full precision until formatting.
 
-Files are saved under `/config/octopus_germany/exports`. Home Assistant creates a persistent notification with a file-scoped browser download link that expires after 30 days.
+Files are saved under `/config/octopus_germany/exports`. Home Assistant creates a persistent notification with a file-scoped bearer-token download link. Token validity defaults to 24 hours and is configurable from 1 to 168 hours in integration options; existing links retain their original expiry.
 
 ## Legal and regulatory context
 

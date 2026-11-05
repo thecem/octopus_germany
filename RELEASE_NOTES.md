@@ -1,5 +1,23 @@
 # Release Notes
 
+## Version 0.0.201 (2026-11-05)
+
+### Changes
+
+- Require Home Assistant 2026.11.0 or newer and target 2026.11.0 in the
+  development container and regression tests.
+- Use HA's Probatio schemas and typed config-flow results for the 2026.11
+  options and setup flows.
+- Add Energy pricing and EV charging Marketplace categories and update
+  English/German installation and HACS migration guidance. Retain `hacs.json`,
+  bundled brand assets, and the existing catalog validation workflow.
+- Make export download-link validity configurable in integration options:
+  24 hours by default, from 1 to 168 hours. New settings apply to new exports;
+  existing links retain their original expiry and filename-scoped token checks.
+  Exports use the requested account's options even with multiple config entries.
+- Clarify that cost reports cannot reliably reconstruct dynamic-tariff bills
+  without actual historical interval prices.
+
 ## Version 0.0.200 (2026-10-31)
 
 ### Fixes

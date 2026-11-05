@@ -8,7 +8,7 @@ import json
 import tempfile
 import threading
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from math import isclose
 from pathlib import Path
@@ -23,7 +23,10 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.service import _SERVICES_SCHEMA, _load_services_file
 from homeassistant.util.yaml import load_yaml_dict
 
-from custom_components.octopus_germany.const import DOMAIN
+from custom_components.octopus_germany.const import (
+    CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS,
+    DOMAIN,
+)
 from custom_components.octopus_germany.cost_report import (
     agreement_key,
     build_daily_cost_report,
@@ -40,10 +43,30 @@ from custom_components.octopus_germany.grid_fee_schedule import (
     contract_start_basis_period,
     load_grid_fee_schedule,
 )
-from custom_components.octopus_germany.service_handlers import async_register_services
+from custom_components.octopus_germany.service_handlers import (
+    _export_download_token_ttl,
+    async_register_services,
+)
 
 DAY = date(2026, 5, 1)
 NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+
+
+def test_download_lifetime_uses_the_exported_accounts_options() -> None:
+    registered_entry = Mock(options={CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS: 24})
+    account_entry = Mock(options={CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS: 6})
+    coordinator = Mock(config_entry=account_entry)
+    assert _export_download_token_ttl(coordinator, registered_entry) == timedelta(
+        hours=6
+    )
+    account_entry.options = {}
+    assert _export_download_token_ttl(coordinator, registered_entry) == timedelta(
+        hours=24
+    )
+    coordinator.config_entry = None
+    assert _export_download_token_ttl(coordinator, registered_entry) == timedelta(
+        hours=24
+    )
 
 
 def test_action_descriptions_load_with_all_cost_fields() -> None:
@@ -799,7 +822,8 @@ def test_schedule_credit_and_date_fallbacks(
                 }
             }
         )
-        await async_register_services(hass, Mock(), Mock(), Mock(), None)
+        coordinator.config_entry = None
+        await async_register_services(hass, Mock(options={}), Mock(), Mock(), None)
         handler = next(
             call.args[2]
             for call in hass.services.async_register.call_args_list
@@ -1032,7 +1056,16 @@ class ExportPackageServiceTest(unittest.TestCase):
                     }
                 }
             )
-            await async_register_services(hass, Mock(), Mock(), Mock(), None)
+            coordinator.config_entry = Mock(
+                options={CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS: 6}
+            )
+            await async_register_services(
+                hass,
+                Mock(options={CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS: 24}),
+                Mock(),
+                Mock(),
+                None,
+            )
             handler = next(
                 call.args[2]
                 for call in hass.services.async_register.call_args_list
@@ -1059,11 +1092,11 @@ class ExportPackageServiceTest(unittest.TestCase):
                 patch(
                     "custom_components.octopus_germany.service_handlers.async_notify_export_package_ready",
                     new=AsyncMock(
-                        side_effect=lambda _hass, names, _description: {
+                        side_effect=lambda _hass, names, _description, _token_ttl: {
                             name: f"/download/{name}" for name in names
                         }
                     ),
-                ),
+                ) as package,
                 patch(
                     "custom_components.octopus_germany.service_handlers.async_notify_export_ready",
                     new=AsyncMock(return_value="/download/cost.csv"),
@@ -1139,6 +1172,7 @@ class ExportPackageServiceTest(unittest.TestCase):
                 }
                 assert result["output_file"].endswith(".xlsx")
                 assert result["download_url"] == result["files"][0]["download_url"]
+                assert package.await_args.args[3] == timedelta(hours=6)
                 assert {
                     path.name for path in Path(result["output_file"]).parent.iterdir()
                 } == {Path(item["output_file"]).name for item in result["files"]}

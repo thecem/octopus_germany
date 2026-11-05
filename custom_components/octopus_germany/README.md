@@ -2,15 +2,16 @@
 
 Language / Sprache: [English](README.md) | [Deutsch](README.de.md)
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![marketplace_badge](https://img.shields.io/badge/Home%20Assistant-Marketplace-41BDF5.svg)](https://www.home-assistant.io/integrations/marketplace/)
 ![installation_badge](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=integration%20usage&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=$.octopus_germany.total)
 
 This custom component integrates Octopus Germany services with Home Assistant, providing access to your energy account data, electricity prices, device control, and vehicle charging preferences.
 
 *This integration is in no way affiliated with Octopus Energy.*
 
-Development and regression tests target Home Assistant **2026.10.1**.
-The minimum supported version is declared separately in `../../hacs.json`.
+Requires Home Assistant **2026.11.0 or newer**. Development and regression
+tests target Home Assistant **2026.11.0**, as installed by the development
+container setup. The minimum supported version is declared in `../../hacs.json`.
 Local brand icons are the existing integration assets from
 [Home Assistant Brands](https://github.com/home-assistant/brands/tree/2f58791c0fcd701b195506a076f18e0248dc2ef9/custom_integrations/octopus_germany).
 Validation and release workflows use Ubuntu 24.04 and Node-24-based checkout.
@@ -56,13 +57,28 @@ This integration primarily uses the OEG Kraken GraphQL API. Variable grid-fee qu
 
 ## Installation
 
-### HACS (Home Assistant Community Store)
+### Home Assistant Marketplace
 
-1. Add this repository as a custom repository in HACS
-2. Search for ["Octopus Germany"](https://my.home-assistant.io/redirect/hacs_repository/?owner=thecem&repository=octopus_germany&category=integration) in the HACS integrations
+1. Open **Settings** > **Marketplace**
+2. Search for **Octopus Germany**. If not listed, select **Add from link** and enter `https://github.com/thecem/octopus_germany` (connect GitHub when prompted)
 3. Install the integration
 4. Restart Home Assistant
-5. Add the integration via the UI under **Settings** > **Devices & Services** > **Add Integration**
+5. Add the integration under **Settings** > **Devices & Services** > **Add Integration**
+
+### Coming from HACS
+
+Home Assistant 2026.11 automatically migrates HACS content at startup.
+Installed integrations, custom repositories, and update entity IDs remain;
+HACS itself is removed. Do not uninstall Octopus Germany or recreate its
+entities. Existing HACS repository buttons still open in Marketplace.
+Keep `hacs.json`: Marketplace needs it to update custom repositories.
+
+If your own templates use `integration_entities('hacs')`, change them to
+`integration_entities('marketplace')`. Restart requirements now appear in
+**Settings** > **System** > **Repairs**, not update `release_summary`
+attributes. YAML dashboard resources should use `/local/community/`
+instead of `/hacsfiles/` (old paths still work).
+See [Home Assistant's migration guide](https://www.home-assistant.io/integrations/marketplace/#coming-from-hacs).
 
 ### Manual Installation
 
@@ -89,7 +105,7 @@ Smart-meter readings are requested only for accounts reporting smart-meter suppo
 
 Smart-meter CSV exports use paginated monthly ranges in the configured Home Assistant timezone. Source and reading-quality metadata are returned with the service response; internally consistent intervals can still be estimates, so check that metadata before treating a value as an actual meter reading.
 
-Cost reports use agreement prices and the network operator's time-valid API rates. The report is an estimate, not a supplier invoice or a legal decision. See [Electricity Cost Report](../../docs/COST_REPORT.md) for its formulas, inputs, CSV rows, and regulatory context.
+Cost reports use agreement prices and the network operator's time-valid API rates. The report is an estimate, not a supplier invoice or a legal decision. It cannot reliably reconstruct dynamic-tariff bills without actual historical interval prices; forecasts are not historical prices. See [Electricity Cost Report](../../docs/COST_REPORT.md) for its formulas, inputs, CSV rows, and regulatory context.
 
 When API rates are missing, an optional [operator-specific hourly schedule file](../../docs/examples/grid_fee_schedules.example.json) can supply separate values for each hour and validity period.
 
@@ -98,7 +114,7 @@ Each schedule year may also supply `module1_credit_net_eur`,
 when the action omits them. Explicit action values, including a zero credit,
 take precedence. Missing credits and dates remain unset; no credit is assumed.
 
-Generated CSV files are stored under `/config/octopus_germany/exports`. Each export creates a persistent Home Assistant notification with a file-scoped browser-download link that expires after 30 days.
+Generated CSV files are stored under `/config/octopus_germany/exports`. Each export creates a persistent Home Assistant notification with a file-scoped bearer-token download link. Validity defaults to 24 hours and is configurable in integration options (1 to 168 hours); changing the setting affects new exports only.
 
 ## Documentation Structure
 
@@ -115,9 +131,10 @@ It combines tariff and balance information, dispatch windows, vehicle SoC and
 target, charging preference, plugged status, meter identifiers, and charts for
 dispatch history and charging sessions.
 
-The dashboard requires the HACS frontend card
+The dashboard requires the Home Assistant frontend card
 [`custom:apexcharts-card`](https://github.com/RomRider/apexcharts-card). Before
-using the example, replace `a_xxxxxxxx` with your lower-case account number and
+using the example, install the card from **Settings** > **Marketplace** and
+replace `a_xxxxxxxx` with your lower-case account number and
 `your_vehicle` with the vehicle slug from your entity IDs.
 
 ## Entities

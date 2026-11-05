@@ -161,7 +161,7 @@ logger:
 #### Security Notes
 
 - **Authentication Tokens**: Shared Kraken/OE API tokens are held by the runtime token manager.
-- **Export Download Tokens**: File-scoped links are stored in Home Assistant private storage and expire after 30 days.
+- **Export Download Tokens**: File-scoped bearer tokens are stored in Home Assistant private storage. Their lifetime defaults to 24 hours and is configurable from 1 to 168 hours in integration options; changing it affects only newly issued links. Home Assistant's HTTP auth middleware does not accept the integration's custom `?token=` parameter, so the download view uses `requires_auth = False` and checks the token in constant time, its expiry, and the filename/path before serving the named export. Treat the URL as a credential and share it only with trusted recipients.
 - **Credential Handling**: Email/password from config entry, not logged
 - **GraphQL Endpoint**: Uses official Octopus Energy Kraken API
 - **HTTPS Only**: All API communication over TLS
