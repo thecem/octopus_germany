@@ -88,6 +88,10 @@ attributes. YAML dashboard resources should use `/local/community/`
 instead of `/hacsfiles/` (old paths still work).
 See [Home Assistant's migration guide](https://www.home-assistant.io/integrations/marketplace/#coming-from-hacs).
 
+Marketplace installs the `octopus_germany.zip` release asset. Its native
+download count comes from GitHub for the selected release asset; it is not a
+lifetime total or the active-installation count shown in the badge above.
+
 ### Manual Installation
 
 1. Copy the `octopus_germany` directory to your Home Assistant `custom_components` directory

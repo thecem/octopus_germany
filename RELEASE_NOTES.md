@@ -1,5 +1,18 @@
 # Release Notes
 
+## Version 0.0.202 (2026-11-05)
+
+### Changes
+
+- Publish `octopus_germany.zip` with each new GitHub release and configure
+  Marketplace to install that asset. Package only tracked integration files
+  with `manifest.json` at the archive root.
+- Enable the native Marketplace download counter through GitHub release-asset
+  downloads. The number reflects the selected release asset, not cumulative
+  historical downloads or active Home Assistant installations.
+- Preserve manifest-based tags, curated release sections, and supplemental
+  auto-generated release notes.
+
 ## Version 0.0.201 (2026-11-05)
 
 ### Changes

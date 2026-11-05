@@ -3,5 +3,7 @@
   "homeassistant": "2026.11.0",
   "hacs": "2.0.5",
   "render_readme": true,
+  "zip_release": true,
+  "filename": "octopus_germany.zip",
   "country": ["DE"]
 }

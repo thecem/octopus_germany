@@ -67,6 +67,11 @@ nicht im Update-Attribut `release_summary`. YAML-Dashboard-Ressourcen auf
 `/local/community/` statt `/hacsfiles/` umstellen; alte Pfade funktionieren weiter.
 Siehe [HA-Migrationshinweise](https://www.home-assistant.io/integrations/marketplace/#coming-from-hacs).
 
+Marketplace installiert das Release-Asset `octopus_germany.zip`. Die native
+Downloadanzeige stammt von GitHub und zaehlt Downloads des ausgewaehlten
+Release-Assets, nicht alle bisherigen Downloads oder die aktiven Installationen
+im Badge oben.
+
 ### Manuell
 
 1. Ordner octopus_germany nach custom_components kopieren
