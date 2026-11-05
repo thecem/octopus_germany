@@ -90,7 +90,6 @@ class OctopusGermanyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Octopus Germany."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
 
     @staticmethod
     def async_get_options_flow(config_entry: ConfigEntry) -> OctopusGermanyOptionsFlow:

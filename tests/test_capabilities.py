@@ -24,7 +24,10 @@ from custom_components.octopus_germany.api.queries import (
 from custom_components.octopus_germany.binary_sensor import (
     _create_intelligent_binary_entities,
 )
-from custom_components.octopus_germany.config_flow import build_options_schema
+from custom_components.octopus_germany.config_flow import (
+    OctopusGermanyConfigFlow,
+    build_options_schema,
+)
 from custom_components.octopus_germany.const import (
     CONF_EMAIL,
     CONF_EXPORT_DOWNLOAD_LINK_VALIDITY_HOURS,
@@ -139,6 +142,16 @@ from custom_components.octopus_germany.tariff import (
 
 class TariffCapabilitiesTest(unittest.TestCase):
     """Verify feature detection for supported account response shapes."""
+
+    def test_config_flow_does_not_declare_obsolete_connection_class(self) -> None:
+        assert "CONNECTION_CLASS" not in OctopusGermanyConfigFlow.__dict__
+        repository = Path(__file__).resolve().parents[1]
+        manifest = json.loads(
+            (repository / "custom_components/octopus_germany/manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert manifest["iot_class"] == "cloud_polling"
 
     def test_marketplace_metadata_targets_home_assistant_202611(self) -> None:
         repository = Path(__file__).resolve().parents[1]

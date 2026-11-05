@@ -1,5 +1,14 @@
 # Release Notes
 
+## Version 0.0.203 (2026-11-05)
+
+### Fixes
+
+- Remove the obsolete config-flow `CONNECTION_CLASS` declaration to avoid
+  the HA 2026.11 `CONN_CLASS_CLOUD_POLL` deprecation warning and remain
+  compatible with its removal in HA 2027.5. Cloud polling continues to be
+  declared by `iot_class` in the integration manifest.
+
 ## Version 0.0.202 (2026-11-05)
 
 ### Changes
