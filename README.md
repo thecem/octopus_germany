@@ -2,8 +2,14 @@
 
 Language / Sprache: [English](README.md) | [Deutsch](README.de.md)
 
-[![marketplace_badge](https://img.shields.io/badge/Home%20Assistant-Marketplace-41BDF5.svg)](https://www.home-assistant.io/integrations/marketplace/)
-![installation_badge](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=integration%20usage&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=$.octopus_germany.total)
+[![Marketplace](https://img.shields.io/badge/Home%20Assistant-Marketplace-41BDF5?logo=homeassistant&logoColor=white)](https://www.home-assistant.io/integrations/marketplace/)
+[![Latest release](https://img.shields.io/github/v/release/thecem/octopus_germany?label=release&color=41BDF5&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/releases/latest)
+[![Minimum Home Assistant version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fthecem%2Foctopus_germany%2Fmain%2Fhacs.json&query=%24.homeassistant&label=Home%20Assistant%20%E2%89%A5&color=41BDF5&logo=homeassistant&logoColor=white)](hacs.json)
+[![License](https://img.shields.io/github/license/thecem/octopus_germany?color=41BDF5)](LICENSE)
+
+[![GitHub stars](https://img.shields.io/github/stars/thecem/octopus_germany?label=stars&color=41BDF5&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/stargazers)
+[![GitHub release downloads](https://img.shields.io/github/downloads/thecem/octopus_germany/total?label=downloads%20since%2011%2F2026&color=41BDF5&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/releases)
+[![Active Home Assistant installations](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fanalytics.home-assistant.io%2Fcustom_integrations.json&query=%24.octopus_germany.total&label=active%20installations&color=41BDF5&logo=homeassistant&logoColor=white&cacheSeconds=21600)](https://analytics.home-assistant.io/custom_integrations)
 
 This custom component integrates Octopus Germany services with Home Assistant, providing access to your energy account data, electricity prices, device control, and vehicle charging preferences.
 
@@ -15,6 +21,12 @@ container setup. The minimum supported version is declared in `hacs.json`.
 Local brand icons are the existing integration assets from
 [Home Assistant Brands](https://github.com/home-assistant/brands/tree/2f58791c0fcd701b195506a076f18e0248dc2ef9/custom_integrations/octopus_germany).
 Validation and release workflows use Ubuntu 24.04 and Node-24-based checkout.
+
+**About the counters:** Downloads count GitHub release-asset downloads across
+all releases, including repeated downloads and updates. Counting began with
+ZIP release assets in November 2026; earlier installations are not included.
+Active installations come from voluntary Home Assistant Analytics reporting
+and do not represent every user. The two counters measure different things.
 
 ---
 
@@ -190,6 +202,16 @@ using the example, install the card from **Settings** > **Marketplace** and
 replace `a_xxxxxxxx` with your lower-case account number and
 `your_vehicle` with the vehicle slug from your entity IDs.
 
+## Development and Validation
+
+[![Hassfest](https://img.shields.io/github/actions/workflow/status/thecem/octopus_germany/hassfest.yaml?branch=main&label=Hassfest&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/actions/workflows/hassfest.yaml)
+[![Catalog validation](https://img.shields.io/github/actions/workflow/status/thecem/octopus_germany/hacs.yaml?branch=main&label=catalog%20validation&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/actions/workflows/hacs.yaml)
+[![Open issues](https://img.shields.io/github/issues/thecem/octopus_germany?label=open%20issues&color=41BDF5&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/issues)
+[![Last commit](https://img.shields.io/github/last-commit/thecem/octopus_germany/main?label=last%20commit&color=41BDF5&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/commits/main)
+
+Validation badges show workflow status, not certification or endorsement
+by Home Assistant.
+
 ## Debugging
 
 If you encounter issues, you can enable debug logging by adding the following to your `configuration.yaml`:
@@ -237,7 +259,6 @@ LOG_API_RESPONSES = True
 ```
 After restarting HA the API-Responses and additional information will be in debug log.
 
-
 ## Support
 
 For bug reports and feature requests, please open an issue on the GitHub repository.
@@ -266,7 +287,7 @@ Every contribution, whether code, feedback, or financial support, helps make thi
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Disclaimer
 
