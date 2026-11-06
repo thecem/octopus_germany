@@ -2,14 +2,26 @@
 
 Sprache / Language: [Deutsch](README.de.md) | [English](README.md)
 
-[![marketplace_badge](https://img.shields.io/badge/Home%20Assistant-Marketplace-41BDF5.svg)](https://www.home-assistant.io/integrations/marketplace/)
-![installation_badge](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=integration%20usage&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=$.octopus_germany.total)
+[![Marketplace](https://img.shields.io/badge/Home%20Assistant-Marketplace-41BDF5?logo=homeassistant&logoColor=white)](https://www.home-assistant.io/integrations/marketplace/)
+[![Neueste Version](https://img.shields.io/github/v/release/thecem/octopus_germany?label=Version&color=41BDF5&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/releases/latest)
+[![Home-Assistant-Mindestversion](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fthecem%2Foctopus_germany%2Fmain%2Fhacs.json&query=%24.homeassistant&label=Home%20Assistant%20%E2%89%A5&color=41BDF5&logo=homeassistant&logoColor=white)](../../hacs.json)
+[![Lizenz](https://img.shields.io/github/license/thecem/octopus_germany?label=Lizenz&color=41BDF5)](../../LICENSE)
+
+[![GitHub-Sterne](https://img.shields.io/github/stars/thecem/octopus_germany?label=Sterne&color=41BDF5&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/stargazers)
+[![GitHub-Release-Downloads](https://img.shields.io/github/downloads/thecem/octopus_germany/total?label=Downloads%20seit%2011%2F2026&color=41BDF5&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/releases)
+[![Aktive Home-Assistant-Installationen](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fanalytics.home-assistant.io%2Fcustom_integrations.json&query=%24.octopus_germany.total&label=aktive%20Installationen&color=41BDF5&logo=homeassistant&logoColor=white&cacheSeconds=21600)](https://analytics.home-assistant.io/custom_integrations)
 
 Diese Dokumentation beschreibt die Entitaeten und die Bedienung innerhalb der Integration.
 
 Voraussetzung ist Home Assistant **2026.11.0 oder neuer**. Entwicklung,
 Regressionstests und das Setup des Entwicklungscontainers verwenden
 Home Assistant **2026.11.0**. Markenbilder werden im Ordner `brand/` mitgeliefert.
+
+**Zu den Zaehlern:** Downloads zaehlen GitHub-Release-Asset-Downloads aller
+Versionen, einschliesslich erneuter Downloads und Updates. Die Zaehlung begann
+mit den ZIP-Release-Assets im November 2026; fruehere Installationen fehlen.
+Aktive Installationen stammen aus freiwilligen Home-Assistant-Analytics-Meldungen
+und erfassen nicht alle Nutzer. Beide Zaehler messen unterschiedliche Dinge.
 
 ## Freund*innen werben
 
@@ -49,6 +61,14 @@ Marketplace installiert das Release-Asset `octopus_germany.zip`. Die native
 Downloadanzeige stammt von GitHub und zaehlt Downloads des ausgewaehlten
 Release-Assets, nicht alle bisherigen Downloads oder die aktiven Installationen
 im Badge oben.
+
+Fehlt die Downloadanzeige trotz Downloads auf GitHub, im Drei-Punkte-Menue der
+Marketplace-Repository-Seite **Informationen aktualisieren** auswaehlen.
+Die ausgewaehlte Version muss ein Release mit `octopus_germany.zip` sein
+(ab v0.0.202), nicht der Branch `main` oder ein aelteres Release ohne Asset.
+Ein Wert von null wird ausgeblendet. GitHub-/Katalogdaten und Badges koennen
+unterschiedlich lange zwischengespeichert sein; auf Hinweise zu GitHub-Limits
+oder fehlgeschlagenen Aktualisierungen achten.
 
 ## Dokumentationsstruktur
 
@@ -141,12 +161,31 @@ Empfohlene Rollenverteilung:
 - octopus_germany: Tarif, Konto, SmartFlex, Steuerung sowie Auslesen der bei Octopus gespeicherten historischen Verbrauchs-/Zaehlerdaten
 - ha-ppc-smgw-han: lokale HAN-Telemetrie
 
+## Entwicklung und Validierung
+
+[![Hassfest](https://img.shields.io/github/actions/workflow/status/thecem/octopus_germany/hassfest.yaml?branch=main&label=Hassfest&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/actions/workflows/hassfest.yaml)
+[![Katalogvalidierung](https://img.shields.io/github/actions/workflow/status/thecem/octopus_germany/hacs.yaml?branch=main&label=Katalogvalidierung&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/actions/workflows/hacs.yaml)
+[![Offene Issues](https://img.shields.io/github/issues/thecem/octopus_germany?label=offene%20Issues&color=41BDF5&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/issues)
+[![Letzter Commit](https://img.shields.io/github/last-commit/thecem/octopus_germany/main?label=letzter%20Commit&color=41BDF5&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/commits/main)
+
+Validierungsbadges zeigen den Workflow-Status, keine Zertifizierung oder
+Empfehlung durch Home Assistant.
+
 ## API-Unterstuetzung
 
-- REST: https://developer.oeg-kraken.energy/
-- Kraken GraphQL: https://developer.oeg-kraken.energy/graphql/
-- OE Backend GraphQL: wird fuer variable Netzentgelte direkt und mit demselben Token angesprochen
-- Schema-Snapshots: `oeg_graphql_schema.yaml` und `oe_backend_graphql_schema.json`
+Die Integration verwendet zwei GraphQL-Endpunkte:
+
+| API | Endpunkt | Verwendung |
+|---|---|---|
+| OEG Kraken GraphQL | `https://api.oeg-kraken.energy/v1/graphql/` | Anmeldung, Konten, Vertraege, Preise, Smart-Meter-/Zaehlerdaten und Intelligent-/SmartFlex-Geraetesteuerung |
+| OE Backend GraphQL | `https://api.backend.octopusenergy.de/v1/graphql/` | Variable Netzentgelte (`variableGridFees`), authentifiziert mit demselben Kraken-Token |
+
+- [Kraken-GraphQL-Dokumentation](https://developer.oeg-kraken.energy/graphql/)
+- [Octopus-Entwicklerdokumentation mit REST-Referenz](https://developer.oeg-kraken.energy/): Hintergrundinformation; die Integration ruft derzeit keine Octopus-REST-Endpunkte auf.
+- Schema-Snapshots: [OEG Kraken](oeg_graphql_schema.yaml) und [OE Backend](oe_backend_graphql_schema.json).
+
+`https://my.octopusenergy.de/` ist der Link zum Kundenportal in der
+Geraeteoberflaeche, kein zusaetzlicher API-Endpunkt.
 
 ## Support
 

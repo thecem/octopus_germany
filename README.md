@@ -68,12 +68,19 @@ Electricity meter labels use API metadata requested from both account and per-me
 
 ## API Support
 
-For API-related questions, consult the official Octopus Energy Germany documentation:
+The integration uses two GraphQL endpoints:
 
-- REST API: [developer.oeg-kraken.energy](https://developer.oeg-kraken.energy/)
-- GraphQL API (OEG Kraken backend): [developer.oeg-kraken.energy/graphql](https://developer.oeg-kraken.energy/graphql/)
+| API | Endpoint | Purpose |
+|---|---|---|
+| OEG Kraken GraphQL | `https://api.oeg-kraken.energy/v1/graphql/` | Authentication, accounts, agreements, prices, smart-meter/meter data, and Intelligent/SmartFlex device control |
+| OE Backend GraphQL | `https://api.backend.octopusenergy.de/v1/graphql/` | Variable grid fees (`variableGridFees`), authenticated with the same Kraken token |
 
-This integration primarily uses the OEG Kraken GraphQL API. Variable grid-fee queries still use the legacy OE GraphQL backend.
+- [Kraken GraphQL documentation](https://developer.oeg-kraken.energy/graphql/)
+- [Octopus developer documentation including the REST reference](https://developer.oeg-kraken.energy/): background information; this integration does not currently call Octopus REST endpoints.
+- Schema snapshots: [OEG Kraken](custom_components/octopus_germany/oeg_graphql_schema.yaml) and [OE Backend](custom_components/octopus_germany/oe_backend_graphql_schema.json).
+
+`https://my.octopusenergy.de/` is the customer-portal link shown on devices,
+not an additional API endpoint.
 
 ## Installation
 
@@ -103,6 +110,13 @@ See [Home Assistant's migration guide](https://www.home-assistant.io/integration
 Marketplace installs the `octopus_germany.zip` release asset. Its native
 download count comes from GitHub for the selected release asset; it is not a
 lifetime total or the active-installation count shown in the badge above.
+
+If downloads appear on GitHub but not in Marketplace, select **Update
+information** in the repository page's three-dot menu. The selected version
+must be a release with `octopus_germany.zip` (v0.0.202 or newer), not the `main`
+branch or an older release without an asset. Zero counts are hidden.
+GitHub/catalog data and badges can have different cache lifetimes; check for
+GitHub rate-limit notices or failed refreshes.
 
 ### Manual Installation
 
