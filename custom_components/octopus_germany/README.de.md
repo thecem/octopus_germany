@@ -13,6 +13,17 @@ Sprache / Language: [Deutsch](README.de.md) | [English](README.md)
 
 Diese Dokumentation beschreibt die Entitaeten und die Bedienung innerhalb der Integration.
 
+## Projekt unterstuetzen
+
+Wenn dir die Integration hilft, kannst du ihre Weiterentwicklung ueber
+GitHub Sponsors oder Ko-fi unterstuetzen:
+
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-Sponsor-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/thecem)
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K71LPRM2)
+
+GitHub Sponsors ist verfuegbar, sobald GitHub das persoenliche Sponsors-Profil
+freigegeben hat. Bis dahin steht Ko-fi als Alternative bereit.
+
 Voraussetzung ist Home Assistant **2026.11.0 oder neuer**. Entwicklung,
 Regressionstests und das Setup des Entwicklungscontainers verwenden
 Home Assistant **2026.11.0**. Markenbilder werden im Ordner `brand/` mitgeliefert.
@@ -191,3 +202,11 @@ Geraeteoberflaeche, kein zusaetzlicher API-Endpunkt.
 
 - Diskussionen: https://github.com/thecem/octopus_germany/discussions
 - Issues: https://github.com/thecem/octopus_germany/issues
+
+## Sponsoring
+
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-Sponsor-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/thecem)
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K71LPRM2)
+
+GitHub Sponsors ist verfuegbar, sobald GitHub das persoenliche Sponsors-Profil
+freigegeben hat. Bis dahin steht Ko-fi als Alternative bereit.

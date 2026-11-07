@@ -29,7 +29,11 @@ und erfassen nicht alle Nutzer. Beide Zaehler messen unterschiedliche Dinge.
 ---
 
 **Support das Projekt**
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K71LPRM2)
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-Sponsor-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/thecem)
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K71LPRM2)
+
+GitHub Sponsors ist verfuegbar, sobald GitHub das persoenliche Sponsors-Profil
+freigegeben hat. Bis dahin steht Ko-fi als Alternative bereit.
 
 ## Freund*innen werben
 
@@ -198,6 +202,17 @@ Geraeteoberflaeche, kein zusaetzlicher API-Endpunkt.
 
 - Diskussionen: https://github.com/thecem/octopus_germany/discussions
 - Issues: https://github.com/thecem/octopus_germany/issues
+
+## Sponsoring
+
+Wenn dir die Integration hilft, kannst du ihre Weiterentwicklung ueber
+GitHub Sponsors oder Ko-fi unterstuetzen:
+
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-Sponsor-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/thecem)
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K71LPRM2)
+
+GitHub Sponsors ist verfuegbar, sobald GitHub das persoenliche Sponsors-Profil
+freigegeben hat. Bis dahin steht Ko-fi als Alternative bereit.
 
 ## Lizenz
 

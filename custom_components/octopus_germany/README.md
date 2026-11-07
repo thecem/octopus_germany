@@ -31,7 +31,11 @@ and do not represent every user. The two counters measure different things.
 ---
 
 **💚 Support the Project**
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K71LPRM2)
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-Sponsor-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/thecem)
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K71LPRM2)
+
+GitHub Sponsors availability depends on approval of the personal Sponsors
+profile. Ko-fi is available as an alternative.
 
 **⚡ New to Octopus Energy Germany?**
 [![Octopus Energy Referral](https://img.shields.io/badge/🐙_Get_150€_as_a_new_customer-Join_Octopus_Energy-00D9FF?style=for-the-badge&logoColor=white)](https://octopusenergy.de/empfehlungen?referralCode=free-cat-744)
@@ -550,6 +554,10 @@ If you have found a bug or have a feature request please [raise it](https://gith
 This integration is developed and maintained in my free time. If you find it valuable and want to support its continued development, consider:
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K71LPRM2)
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-Sponsor-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/thecem)
+
+GitHub Sponsors availability depends on approval of the personal Sponsors
+profile. Ko-fi is available as an alternative.
 
 Your support helps cover development time, testing infrastructure, and keeps the project actively maintained with new features and bug fixes.
 
