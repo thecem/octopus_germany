@@ -8,8 +8,13 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+    from homeassistant.components.recorder.models import StatisticData
 
 QUARTER = timedelta(minutes=15)
 MILLISECONDS_THRESHOLD = 100_000_000_000
@@ -159,11 +164,11 @@ def complete_hours(intervals: dict, conflicts: set[str]) -> dict[datetime, Decim
 
 
 def rebuild_statistics(
-    existing: list[dict],
+    existing: Sequence[Mapping[str, Any]],
     hourly: dict[datetime, Decimal],
     cutoff: datetime,
     now: datetime,
-) -> tuple[list[dict], int]:
+) -> tuple[list[StatisticData], int]:
     """
     Rebase from the preceding sum; retain unverified legacy hour consumption.
 
@@ -191,13 +196,14 @@ def rebuild_statistics(
             raise ValueError("Cannot safely insert before an unknown legacy baseline")
     else:
         running = Decimal(0)
-    changes, unverified = [], 0
+    changes: list[StatisticData] = []
+    unverified = 0
     for at in sorted({at for at in rows if at >= cutoff} | replacements.keys()):
         old = rows.get(at)
         if at in replacements:
             value = replacements[at]
         else:
-            value = decimal_energy(old["state"])
+            value = decimal_energy(rows[at]["state"])
             unverified += 1
         running += value
         state, total = round(value, 6), round(running, 6)

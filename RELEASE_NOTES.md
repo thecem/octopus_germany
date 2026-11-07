@@ -1,5 +1,22 @@
 # Release Notes
 
+## Version 0.0.204 (2026-11-07)
+
+### Fixes
+
+- Limit background statistics scans to once per 30 minutes, independently of
+  frequent SmartFlex updates, to reduce API load when running multiple instances.
+- Journal statistics batches before Recorder writes and replay unverified batches
+  after failures or restarts without recalculating their original cumulative sums.
+  Use an unconditional Recorder commit barrier to avoid reading old values while
+  an import is already dequeued but still running. Keep read-back verification,
+  report the first differing value, and read in kWh.
+- Keep missing measurement intervals visible in diagnostics without treating
+  delayed data alone as a warning. Invalid/conflicting data still triggers warnings.
+- Report account connection/DNS/timeouts and expected smart-meter fetch failures
+  without generic exception tracebacks. Start smart-meter error backoff when the
+  request fails, rather than when a potentially long paginated fetch began.
+
 ## Version 0.0.203 (2026-11-05)
 
 ### Fixes

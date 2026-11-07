@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
-from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.models import (
+    StatisticData,
     StatisticMeanType,
     StatisticMetaData,
 )
@@ -18,8 +19,11 @@ from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
     statistics_during_period,
 )
+from homeassistant.components.recorder.tasks import SynchronizeTask
+from homeassistant.helpers.recorder import get_instance
 from homeassistant.helpers.storage import Store
 
+from .api.smart_meter import SmartMeterFetchError
 from .const import DOMAIN
 from .statistics_reconciliation import (
     complete_hours,
@@ -30,6 +34,8 @@ from .statistics_reconciliation import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from homeassistant.config_entries import ConfigEntry
     from homeassistant.core import HomeAssistant
 
@@ -41,6 +47,7 @@ LOOKBACK_DAYS = 30
 RECENT_DAYS = 7
 FULL_SCAN_HOUR = 6
 STATISTICS_TOLERANCE = 0.0000005
+SCAN_INTERVAL = timedelta(minutes=30)
 
 
 class StatisticsReconciler:
@@ -65,17 +72,25 @@ class StatisticsReconciler:
         self.task: asyncio.Task | None = None
         self.stopped = False
         self.status: dict[str, Any] = {"phase": "idle"}
+        self.next_scheduled_run: datetime | None = None
 
     async def async_load(self) -> None:
         """Restore intervals and successful full-scan date across restarts."""
         self.data = await self.store.async_load() or {"accounts": {}}
 
     def schedule(self) -> None:
-        """Coalesce notifications rather than queue overlapping scans."""
-        if not self.stopped and (self.task is None or self.task.done()):
-            self.task = self.hass.async_create_background_task(
-                self.async_run(), f"{DOMAIN} statistics reconciliation"
-            )
+        """Coalesce notifications and limit scans independently of SmartFlex polling."""
+        now = datetime.now(UTC)
+        if (
+            self.stopped
+            or (self.task is not None and not self.task.done())
+            or (self.next_scheduled_run is not None and now < self.next_scheduled_run)
+        ):
+            return
+        self.next_scheduled_run = now + SCAN_INTERVAL
+        self.task = self.hass.async_create_background_task(
+            self.async_run(), f"{DOMAIN} statistics reconciliation"
+        )
 
     def stop(self) -> None:
         """Cancel the task when unloading; an interrupted run is never checkpointed."""
@@ -95,6 +110,14 @@ class StatisticsReconciler:
                     await self._async_reconcile(account_num, now or datetime.now(UTC))
                 except asyncio.CancelledError:
                     raise
+                except (SmartMeterFetchError, TimeoutError) as err:
+                    self.status["phase"] = "fetch_failed"
+                    _LOGGER.warning(
+                        "Octopus statistics fetch failed for %s; retained data, "
+                        "retry on a later scan: %s",
+                        account_num,
+                        err,
+                    )
                 except Exception:
                     self.status["phase"] = "failed"
                     # API, validation, storage and recorder failures never mark a
@@ -105,6 +128,10 @@ class StatisticsReconciler:
 
     async def _async_reconcile(self, account_num: str, now: datetime) -> None:
         account = (self.coordinator.data or {}).get(account_num, {})
+        safe_account = account_num.replace("-", "_").lower()
+        statistic_id = f"{DOMAIN}:electricity_{safe_account}_consumption"
+        await self._async_replay_pending_statistics(account_num, statistic_id, account)
+        old = self.data["accounts"].get(account_num, {})
         properties = account.get("property_ids", [])
         malo = account.get("malo_number")
         if not properties or not malo:
@@ -112,7 +139,6 @@ class StatisticsReconciler:
         self.status = {"phase": "fetching", "started_at": now.isoformat()}
         zone = self.hass.config.time_zone
         local_now = now.astimezone(ZoneInfo(zone))
-        old = self.data["accounts"].get(account_num, {})
         full = not old.get("last_full_scan") or (
             local_now.hour >= FULL_SCAN_HOUR
             and old["last_full_scan"] != local_now.date().isoformat()
@@ -156,8 +182,6 @@ class StatisticsReconciler:
                 account_num,
                 sorted(conflicts)[:12],
             )
-        safe_account = account_num.replace("-", "_").lower()
-        statistic_id = f"{DOMAIN}:electricity_{safe_account}_consumption"
         recorder = get_instance(self.hass)
         self.status.update(phase="reading_statistics", received_intervals=len(readings))
         # Read the true preceding sum, never assume a seven-day baseline.
@@ -168,55 +192,24 @@ class StatisticsReconciler:
             None,
             {statistic_id},
             "hour",
-            None,
+            {"energy": "kWh"},
             {"state", "sum"},
         )
         changes, unverified = rebuild_statistics(
             history.get(statistic_id, []), hours, cutoff, now
         )
         if changes:
-            self.status.update(phase="writing_statistics", changed_hours=len(changes))
-            meter = (account.get("meter") or {}).get("number", account_num)
-            async_add_external_statistics(
-                self.hass,
-                StatisticMetaData(
-                    has_mean=False,
-                    mean_type=StatisticMeanType.NONE,
-                    has_sum=True,
-                    name=f"Electricity Consumption ({meter}/{account_num})",
-                    source=DOMAIN,
-                    statistic_id=statistic_id,
-                    unit_of_measurement="kWh",
-                    unit_class="energy",
-                ),
-                changes,
+            # Persist the original sums before writing, so retries/restarts never
+            # derive a new baseline from a partial or unverified recorder write.
+            journal = deepcopy(self.data)
+            journal["accounts"].setdefault(account_num, {})["pending_statistics"] = [
+                {**row, "start": row["start"].isoformat()} for row in changes
+            ]
+            await self.store.async_save(journal)
+            self.data = journal
+            await self._async_write_statistics(
+                account_num, statistic_id, account, changes
             )
-            await recorder.async_block_till_done()
-            written = await recorder.async_add_executor_job(
-                statistics_during_period,
-                self.hass,
-                changes[0]["start"],
-                None,
-                {statistic_id},
-                "hour",
-                None,
-                {"state", "sum"},
-            )
-            verified = {
-                utc_datetime(row["start"]): row for row in written.get(statistic_id, [])
-            }
-            if any(
-                row["start"] not in verified
-                or any(
-                    abs(float(verified[row["start"]][key]) - row[key])
-                    > STATISTICS_TOLERANCE
-                    for key in ("state", "sum")
-                )
-                for row in changes
-            ):
-                self.stopped = True
-                message = "Recorder read-back differs; reconciliation halted"
-                raise RuntimeError(message)
         candidate = deepcopy(self.data)
         candidate["accounts"][account_num] = {
             "intervals": intervals,
@@ -242,12 +235,7 @@ class StatisticsReconciler:
         self.status["phase"] = "complete"
         log = (
             _LOGGER.warning
-            if (
-                counts["invalid"]
-                or counts["conflicts"]
-                or counts["missing"]
-                or unverified
-            )
+            if (counts["invalid"] or counts["conflicts"] or unverified)
             else _LOGGER.info
         )
         log(
@@ -260,6 +248,102 @@ class StatisticsReconciler:
             unverified,
             len(changes),
         )
+
+    async def _async_replay_pending_statistics(
+        self, account_num: str, statistic_id: str, account: Mapping[str, Any]
+    ) -> None:
+        """Recover the original batch before reading a potentially changed baseline."""
+        if not (
+            pending := self.data["accounts"]
+            .get(account_num, {})
+            .get("pending_statistics")
+        ):
+            return
+        changes = [
+            StatisticData(
+                start=utc_datetime(row["start"]), state=row["state"], sum=row["sum"]
+            )
+            for row in pending
+        ]
+        await self._async_write_statistics(account_num, statistic_id, account, changes)
+        recovered = deepcopy(self.data)
+        recovered["accounts"][account_num].pop("pending_statistics")
+        await self.store.async_save(recovered)
+        self.data = recovered
+
+    async def _async_write_statistics(
+        self,
+        account_num: str,
+        statistic_id: str,
+        account: Mapping[str, Any],
+        changes: list[StatisticData],
+    ) -> None:
+        """Replay a durable batch and verify it before advancing the checkpoint."""
+        self.status.update(phase="writing_statistics", changed_hours=len(changes))
+        meter = (account.get("meter") or {}).get("number", account_num)
+        async_add_external_statistics(
+            self.hass,
+            StatisticMetaData(
+                has_mean=False,
+                mean_type=StatisticMeanType.NONE,
+                has_sum=True,
+                name=f"Electricity Consumption ({meter}/{account_num})",
+                source=DOMAIN,
+                statistic_id=statistic_id,
+                unit_of_measurement="kWh",
+                unit_class="energy",
+            ),
+            changes,
+        )
+        recorder = get_instance(self.hass)
+        # async_block_till_done can miss an import already dequeued by the thread.
+        # Always enqueue a commit barrier behind the statistics write.
+        committed = self.hass.loop.create_future()
+        recorder.queue_task(SynchronizeTask(committed))
+        await committed
+        written = await recorder.async_add_executor_job(
+            statistics_during_period,
+            self.hass,
+            changes[0]["start"],
+            None,
+            {statistic_id},
+            "hour",
+            {"energy": "kWh"},
+            {"state", "sum"},
+        )
+        verified = {
+            utc_datetime(row.get("start")): row for row in written.get(statistic_id, [])
+        }
+        for row in changes:
+            actual = verified.get(row["start"], {})
+            for key in ("state", "sum"):
+                value = actual.get(key)
+                expected = row.get(key)
+                if expected is None:
+                    message = f"Missing expected statistics value for {key}"
+                    raise ValueError(message)
+                if (
+                    not isinstance(value, (int, float))
+                    or not math.isfinite(value)
+                    or abs(value - expected) > STATISTICS_TOLERANCE
+                ):
+                    self.status["verification_error"] = {
+                        "start": row["start"].isoformat(),
+                        "field": key,
+                        "expected": expected,
+                        "received": (
+                            str(value)
+                            if isinstance(value, float) and not math.isfinite(value)
+                            else value
+                        ),
+                    }
+                    message = (
+                        f"Recorder read-back differs at {row['start'].isoformat()} "
+                        f"for {key}: expected {expected}, received {value}; "
+                        "batch retained for retry, checkpoint not advanced"
+                    )
+                    raise RuntimeError(message)
+        self.status.pop("verification_error", None)
 
 
 async def async_setup_statistics_import(

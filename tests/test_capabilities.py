@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urlsplit
 # HA 2026.10 installs its validation alias before integrations import voluptuous.
 import homeassistant  # noqa: F401
 import voluptuous as vol
-from aiohttp import web
+from aiohttp import ClientConnectionError, web
 
 from custom_components.octopus_germany import _async_fetch_account_data
 from custom_components.octopus_germany.api.queries import (
@@ -1459,6 +1459,51 @@ class TariffCapabilitiesTest(unittest.TestCase):
             )
 
         assert api._15min_retry_until is not None
+
+    def test_fetch_all_data_reports_transport_errors_without_tracebacks(self) -> None:
+        """Treat transient transport failures as failed polls without tracebacks."""
+        for error in (ClientConnectionError("DNS lookup timed out"), TimeoutError()):
+            with self.subTest(error=type(error).__name__):
+                api = object.__new__(OctopusGermany)
+                api.ensure_token = AsyncMock(return_value=True)
+                api.fetch_tariff_capabilities = AsyncMock(
+                    return_value=TariffCapabilities()
+                )
+                api._get_graphql_client = Mock(  # noqa: SLF001
+                    return_value=Mock(execute_async=AsyncMock(side_effect=error))
+                )
+                with self.assertLogs(
+                    "custom_components.octopus_germany.api.accounts", level="WARNING"
+                ) as logs:
+                    result = asyncio.run(api.fetch_all_data("account-test"))
+                assert result is None
+                assert all(record.exc_info is None for record in logs.records)
+
+    def test_measurement_range_backoff_starts_when_request_fails(self) -> None:
+        """Start the full cooldown after even a slow request has failed."""
+        api = object.__new__(OctopusGermany)
+        api._15min_retry_until = None  # noqa: SLF001
+        api.ensure_token = AsyncMock(return_value=True)
+        client = Mock(execute_async=AsyncMock(side_effect=TimeoutError()))
+        api._get_graphql_client = Mock(return_value=client)  # noqa: SLF001
+        started = datetime(2026, 11, 7, 6, tzinfo=UTC)
+        failed = started + timedelta(minutes=10)
+        with patch(
+            "custom_components.octopus_germany.api.meters.datetime", wraps=datetime
+        ) as clock:
+            clock.now.side_effect = [started, failed]
+            with self.assertRaises(SmartMeterFetchError):  # noqa: PT027
+                asyncio.run(
+                    api.fetch_electricity_measurements_range(
+                        "property-test",
+                        "malo-test",
+                        started.isoformat(),
+                        failed.isoformat(),
+                        "Europe/Berlin",
+                        "15min",
+                    )
+                )
+        assert api._15min_retry_until == failed + timedelta(hours=3)  # noqa: SLF001
 
     def test_measurement_range_paginates_and_preserves_metadata(self) -> None:
         api = object.__new__(OctopusGermany)

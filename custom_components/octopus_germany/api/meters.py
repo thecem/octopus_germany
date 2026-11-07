@@ -471,13 +471,13 @@ class MeterApiMixin:
                 query=ELECTRICITY_15MIN_READINGS_QUERY, variables=variables
             )
         except Exception as err:
-            self._15min_retry_until = now + SMART_METER_ERROR_BACKOFF
+            self._15min_retry_until = datetime.now(UTC) + SMART_METER_ERROR_BACKOFF
             _LOGGER.exception("Error fetching 15min readings")
             msg = "15-minute smart-meter HTTP or response decoding failed"
             raise SmartMeterFetchError(msg) from err
 
         if response is None:
-            self._15min_retry_until = now + SMART_METER_ERROR_BACKOFF
+            self._15min_retry_until = datetime.now(UTC) + SMART_METER_ERROR_BACKOFF
             msg = "15-minute smart-meter request returned no response"
             raise SmartMeterFetchError(msg)
 
@@ -580,12 +580,15 @@ class MeterApiMixin:
                     variables=variables,
                 )
             except Exception as err:
-                self._15min_retry_until = now + SMART_METER_ERROR_BACKOFF
-                msg = "Smart-meter measurement request failed"
+                self._15min_retry_until = datetime.now(UTC) + SMART_METER_ERROR_BACKOFF
+                msg = (
+                    f"Smart-meter measurement request failed "
+                    f"({type(err).__name__}): {err}"
+                )
                 raise SmartMeterFetchError(msg) from err
 
             if response is None:
-                self._15min_retry_until = now + SMART_METER_ERROR_BACKOFF
+                self._15min_retry_until = datetime.now(UTC) + SMART_METER_ERROR_BACKOFF
                 msg = "Smart-meter measurement request returned no response"
                 raise SmartMeterFetchError(msg)
 

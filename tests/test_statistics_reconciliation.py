@@ -5,6 +5,7 @@
 # ruff: noqa: C408, D101, D102, D103, INP001, PT009, PT027, SIM117, SLF001
 
 import asyncio
+import tempfile
 import types
 import unittest
 from copy import deepcopy
@@ -13,6 +14,12 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import homeassistant  # noqa: F401
+from homeassistant import loader
+from homeassistant.config_entries import ConfigEntries
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import frame
+from homeassistant.helpers.recorder import async_initialize_recorder
+from homeassistant.setup import async_setup_component
 
 from custom_components.octopus_germany import diagnostics
 from custom_components.octopus_germany import statistics as s
@@ -203,6 +210,7 @@ class ImporterTests(unittest.IsolatedAsyncioTestCase):
         )
         self.hass = types.SimpleNamespace(
             config=types.SimpleNamespace(time_zone="Europe/Berlin"),
+            loop=asyncio.get_running_loop(),
             async_create_background_task=lambda coro, name: asyncio.create_task(coro),
         )
         self.store = types.SimpleNamespace(
@@ -212,6 +220,7 @@ class ImporterTests(unittest.IsolatedAsyncioTestCase):
         self.recorder = types.SimpleNamespace(
             async_add_executor_job=AsyncMock(side_effect=self.read),
             async_block_till_done=AsyncMock(),
+            queue_task=MagicMock(side_effect=lambda task: task.future.set_result(None)),
         )
         self.patches = [
             patch.object(s, "Store", return_value=self.store),
@@ -283,12 +292,100 @@ class ImporterTests(unittest.IsolatedAsyncioTestCase):
             await self.importer.async_run(NOW)
         self.assertIsNone(self.persisted)
 
-    async def test_readback_failure_halts_importer(self):
+    async def test_readback_failure_retains_checkpoint_and_can_retry(self):
         with patch.object(s, "async_add_external_statistics"):
             with self.assertLogs(s._LOGGER, level="ERROR"):
                 await self.importer.async_run(NOW)
-        self.assertTrue(self.importer.stopped)
+        self.assertFalse(self.importer.stopped)
+        checkpoint = self.persisted["accounts"]["A-TEST"]
+        self.assertNotIn("last_success", checkpoint)
+        self.assertEqual(checkpoint["pending_statistics"][0]["sum"], 1)
+        self.assertIn("verification_error", self.importer.status)
+        await self.importer.async_run(NOW)
+        self.assertEqual(self.importer.status["phase"], "complete")
+        self.assertEqual(len(self.rows), 1)
+        self.assertNotIn("pending_statistics", self.persisted["accounts"]["A-TEST"])
+
+    async def test_readback_value_mismatch_is_reported_and_retried(self):
+        def wrong_write(hass, metadata, changes):
+            self.write(hass, metadata, changes)
+            self.rows[-1]["sum"] += 0.1
+
+        with patch.object(s, "async_add_external_statistics", side_effect=wrong_write):
+            with self.assertLogs(s._LOGGER, level="ERROR") as logs:
+                await self.importer.async_run(NOW)
+        self.assertIn("expected", "\n".join(logs.output))
+        self.assertIn("received", "\n".join(logs.output))
+        self.assertFalse(self.importer.stopped)
+        self.assertNotIn("last_success", self.persisted["accounts"]["A-TEST"])
+        self.store.async_load.return_value = deepcopy(self.persisted)
+        restarted = s.StatisticsReconciler(
+            self.hass, self.api, self.coordinator, ["A-TEST"], "entry"
+        )
+        await restarted.async_load()
+        await restarted.async_run(NOW)
+        self.assertEqual(self.rows[-1]["sum"], 1)
+        self.assertEqual(restarted.status["phase"], "complete")
+
+    async def test_nonfinite_readback_does_not_advance_checkpoint(self):
+        def invalid_write(hass, metadata, changes):
+            self.write(hass, metadata, changes)
+            self.rows[-1]["sum"] = float("nan")
+
+        with patch.object(
+            s, "async_add_external_statistics", side_effect=invalid_write
+        ):
+            with self.assertLogs(s._LOGGER, level="ERROR"):
+                await self.importer.async_run(NOW)
+        self.assertNotIn("last_success", self.persisted["accounts"]["A-TEST"])
+        await self.importer.async_run(NOW)
+        self.assertEqual(self.rows[-1]["sum"], 1)
+
+    async def test_expected_fetch_failure_retains_data_without_traceback(self):
+        self.api.fetch_electricity_measurements_range.side_effect = (
+            s.SmartMeterFetchError("API rate limit")
+        )
+        with self.assertLogs(s._LOGGER, level="WARNING") as logs:
+            await self.importer.async_run(NOW)
         self.assertIsNone(self.persisted)
+        self.assertTrue(all(record.exc_info is None for record in logs.records))
+        self.assertEqual(self.importer.status["phase"], "fetch_failed")
+
+    async def test_missing_intervals_are_informational(self):
+        with self.assertLogs(s._LOGGER, level="INFO") as logs:
+            await self.importer.async_run(NOW)
+        self.assertTrue(self.persisted["accounts"]["A-TEST"]["diagnostics"]["missing"])
+        self.assertTrue(all(record.levelname == "INFO" for record in logs.records))
+
+    async def test_history_and_readback_explicitly_request_kwh(self):
+        await self.importer.async_run(NOW)
+        self.recorder.async_block_till_done.assert_not_awaited()
+        self.assertIsInstance(
+            self.recorder.queue_task.call_args.args[0], s.SynchronizeTask
+        )
+        for call in self.recorder.async_add_executor_job.await_args_list:
+            self.assertEqual(call.args[6], {"energy": "kWh"})
+
+    async def test_intelligent_notifications_do_not_repeat_statistics_scans(self):
+        with patch.object(s, "datetime", wraps=datetime) as clock:
+            clock.now.return_value = NOW
+            self.importer.schedule()
+            await self.importer.task
+            first = self.importer.task
+            for minutes in (3, 6, 15, 29):
+                clock.now.return_value = NOW + timedelta(minutes=minutes)
+                self.importer.schedule()
+                await self.importer.task
+                self.assertIs(self.importer.task, first)
+            self.assertEqual(
+                self.api.fetch_electricity_measurements_range.call_count, 1
+            )
+            clock.now.return_value = NOW + timedelta(minutes=30)
+            self.importer.schedule()
+            await self.importer.task
+            self.assertEqual(
+                self.api.fetch_electricity_measurements_range.call_count, 2
+            )
 
     async def test_live_correction_is_idempotent_and_keeps_older_rows(self):
         old_at = NOW - timedelta(days=100)
@@ -313,11 +410,28 @@ class ImporterTests(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs(s._LOGGER, level="ERROR"):
             await self.importer.async_run(NOW)
         self.assertEqual(self.importer.data, {"accounts": {}})
-        self.assertEqual(len(self.rows), 1)
+        self.assertEqual(len(self.rows), 0)
         self.store.async_save.side_effect = self.save
         await self.importer.async_run(NOW)
         self.assertEqual(len(self.rows), 1)
         self.assertEqual(self.rows[0]["sum"], 1)
+
+    async def test_final_checkpoint_failure_replays_original_batch(self):
+        async def fail_final_save(data):
+            if "pending_statistics" not in data["accounts"]["A-TEST"]:
+                message = "disk unavailable"
+                raise OSError(message)
+            await self.save(data)
+
+        self.store.async_save.side_effect = fail_final_save
+        with self.assertLogs(s._LOGGER, level="ERROR"):
+            await self.importer.async_run(NOW)
+        self.assertEqual(self.rows[0]["sum"], 1)
+        self.assertIn("pending_statistics", self.persisted["accounts"]["A-TEST"])
+        self.store.async_save.side_effect = self.save
+        await self.importer.async_run(NOW)
+        self.assertEqual(self.rows[0]["sum"], 1)
+        self.assertNotIn("pending_statistics", self.persisted["accounts"]["A-TEST"])
 
     async def test_boot_before_6_does_not_skip_daily_full_scan(self):
         await self.importer.async_run(NOW.replace(hour=2))
@@ -364,3 +478,75 @@ class ImporterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["reconciliation"]["status"]["phase"], "complete")
         self.assertNotIn("A-TEST", str(result))
         self.assertNotIn("readings", str(result))
+
+
+class RealRecorderTests(unittest.IsolatedAsyncioTestCase):
+    async def test_import_correction_and_readback_with_real_recorder(self):
+        with tempfile.TemporaryDirectory(prefix="octopus-recorder-test-") as directory:
+            hass = HomeAssistant(directory)
+            hass.config.time_zone = "Europe/Berlin"
+            loader.async_setup(hass)
+            frame.async_setup(hass)
+            async_initialize_recorder(hass)
+            hass.config_entries = ConfigEntries(hass, {})
+            await hass.config_entries.async_initialize()
+            try:
+                self.assertTrue(
+                    await async_setup_component(
+                        hass,
+                        "recorder",
+                        {
+                            "recorder": {
+                                "db_url": f"sqlite:///{directory}/recorder.db",
+                                "auto_purge": False,
+                                "auto_repack": False,
+                            }
+                        },
+                    )
+                )
+                await hass.async_start()
+                api = types.SimpleNamespace(
+                    fetch_electricity_measurements_range=AsyncMock(
+                        return_value=quarters()
+                    )
+                )
+                coordinator = types.SimpleNamespace(
+                    data={"A-TEST": {"property_ids": ["p"], "malo_number": "malo"}}
+                )
+                importer = s.StatisticsReconciler(
+                    hass, api, coordinator, ["A-TEST"], "test-entry"
+                )
+                await importer.async_run(NOW)
+                self.assertEqual(importer.status["phase"], "complete")
+                api.fetch_electricity_measurements_range.return_value = quarters(
+                    values=("0", ".2", ".3", ".4")
+                )
+                recorder = s.get_instance(hass)
+                with patch.object(
+                    recorder, "async_get_commit_future", return_value=None
+                ) as optimized_wait:
+                    await importer.async_run(NOW)
+                    optimized_wait.assert_not_called()
+                self.assertEqual(importer.status["phase"], "complete")
+                await importer.async_run(NOW)
+                recorder = s.get_instance(hass)
+                statistic_id = "octopus_germany:electricity_a_test_consumption"
+                result = await recorder.async_add_executor_job(
+                    s.statistics_during_period,
+                    hass,
+                    AT,
+                    None,
+                    {statistic_id},
+                    "hour",
+                    {"energy": "kWh"},
+                    {"state", "sum"},
+                )
+                rows = result[statistic_id]
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]["state"], 0.9)
+                self.assertEqual(rows[0]["sum"], 0.9)
+                self.assertNotIn(
+                    "pending_statistics", importer.data["accounts"]["A-TEST"]
+                )
+            finally:
+                await hass.async_stop()

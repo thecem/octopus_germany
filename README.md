@@ -244,6 +244,21 @@ logger:
 
 ### Common Issues
 
+#### DNS, API Limits and Statistics
+- DNS timeouts mean the configured DNS server did not resolve the API host in
+  time, not that the password is invalid. Check DNS/network connectivity if they
+  recur; account polling retries on the next update.
+- A second Home Assistant instance and manual exports increase API load and can
+  contribute to `KT-CT-1199` (too many requests). The API's quota scope is not
+  known. Statistics scans run at most every 30 minutes per integration entry;
+  this does not slow SmartFlex polling. Page retries and backoff remain active.
+- `missing` counts unavailable quarter-hour intervals, which may arrive later.
+  It does not mean Recorder deleted data; cached intervals are retained.
+- Recorder writes are journaled and checked in kWh. Unverified batches are
+  retried, including after restarts, with their original sums. A mismatch logs
+  the first timestamp, field and expected/received values and does not advance
+  the successful checkpoint. Integration diagnostics show pending batch counts.
+
 #### Boost Charge Switch Not Available
 - **Cause**: Smart charging is not enabled or device doesn't support boost charging
 - **Solution**:

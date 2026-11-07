@@ -7,6 +7,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from aiohttp import ClientError
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from custom_components.octopus_germany.const import (
@@ -708,6 +709,13 @@ class AccountApiMixin:
             _LOGGER.error("API response contains neither data nor errors")
             return None
 
+        except (ClientError, TimeoutError) as err:
+            _LOGGER.warning(
+                "Could not fetch account data due to a connection/DNS/timeout error; "
+                "retrying on the next update: %s",
+                err,
+            )
+            return None
         except Exception:
             _LOGGER.exception("Error fetching all data")
             return None

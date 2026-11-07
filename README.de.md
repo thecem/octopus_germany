@@ -172,6 +172,24 @@ Empfehlung durch Home Assistant.
 
 ## Debugging
 
+### DNS, API-Limits und Statistiken
+
+- DNS-Timeouts bedeuten, dass der DNS-Server den API-Host nicht rechtzeitig
+  aufloesen konnte, nicht dass das Passwort falsch ist. Bei Wiederholung
+  DNS/Netzwerk pruefen; der Kontoabruf versucht es beim naechsten Update erneut.
+- Eine zweite HA-Instanz und manuelle Exporte erhoehen die API-Last und koennen
+  zu `KT-CT-1199` (zu viele Anfragen) beitragen. Der genaue Geltungsbereich des
+  API-Limits ist nicht bekannt. Statistikabrufe laufen hoechstens alle 30 Minuten
+  pro Integrationseintrag; SmartFlex bleibt unveraendert. Seiten-Retries und
+  Wartezeiten nach API-Fehlern bleiben aktiv.
+- `missing` zaehlt fehlende Viertelstunden, die spaeter eintreffen koennen.
+  Das bedeutet nicht, dass Recorder Daten geloescht hat; der Cache bleibt erhalten.
+- Recorder-Schreibbloecke werden vorab gespeichert und in kWh kontrolliert.
+  Unbestaetigte Bloecke werden auch nach Neustarts mit ihren urspruenglichen Summen
+  wiederholt. Abweichungen melden Zeitstempel, Feld sowie Soll-/Ist-Wert, ohne
+  einen erfolgreichen Abgleich zu speichern. Die Integrationsdiagnose zeigt
+  die Anzahl ausstehender Statistikwerte.
+
 Beispiel fuer Debug-Logs in configuration.yaml:
 
 ```yaml

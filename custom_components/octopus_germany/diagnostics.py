@@ -44,6 +44,9 @@ async def async_get_config_entry_diagnostics(
             "accounts": [
                 {
                     "interval_count": len(account.get("intervals", {})),
+                    "pending_statistics_count": len(
+                        account.get("pending_statistics", [])
+                    ),
                     "last_success": account.get("last_success"),
                     "last_full_scan": account.get("last_full_scan"),
                     "diagnostics": deepcopy(account.get("diagnostics", {})),
