@@ -2,7 +2,8 @@
 
 Language / Sprache: [English](README.md) | [Deutsch](README.de.md)
 
-[![Marketplace](https://img.shields.io/badge/Home%20Assistant-Marketplace-41BDF5?logo=homeassistant&logoColor=white)](https://www.home-assistant.io/integrations/marketplace/)
+[![Open Marketplace repository on My Home Assistant](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=thecem&repository=octopus_germany&category=integration)
+
 [![Latest release](https://img.shields.io/github/v/release/thecem/octopus_germany?label=release&color=41BDF5&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/releases/latest)
 [![Minimum Home Assistant version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fthecem%2Foctopus_germany%2Fmain%2Fhacs.json&query=%24.homeassistant&label=Home%20Assistant%20%E2%89%A5&color=41BDF5&logo=homeassistant&logoColor=white)](hacs.json)
 [![License](https://img.shields.io/github/license/thecem/octopus_germany?color=41BDF5)](LICENSE)
@@ -34,8 +35,8 @@ and do not represent every user. The two counters measure different things.
 [![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-Sponsor-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/thecem)
 [![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K71LPRM2)
 
-GitHub Sponsors availability depends on approval of the personal Sponsors
-profile. Ko-fi is available as an alternative.
+GitHub Sponsors is now available. You can support the project through
+GitHub Sponsors or Ko-fi.
 
 **⚡ New to Octopus Energy Germany?**
 [![Octopus Energy Referral](https://img.shields.io/badge/🐙_Get_150€_as_a_new_customer-Join_Octopus_Energy-00D9FF?style=for-the-badge&logoColor=white)](https://octopusenergy.de/empfehlungen?referralCode=free-cat-744)
@@ -310,8 +311,8 @@ This integration is developed and maintained in my free time. If you find it val
 [![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-Sponsor-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/thecem)
 [![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K71LPRM2)
 
-GitHub Sponsors availability depends on approval of the personal Sponsors
-profile. Ko-fi is available as an alternative.
+GitHub Sponsors is now available. You can support the project through
+GitHub Sponsors or Ko-fi.
 
 Your support helps cover development time, testing infrastructure, and keeps the project actively maintained with new features and bug fixes.
 
