@@ -2,7 +2,8 @@
 
 Sprache / Language: [Deutsch](README.de.md) | [English](README.md)
 
-[![Marketplace](https://img.shields.io/badge/Home%20Assistant-Marketplace-41BDF5?logo=homeassistant&logoColor=white)](https://www.home-assistant.io/integrations/marketplace/)
+[![Repository im Marketplace auf My Home Assistant oeffnen](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=thecem&repository=octopus_germany&category=integration)
+
 [![Neueste Version](https://img.shields.io/github/v/release/thecem/octopus_germany?label=Version&color=41BDF5&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/releases/latest)
 [![Home-Assistant-Mindestversion](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fthecem%2Foctopus_germany%2Fmain%2Fhacs.json&query=%24.homeassistant&label=Home%20Assistant%20%E2%89%A5&color=41BDF5&logo=homeassistant&logoColor=white)](../../hacs.json)
 [![Lizenz](https://img.shields.io/github/license/thecem/octopus_germany?label=Lizenz&color=41BDF5)](../../LICENSE)
@@ -21,8 +22,8 @@ GitHub Sponsors oder Ko-fi unterstuetzen:
 [![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-Sponsor-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/thecem)
 [![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K71LPRM2)
 
-GitHub Sponsors ist verfuegbar, sobald GitHub das persoenliche Sponsors-Profil
-freigegeben hat. Bis dahin steht Ko-fi als Alternative bereit.
+GitHub Sponsors ist jetzt freigeschaltet. Du kannst das Projekt ueber
+GitHub Sponsors oder Ko-fi unterstuetzen.
 
 Voraussetzung ist Home Assistant **2026.11.0 oder neuer**. Entwicklung,
 Regressionstests und das Setup des Entwicklungscontainers verwenden
@@ -226,5 +227,5 @@ Geraeteoberflaeche, kein zusaetzlicher API-Endpunkt.
 [![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-Sponsor-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/thecem)
 [![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K71LPRM2)
 
-GitHub Sponsors ist verfuegbar, sobald GitHub das persoenliche Sponsors-Profil
-freigegeben hat. Bis dahin steht Ko-fi als Alternative bereit.
+GitHub Sponsors ist jetzt freigeschaltet. Du kannst das Projekt ueber
+GitHub Sponsors oder Ko-fi unterstuetzen.
