@@ -8,7 +8,7 @@ Sprache / Language: [Deutsch](README.de.md) | [English](README.md)
 [![Home-Assistant-Mindestversion](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fthecem%2Foctopus_germany%2Fmain%2Fhacs.json&query=%24.homeassistant&label=Home%20Assistant%20%E2%89%A5&color=41BDF5&logo=homeassistant&logoColor=white)](hacs.json)
 [![Lizenz](https://img.shields.io/github/license/thecem/octopus_germany?label=Lizenz&color=41BDF5)](LICENSE)
 
-[![GitHub-Sterne](https://img.shields.io/github/stars/thecem/octopus_germany?label=Sterne&color=41BDF5&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/stargazers)
+[![Stern vergeben](https://img.shields.io/github/stars/thecem/octopus_germany?style=for-the-badge&label=Stern%20vergeben&labelColor=20232a&color=20232a&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/stargazers)
 [![GitHub-Release-Downloads](https://img.shields.io/github/downloads/thecem/octopus_germany/total?label=Downloads%20seit%2011%2F2026&color=41BDF5&logo=github&logoColor=white)](https://github.com/thecem/octopus_germany/releases)
 [![Aktive Home-Assistant-Installationen](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fanalytics.home-assistant.io%2Fcustom_integrations.json&query=%24.octopus_germany.total&label=aktive%20Installationen&color=41BDF5&logo=homeassistant&logoColor=white&cacheSeconds=21600)](https://analytics.home-assistant.io/custom_integrations)
 
