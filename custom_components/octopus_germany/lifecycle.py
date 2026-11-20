@@ -244,6 +244,20 @@ async def _async_fetch_account_data(
                         processed[account_number].get("grid_operator_name"),
                     )
                 )
+            property_id = next(
+                (
+                    property_id
+                    for property_id in processed[account_number].get("property_ids", [])
+                    if property_id
+                ),
+                None,
+            )
+            if processed[account_number].get("malo_number") and property_id:
+                processed[account_number][
+                    "estimated_annual_consumption"
+                ] = await api.fetch_estimated_annual_consumption(
+                    account_number, property_id
+                )
             all_accounts_data.update(processed)
         except Exception:
             _LOGGER.exception("Error fetching data for account %s", account_number)

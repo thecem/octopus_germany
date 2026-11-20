@@ -52,6 +52,7 @@ Sign up through my referral link and receive **150 €** as a bill credit. Eligi
   - Dynamic tariffs (with real-time pricing using unit rate forecasts)
   - Heat tariffs (for heat pumps)
 - **Section 14a Grid Fees**: OE-reported module and current variable grid fee with standardized NT/ST/HT attributes and full rate schedule, plus a combined gross price sensor with today's tariff/Module 3 price combinations and intervals
+- **Estimated Annual Consumption**: OE's estimated electricity consumption for the current supply year (the portal's consumption-overview estimate), with the previous year's estimate as an attribute
 - **Cost Report Service**: Export a monthly or yearly daily tariff-block estimate using agreement prices and the selected network operator's API-reported module and time-valid fees; heat tariffs are supported. Not suitable for reliable dynamic-tariff billing without actual historical interval prices; forecasts are not historical prices.
 - Generated smart-meter and cost-report CSVs are stored under `/config/octopus_germany/exports`; Home Assistant provides a persistent notification with a file-scoped bearer-token download link. Validity defaults to 24 hours and is configurable in integration options (1 to 168 hours); existing links retain their original expiry.
 - **Agreement History**: All agreements returned by OE, including past, active and scheduled entries, with gross/net unit prices, VAT, and net/gross monthly standing charges with validity dates in electricity price sensor attributes
@@ -78,7 +79,7 @@ The integration uses two GraphQL endpoints:
 | API | Endpoint | Purpose |
 |---|---|---|
 | OEG Kraken GraphQL | `https://api.oeg-kraken.energy/v1/graphql/` | Authentication, accounts, agreements, prices, smart-meter/meter data, and Intelligent/SmartFlex device control |
-| OE Backend GraphQL | `https://api.backend.octopusenergy.de/v1/graphql/` | Variable grid fees (`variableGridFees`), authenticated with the same Kraken token |
+| OE Backend GraphQL | `https://api.backend.octopusenergy.de/v1/graphql/` | Variable grid fees (`variableGridFees`) and estimated annual consumption (`paymentAdequacy`), authenticated with the same Kraken token |
 
 - [Kraken GraphQL documentation](https://developer.oeg-kraken.energy/graphql/)
 - [Octopus developer documentation including the REST reference](https://developer.oeg-kraken.energy/): background information; this integration does not currently call Octopus REST endpoints.

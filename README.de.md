@@ -44,6 +44,7 @@ Wenn du über [meinen Empfehlungslink](https://octopusenergy.de/empfehlungen?ref
 
 - Konto- und Saldo-Daten fuer Strom, Gas und Waerme sowie Gaszaehler, Gasvertragslaufzeit und Multi-Account/Multi-Device-Unterstuetzung
 - Aktuelle Strom- und Gaspreise (Festpreis, TOU und dynamische Tarife) sowie historische Agreement-Preise
+- Von OE geschaetzter Stromverbrauch fuer das aktuelle Abrechnungsjahr (wie in der Verbrauchsuebersicht des Kundenportals) mit der Schaetzung des Vorjahres als Attribut
 - Paragraph-14a-Netzentgelte mit von OE gemeldetem Modul, standardisierten NT/ST/HT-Attributen und vollstaendigem Tagesplan
 - Kombinierter Bruttopreis aus Octopus-Tarif und zeitvariablem Netzentgelt mit Tagesplan der Tarif-/Modul-3-Preiskombinationen und Zeitintervalle; numerische Werte bleiben fuer Templates und Automationen verfuegbar
 - Alle von OE gelieferten vergangenen, aktiven und zukuenftigen Stromvertraege mit Brutto-/Netto-Arbeitspreisen, MwSt. sowie Netto-Monatsgrundpreis und brutto ausgewiesenen Grundpreisstufen mit Gueltigkeitsdaten in den Attributen des Strompreis-Sensors

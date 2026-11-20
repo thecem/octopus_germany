@@ -70,7 +70,7 @@ The integration uses two GraphQL endpoints:
 | API | Endpoint | Purpose |
 |---|---|---|
 | OEG Kraken GraphQL | `https://api.oeg-kraken.energy/v1/graphql/` | Authentication, accounts, agreements, prices, smart-meter/meter data, and Intelligent/SmartFlex device control |
-| OE Backend GraphQL | `https://api.backend.octopusenergy.de/v1/graphql/` | Variable grid fees (`variableGridFees`), authenticated with the same Kraken token |
+| OE Backend GraphQL | `https://api.backend.octopusenergy.de/v1/graphql/` | Variable grid fees (`variableGridFees`) and estimated annual consumption (`paymentAdequacy`), authenticated with the same Kraken token |
 
 - [Kraken GraphQL documentation](https://developer.oeg-kraken.energy/graphql/)
 - [Octopus developer documentation including the REST reference](https://developer.oeg-kraken.energy/): background information; this integration does not currently call Octopus REST endpoints.
@@ -286,6 +286,14 @@ Current and historical meters are discovered through OE's meter endpoint. Meter 
 - **Description**: Shows the current electricity account balance in EUR
 - **Unit**: €
 - **Note**: Only available for accounts with electricity service (MALO number present)
+
+#### Estimated Annual Consumption Sensor
+
+- **Unique ID**: `octopus_<account_number>_estimated_annual_consumption`
+- **Description**: OE's estimated electricity consumption for the current supply year, as shown in the customer portal's consumption overview
+- **Unit**: kWh (energy device class, no state class, so no long-term statistics are recorded)
+- **Attributes**: `last_year` (estimate for the previous supply year, `null` until OE reports one) and `source`
+- **Note**: Retrieved from the OE backend `paymentAdequacy` query and cached for one hour. OE documents this query for accounts with simple tariffs and single-tariff meters; the sensor is only created when OE returns an estimate at setup (reload the integration after a change) and the entity becomes unavailable if the estimate disappears.
 
 #### Section 14a Grid Fee Sensors
 
