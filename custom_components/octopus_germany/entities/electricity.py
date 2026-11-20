@@ -398,6 +398,58 @@ def _price_combinations(
     return list(combinations.values())
 
 
+class OctopusEstimatedAnnualConsumptionSensor(CoordinatorEntity, SensorEntity):
+    """Expose OE's estimated electricity consumption for the supply year."""
+
+    def __init__(
+        self, account_number: str, coordinator: OctopusDataCoordinator
+    ) -> None:
+        """Initialize the estimated annual consumption sensor."""
+        super().__init__(coordinator)
+        self._account_number = account_number
+        self._attr_name = f"Octopus {account_number} Estimated Annual Consumption"
+        self._attr_unique_id = f"octopus_{account_number}_estimated_annual_consumption"
+        self._attr_device_class = SensorDeviceClass.ENERGY
+        self._attr_native_unit_of_measurement = "kWh"
+        self._attr_icon = "mdi:chart-line"
+        self._attr_suggested_display_precision = 0
+        self._attr_has_entity_name = False
+
+    def _data(self) -> dict[str, Any]:
+        """Return the current estimated annual consumption data."""
+        if not self.coordinator.data:
+            return {}
+        return (
+            self.coordinator.data.get(self._account_number, {}).get(
+                "estimated_annual_consumption"
+            )
+            or {}
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the estimate for the current supply year in kWh."""
+        return self._data().get("current_year")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the previous supply year's estimate and the data source."""
+        return {
+            "last_year": self._data().get("last_year"),
+            "source": "OE backend",
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return whether OE supplied an estimate for the current supply year."""
+        return self._data().get("current_year") is not None
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return account device information."""
+        return _account_device_info(self._account_number)
+
+
 class OctopusSection14aModuleSensor(CoordinatorEntity, SensorEntity):
     """Expose the section 14a module reported by the OE backend."""
 

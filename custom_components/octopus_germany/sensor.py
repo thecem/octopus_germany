@@ -45,6 +45,7 @@ from .entities.devices import (
 from .entities.electricity import (
     OctopusCombinedElectricityPriceSensor,
     OctopusElectricityPriceSensor,
+    OctopusEstimatedAnnualConsumptionSensor,
     OctopusSection14aModuleSensor,
     OctopusVariableGridFeeSensor,
 )
@@ -303,6 +304,11 @@ async def async_setup_entry(
                 if account_data.get("malo_number"):
                     entities.append(
                         OctopusElectricitySmartMeterReadingsSensor(acc_num, coordinator)
+                    )
+
+                if account_data.get("estimated_annual_consumption"):
+                    entities.append(
+                        OctopusEstimatedAnnualConsumptionSensor(acc_num, coordinator)
                     )
 
                 if account_data.get("variable_grid_fees"):

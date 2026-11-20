@@ -893,6 +893,17 @@ query getAccountMeasurements(
 }
 """
 
+PAYMENT_ADEQUACY_QUERY = """
+query PaymentAdequacy($accountNumber: String!, $propertyId: String!) {
+  paymentAdequacy(accountNumber: $accountNumber, propertyId: $propertyId) {
+    estimatedAnnualConsumption {
+      currentYear
+      lastYear
+    }
+  }
+}
+"""
+
 VARIABLE_GRID_FEES_QUERY = """
 query VariableGridFees(
   $accountNumber: String!

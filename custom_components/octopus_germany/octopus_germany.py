@@ -21,6 +21,7 @@ from .api.auth import _TOKEN_MANAGERS, TokenManager
 from .api.devices import DeviceApiMixin
 from .api.grid_fees import GridFeeApiMixin
 from .api.meters import MeterApiMixin
+from .api.payment_adequacy import PaymentAdequacyApiMixin
 from .api.queries import (
     ACCOUNT_CAPABILITIES_QUERY,
     ACCOUNT_DISCOVERY_QUERY,
@@ -64,7 +65,13 @@ if TYPE_CHECKING:
     from .models import TariffCapabilities
 
 
-class OctopusGermany(AccountApiMixin, DeviceApiMixin, GridFeeApiMixin, MeterApiMixin):
+class OctopusGermany(
+    AccountApiMixin,
+    DeviceApiMixin,
+    GridFeeApiMixin,
+    MeterApiMixin,
+    PaymentAdequacyApiMixin,
+):
     """API client wrapper combining account, device, and meter mixins."""
 
     def __init__(self, email: str, password: str) -> None:
@@ -91,6 +98,9 @@ class OctopusGermany(AccountApiMixin, DeviceApiMixin, GridFeeApiMixin, MeterApiM
         self._smart_meter_retry_until: datetime | None = None
         self._15min_retry_until: datetime | None = None
         self._variable_grid_fees_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
+        self._payment_adequacy_cache: dict[
+            tuple[str, str], tuple[float, dict[str, float | None] | None]
+        ] = {}
 
         # Set up the token manager refresh callback
         self._token_manager.set_refresh_callback(self.login)
